@@ -84,9 +84,36 @@
                 <input type="text" id="edit-label" class="form-input" placeholder="例: こんにちは、パパの声..." maxlength="20">
             </div>
 
+            <!-- 名前（ラベル）の位置選択 -->
             <div class="form-group">
-                <label class="form-label">アイコン（絵文字）</label>
-                <div class="emoji-selector">
+                <label class="form-label">名前の位置</label>
+                <div class="position-selector">
+                    <button type="button" class="pos-btn" data-pos="top">⬆️ 上</button>
+                    <button type="button" class="pos-btn" data-pos="center">⏺️ 中央</button>
+                    <button type="button" class="pos-btn active" data-pos="bottom">⬇️ 下</button>
+                </div>
+                <input type="hidden" id="edit-label-pos" value="bottom">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">アイコン（写真 または 絵文字）</label>
+                
+                <!-- 写真取り込み＆プレビューエリア -->
+                <div class="photo-select-container">
+                    <div id="photo-preview-box" class="photo-preview-box">
+                        <span id="current-icon-display" style="font-size: 28px;">🔊</span>
+                    </div>
+                    <div class="photo-btn-group">
+                        <button type="button" id="select-photo-btn" class="action-btn download-btn" style="margin: 0; padding: 6px 10px; font-size: 11px;">
+                            📷 写真を撮る / アルバムから選ぶ
+                        </button>
+                        <button type="button" id="remove-photo-btn" class="action-btn delete-btn" style="display: none; margin: 0; padding: 4px 8px; font-size: 10px;">
+                            🗑️ 写真を消して絵文字に戻す
+                        </button>
+                    </div>
+                </div>
+
+                <div class="emoji-selector" style="margin-top: 6px;">
                     <button type="button" class="emoji-opt">🔊</button>
                     <button type="button" class="emoji-opt">👋</button>
                     <button type="button" class="emoji-opt">🎉</button>
@@ -97,6 +124,8 @@
                     <button type="button" class="emoji-opt">❤️</button>
                 </div>
                 <input type="hidden" id="edit-emoji" value="🔊">
+                <!-- 写真ファイル用インプット（カメラ・アルバム両対応） -->
+                <input type="file" id="photo-file-input" accept="image/*" style="display: none;">
             </div>
 
             <div class="modal-actions">

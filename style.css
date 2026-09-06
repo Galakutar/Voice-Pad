@@ -304,6 +304,54 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
     z-index: 2;
     padding: 2px 0;
     min-height: 0;
+    position: relative;
+    width: 100%;
+}
+
+/* 名前（ラベル）の位置：上（Top） */
+.pad-center.pos-top .pad-label {
+    order: 1;
+    margin-bottom: 2px;
+}
+.pad-center.pos-top .pad-emoji, .pad-center.pos-top .pad-photo-img {
+    order: 2;
+}
+.pad-center.pos-top .pad-status {
+    order: 3;
+}
+
+/* 名前（ラベル）の位置：下（Bottom: 標準） */
+.pad-center.pos-bottom .pad-emoji, .pad-center.pos-bottom .pad-photo-img {
+    order: 1;
+}
+.pad-center.pos-bottom .pad-label {
+    order: 2;
+    margin-top: 1px;
+}
+.pad-center.pos-bottom .pad-status {
+    order: 3;
+}
+
+/* 名前（ラベル）の位置：中央（Center / 重ね合わせ） */
+.pad-center.pos-center {
+    justify-content: center;
+    align-items: center;
+}
+.pad-center.pos-center .pad-emoji, .pad-center.pos-center .pad-photo-img {
+    order: 1;
+}
+.pad-center.pos-center .pad-label {
+    order: 2;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 1px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+    margin-top: -8px; /* アイコンの下部に少し重ねてリッチに表示 */
+    z-index: 3;
+}
+.pad-center.pos-center .pad-status {
+    order: 3;
 }
 
 .pad-emoji {
@@ -311,6 +359,22 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
     margin-bottom: 2px;
     filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.4));
     transition: transform 0.15s;
+}
+
+/* 取り込んだ写真アイコンのスタイル */
+.pad-photo-img {
+    width: clamp(34px, 6vh, 52px);
+    height: clamp(34px, 6vh, 52px);
+    border-radius: 12px;
+    object-fit: cover;
+    margin-bottom: 2px;
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s;
+}
+
+.pad-card:active .pad-photo-img {
+    transform: scale(1.1);
 }
 
 .pad-label {
@@ -329,6 +393,73 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
     color: var(--text-secondary);
     font-weight: 600;
     margin-top: 1px;
+}
+
+/* 位置選択セグメントボタン */
+.position-selector {
+    display: flex;
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-color);
+    padding: 3px;
+    border-radius: 10px;
+}
+
+.pos-btn {
+    flex: 1;
+    padding: 7px 4px;
+    border-radius: 7px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.pos-btn.active {
+    background: #3b82f6;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+/* 写真選択プレビューUI */
+.photo-select-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    padding: 8px;
+    border-radius: 12px;
+    margin-bottom: 6px;
+}
+
+.photo-preview-box {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px dashed var(--border-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.photo-preview-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.photo-btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
 }
 
 /* 背景波形アニメーション用Canvas */
@@ -549,6 +680,12 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
     }
     .pad-emoji {
         font-size: 18px;
+        margin-bottom: 0;
+    }
+    .pad-photo-img {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
         margin-bottom: 0;
     }
     .pad-label {

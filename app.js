@@ -42,7 +42,9 @@ class StorageManager {
             const dataToSave = {
                 id: slotData.id,
                 label: slotData.label,
+                labelPosition: slotData.labelPosition || 'bottom',
                 emoji: slotData.emoji,
+                imageUrl: slotData.imageUrl || null,
                 audioBlob: slotData.audioBlob,
                 duration: slotData.duration
             };
@@ -163,12 +165,12 @@ class VoicePadApp {
 
         // 6つのスロットの初期データ定義
         this.slots = [
-            { id: 1, label: 'ボタン 1', emoji: '🔴', audioBlob: null, duration: 0 },
-            { id: 2, label: 'ボタン 2', emoji: '🟠', audioBlob: null, duration: 0 },
-            { id: 3, label: 'ボタン 3', emoji: '🟡', audioBlob: null, duration: 0 },
-            { id: 4, label: 'ボタン 4', emoji: '🟢', audioBlob: null, duration: 0 },
-            { id: 5, label: 'ボタン 5', emoji: '🔵', audioBlob: null, duration: 0 },
-            { id: 6, label: 'ボタン 6', emoji: '🟣', audioBlob: null, duration: 0 }
+            { id: 1, label: 'ボタン 1', labelPosition: 'bottom', emoji: '🔴', imageUrl: null, audioBlob: null, duration: 0 },
+            { id: 2, label: 'ボタン 2', labelPosition: 'bottom', emoji: '🟠', imageUrl: null, audioBlob: null, duration: 0 },
+            { id: 3, label: 'ボタン 3', labelPosition: 'bottom', emoji: '🟡', imageUrl: null, audioBlob: null, duration: 0 },
+            { id: 4, label: 'ボタン 4', labelPosition: 'bottom', emoji: '🟢', imageUrl: null, audioBlob: null, duration: 0 },
+            { id: 5, label: 'ボタン 5', labelPosition: 'bottom', emoji: '🔵', imageUrl: null, audioBlob: null, duration: 0 },
+            { id: 6, label: 'ボタン 6', labelPosition: 'bottom', emoji: '🟣', imageUrl: null, audioBlob: null, duration: 0 }
         ];
 
         // 再生中のオーディオソース (slotId -> AudioBufferSourceNode)
@@ -176,6 +178,7 @@ class VoicePadApp {
 
         // 編集モーダル用
         this.editingSlotId = null;
+        this.editingImageUrl = null; // モーダル内で一時編集中の画像
 
         this.init();
     }
@@ -229,6 +232,13 @@ class VoicePadApp {
                 statusText = `${slot.duration.toFixed(1)}秒`;
             }
 
+            // 写真が設定されていれば画像、なければ絵文字
+            const iconHtml = slot.imageUrl 
+                ? `<img src="${slot.imageUrl}" class="pad-photo-img" alt="icon">` 
+                : `<div class="pad-emoji">${slot.emoji}</div>`;
+
+            const posClass = `pos-${slot.labelPosition || 'bottom'}`;
+
             card.innerHTML = `
                 <div class="pad-header">
                     <span class="slot-badge">${slot.id}</span>
@@ -240,8 +250,8 @@ class VoicePadApp {
                     </button>
                 </div>
 
-                <div class="pad-center">
-                    <div class="pad-emoji">${slot.emoji}</div>
+                <div class="pad-center ${posClass}">
+                    ${iconHtml}
                     <div class="pad-label">${slot.label}</div>
                     <div class="pad-status">${statusText}</div>
                 </div>
@@ -340,25 +350,8 @@ class VoicePadApp {
         document.getElementById('delete-audio-btn').addEventListener('click', () => this.deleteSlotAudio());
         document.getElementById('download-audio-btn').addEventListener('click', () => this.downloadSlotAudio());
 
-        // 絵文字クイック選択
-        document.querySelectorAll('.emoji-opt').forEach(opt => {
-            opt.addEventListener('click', () => {
-                document.querySelectorAll('.emoji-opt').forEach(o => o.classList.remove('selected'));
-                opt.classList.add('selected');
-                document.getElementById('edit-emoji').value = opt.innerText;
-            });
-        });
-
-        // 外部オーディオファイルのインポート
-        document.getElementById('import-file-btn').addEventListener('click', () => {
-            document.getElementById('audio-file-input').click();
-        });
-
-        document.getElementById('audio-file-input').addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                this.handleFileImport(e.target.files[0]);
-            }
-        });
+        // 写真・絵文字・音声インポート等のエディタイベント初期化
+        this.initEditorEvents();
     }
 
     setMode(mode) {
@@ -589,30 +582,108 @@ class VoicePadApp {
         if (card) card.classList.remove('playing');
     }
 
-    // --- 波形ビジュアライザー (Canvas) ---
-    initCanvasVisualizers() {
-        const renderWave = () => {
-            this.slots.forEach(slot => {
-                const canvas = document.getElementById(`canvas-${slot.id}`);
-                if (!canvas) return;
-                const ctx = canvas.getContext('2d');
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                if (this.activeSources.has(slot.id) || this.recordingSlot === slot.id) {
-                    ctx.fillStyle = this.recordingSlot === slot.id ? '#ef4444' : '#ffffff';
-                    const time = Date.now() * 0.008;
-                    const bars = 16;
-                    const barWidth = canvas.width / bars;
-
-                    for (let i = 0; i < bars; i++) {
-                        const h = (Math.sin(time + i * 0.5) * 0.5 + 0.5) * canvas.height * 0.8;
-                        ctx.fillRect(i * barWidth + 2, canvas.height - h, barWidth - 4, h);
-                    }
-                }
+    // --- 写真選択・カメラ撮影関連イベント ---
+    initEditorEvents() {
+        // 位置選択ボタン（上・中・下）
+        document.querySelectorAll('.pos-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('edit-label-pos').value = btn.getAttribute('data-pos');
             });
-            requestAnimationFrame(renderWave);
-        };
-        requestAnimationFrame(renderWave);
+        });
+
+        const selectPhotoBtn = document.getElementById('select-photo-btn');
+        const photoFileInput = document.getElementById('photo-file-input');
+        const removePhotoBtn = document.getElementById('remove-photo-btn');
+
+        if (selectPhotoBtn && photoFileInput) {
+            selectPhotoBtn.addEventListener('click', () => {
+                photoFileInput.click();
+            });
+
+            photoFileInput.addEventListener('change', async (e) => {
+                if (e.target.files.length > 0) {
+                    await this.handlePhotoUpload(e.target.files[0]);
+                }
+                photoFileInput.value = ''; // リセット
+            });
+        }
+
+        if (removePhotoBtn) {
+            removePhotoBtn.addEventListener('click', () => {
+                this.editingImageUrl = null;
+                this.updateModalIconPreview();
+            });
+        }
+
+        // 絵文字クイック選択
+        document.querySelectorAll('.emoji-opt').forEach(opt => {
+            opt.addEventListener('click', () => {
+                document.querySelectorAll('.emoji-opt').forEach(o => o.classList.remove('selected'));
+                opt.classList.add('selected');
+                document.getElementById('edit-emoji').value = opt.innerText;
+                this.editingImageUrl = null; // 絵文字を選んだら写真は解除
+                this.updateModalIconPreview();
+            });
+        });
+
+        // 外部オーディオファイルのインポート
+        document.getElementById('import-file-btn').addEventListener('click', () => {
+            document.getElementById('audio-file-input').click();
+        });
+
+        document.getElementById('audio-file-input').addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                this.handleFileImport(e.target.files[0]);
+            }
+        });
+    }
+
+    // 画像ファイル読み込み ＆ 正方形・軽量リサイズ (Canvas 圧縮)
+    async handlePhotoUpload(file) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const size = 256; // 軽量かつクッキリな 256x256px
+                    canvas.width = size;
+                    canvas.height = size;
+                    const ctx = canvas.getContext('2d');
+
+                    // 中央正方形にクロップ＆リサイズ
+                    const minDim = Math.min(img.width, img.height);
+                    const sx = (img.width - minDim) / 2;
+                    const sy = (img.height - minDim) / 2;
+
+                    ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+
+                    // WebP または JPEG で圧縮
+                    this.editingImageUrl = canvas.toDataURL('image/jpeg', 0.85);
+                    this.updateModalIconPreview();
+                    resolve();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // モーダル内のアイコンプレビュー更新
+    updateModalIconPreview() {
+        const previewBox = document.getElementById('photo-preview-box');
+        const removePhotoBtn = document.getElementById('remove-photo-btn');
+        const emojiVal = document.getElementById('edit-emoji').value || '🔊';
+
+        if (this.editingImageUrl) {
+            previewBox.innerHTML = `<img src="${this.editingImageUrl}" alt="preview">`;
+            if (removePhotoBtn) removePhotoBtn.style.display = 'block';
+        } else {
+            previewBox.innerHTML = `<span style="font-size: 28px;">${emojiVal}</span>`;
+            if (removePhotoBtn) removePhotoBtn.style.display = 'none';
+        }
     }
 
     // --- 編集モーダル制御 ---
@@ -624,11 +695,22 @@ class VoicePadApp {
         document.getElementById('modal-slot-num').innerText = slot.id;
         document.getElementById('edit-label').value = slot.label;
         document.getElementById('edit-emoji').value = slot.emoji;
+        this.editingImageUrl = slot.imageUrl || null;
+
+        // 名前位置ボタンの選択反映
+        const currentPos = slot.labelPosition || 'bottom';
+        document.getElementById('edit-label-pos').value = currentPos;
+        document.querySelectorAll('.pos-btn').forEach(btn => {
+            if (btn.getAttribute('data-pos') === currentPos) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
 
         document.querySelectorAll('.emoji-opt').forEach(opt => {
-            if (opt.innerText === slot.emoji) opt.classList.add('selected');
+            if (!this.editingImageUrl && opt.innerText === slot.emoji) opt.classList.add('selected');
             else opt.classList.remove('selected');
         });
+
+        this.updateModalIconPreview();
 
         const deleteBtn = document.getElementById('delete-audio-btn');
         const downloadBtn = document.getElementById('download-audio-btn');
@@ -654,8 +736,12 @@ class VoicePadApp {
         if (slot) {
             const labelInput = document.getElementById('edit-label').value.trim();
             const emojiInput = document.getElementById('edit-emoji').value.trim();
+            const labelPos = document.getElementById('edit-label-pos').value || 'bottom';
+
             slot.label = labelInput || `ボタン ${slot.id}`;
+            slot.labelPosition = labelPos;
             slot.emoji = emojiInput || '🔊';
+            slot.imageUrl = this.editingImageUrl;
 
             await this.storage.saveSlot(slot);
             this.renderSlots();
