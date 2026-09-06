@@ -21,34 +21,44 @@
         <header class="app-header">
             <div class="logo-group">
                 <div class="app-icon">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
                         <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"></path>
                         <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"></path>
                     </svg>
                 </div>
                 <div>
                     <h1 class="app-title">Voice Pad 6</h1>
-                    <p class="app-subtitle">タップで再生 / 各ボタンから録音</p>
                 </div>
+            </div>
+
+            <!-- モード切り替えスイッチ (再生 / 録音) -->
+            <div class="mode-switch-container">
+                <button id="mode-play-btn" class="mode-toggle-btn active" data-mode="play">
+                    <span class="mode-icon">▶️</span>
+                    <span class="mode-label">再生モード</span>
+                </button>
+                <button id="mode-record-btn" class="mode-toggle-btn" data-mode="record">
+                    <span class="mode-icon">🔴</span>
+                    <span class="mode-label">録音モード</span>
+                </button>
             </div>
 
             <!-- ヘッダー右側コントロール -->
             <div class="header-controls">
                 <!-- ボイスチェンジャー -->
                 <select id="voice-effect" class="voice-effect-select" title="ボイスチェンジャー">
-                    <option value="normal">🎙️ 通常の声</option>
-                    <option value="high">🐿️ 高い声 (ヘリウム)</option>
-                    <option value="low">👹 低い声 (巨人)</option>
-                    <option value="robot">🤖 ロボット声</option>
-                    <option value="echo">🌌 エコー効果</option>
+                    <option value="normal">🎙️ 通常</option>
+                    <option value="high">🐿️ 高音</option>
+                    <option value="low">👹 低音</option>
+                    <option value="robot">🤖 ロボ</option>
                 </select>
 
                 <!-- 全停止ボタン -->
                 <button id="stop-all-btn" class="stop-all-btn" title="すべての音声を停止">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                         <rect x="4" y="4" width="16" height="16" rx="2"></rect>
                     </svg>
-                    全停止
+                    停止
                 </button>
             </div>
         </header>

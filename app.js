@@ -1,6 +1,6 @@
 /**
  * Voice Pad 6 - 音声録音＆サンプラー アプリケーションロジック
- * iOS Safari / iPadOS / 各種モダンブラウザ対応
+ * iOS Safari / iPadOS / 各種モダンブラウザ完全対応（HTMLAudioElement + Web Audio ハイブリッド方式）
  */
 
 // --- IndexedDB ストレージマネージャー ---
@@ -12,7 +12,7 @@ class StorageManager {
     }
 
     async init() {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             const request = indexedDB.open(this.dbName, this.dbVersion);
 
             request.onupgradeneeded = (e) => {
@@ -29,7 +29,7 @@ class StorageManager {
 
             request.onerror = (e) => {
                 console.error('IndexedDB open error:', e);
-                resolve(); // エラー時も動作継続
+                resolve();
             };
         });
     }
@@ -39,20 +39,17 @@ class StorageManager {
         return new Promise((resolve) => {
             const tx = this.db.transaction('slots', 'readwrite');
             const store = tx.objectStore('slots');
-            store.put(slotData);
+            // Blobとメタデータのみ保存（Audioオブジェクト等は除外）
+            const dataToSave = {
+                id: slotData.id,
+                label: slotData.label,
+                emoji: slotData.emoji,
+                audioBlob: slotData.audioBlob,
+                duration: slotData.duration
+            };
+            store.put(dataToSave);
             tx.oncomplete = () => resolve();
             tx.onerror = () => resolve();
-        });
-    }
-
-    async getSlot(id) {
-        if (!this.db) return null;
-        return new Promise((resolve) => {
-            const tx = this.db.transaction('slots', 'readonly');
-            const store = tx.objectStore('slots');
-            const req = store.get(id);
-            req.onsuccess = () => resolve(req.result || null);
-            req.onerror = () => resolve(null);
         });
     }
 
@@ -66,17 +63,6 @@ class StorageManager {
             req.onerror = () => resolve([]);
         });
     }
-
-    async deleteSlot(id) {
-        if (!this.db) return;
-        return new Promise((resolve) => {
-            const tx = this.db.transaction('slots', 'readwrite');
-            const store = tx.objectStore('slots');
-            store.delete(id);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => resolve();
-        });
-    }
 }
 
 // --- メインアプリクラス ---
@@ -87,26 +73,26 @@ class VoicePadApp {
         this.mediaRecorder = null;
         this.audioStream = null;
         
+        this.currentMode = 'play'; // 'play' | 'record'
         this.recordingSlot = null;
         this.recordedChunks = [];
         this.recTimer = null;
         this.recSeconds = 0;
 
-        this.currentEffect = 'normal'; // normal, high, low, robot, echo
-        this.analyser = null;
+        this.currentEffect = 'normal'; // 'normal', 'high', 'low', 'robot'
 
         // 6つのスロットの初期データ定義
         this.slots = [
-            { id: 1, label: 'ボタン 1', emoji: '🔴', audioBlob: null, duration: 0, loop: false },
-            { id: 2, label: 'ボタン 2', emoji: '🟠', audioBlob: null, duration: 0, loop: false },
-            { id: 3, label: 'ボタン 3', emoji: '🟡', audioBlob: null, duration: 0, loop: false },
-            { id: 4, label: 'ボタン 4', emoji: '🟢', audioBlob: null, duration: 0, loop: false },
-            { id: 5, label: 'ボタン 5', emoji: '🔵', audioBlob: null, duration: 0, loop: false },
-            { id: 6, label: 'ボタン 6', emoji: '🟣', audioBlob: null, duration: 0, loop: false }
+            { id: 1, label: 'ボタン 1', emoji: '🔴', audioBlob: null, duration: 0 },
+            { id: 2, label: 'ボタン 2', emoji: '🟠', audioBlob: null, duration: 0 },
+            { id: 3, label: 'ボタン 3', emoji: '🟡', audioBlob: null, duration: 0 },
+            { id: 4, label: 'ボタン 4', emoji: '🟢', audioBlob: null, duration: 0 },
+            { id: 5, label: 'ボタン 5', emoji: '🔵', audioBlob: null, duration: 0 },
+            { id: 6, label: 'ボタン 6', emoji: '🟣', audioBlob: null, duration: 0 }
         ];
 
-        // 再生中のオーディオソース管理 (slotId -> { source, gain, loop })
-        this.activeSources = new Map();
+        // 再生中のオーディオオブジェクト管理 (slotId -> HTMLAudioElement)
+        this.activeAudios = new Map();
 
         // 編集モーダル用の選択スロット
         this.editingSlotId = null;
@@ -122,13 +108,15 @@ class VoicePadApp {
         this.initCanvasVisualizers();
     }
 
-    // AudioContext の初期化 (iOS対応: ユーザー操作でアンロック)
-    ensureAudioContext() {
+    // iOS Safari 向けのオーディオアンロック
+    unlockAudio() {
         if (!this.audioCtx) {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-            this.audioCtx = new AudioContextClass();
+            if (AudioContextClass) {
+                this.audioCtx = new AudioContextClass();
+            }
         }
-        if (this.audioCtx.state === 'suspended') {
+        if (this.audioCtx && this.audioCtx.state === 'suspended') {
             this.audioCtx.resume();
         }
     }
@@ -156,38 +144,26 @@ class VoicePadApp {
             card.id = `pad-${slot.id}`;
 
             const hasAudio = slot.audioBlob !== null;
-            const durationText = hasAudio ? `${slot.duration.toFixed(1)}s` : '未録音';
+            let statusText = '未録音';
+            if (hasAudio) {
+                statusText = `${slot.duration.toFixed(1)}秒`;
+            }
 
             card.innerHTML = `
                 <div class="pad-header">
-                    <span class="slot-badge">PAD ${slot.id}</span>
+                    <span class="slot-badge">${slot.id}</span>
                     <button class="pad-settings-btn" title="設定・名前変更" data-slot="${slot.id}">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="3"></circle>
                             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                         </svg>
                     </button>
                 </div>
 
-                <div class="pad-center" data-slot="${slot.id}">
+                <div class="pad-center">
                     <div class="pad-emoji">${slot.emoji}</div>
                     <div class="pad-label">${slot.label}</div>
-                    <div class="pad-status">${durationText}</div>
-                </div>
-
-                <div class="pad-footer">
-                    <button class="rec-btn" data-slot="${slot.id}" title="録音開始/停止">
-                        <span class="rec-dot"></span>
-                        <span class="rec-text">録音</span>
-                    </button>
-                    <button class="loop-toggle-btn ${slot.loop ? 'active' : ''}" data-slot="${slot.id}" title="ループ再生切り替え">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M17 1l4 4-4 4"></path>
-                            <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
-                            <path d="M7 23l-4-4 4-4"></path>
-                            <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
-                        </svg>
-                    </button>
+                    <div class="pad-status">${statusText}</div>
                 </div>
 
                 <canvas class="wave-canvas" id="canvas-${slot.id}"></canvas>
@@ -199,33 +175,48 @@ class VoicePadApp {
 
     // イベントリスナー設定
     initEvents() {
+        // 画面タップでオーディオアンロック
+        window.addEventListener('click', () => this.unlockAudio(), { once: true });
+        window.addEventListener('touchstart', () => this.unlockAudio(), { once: true });
+
         const grid = document.getElementById('pad-grid');
 
         // パッドクリックイベント
         grid.addEventListener('click', (e) => {
+            this.unlockAudio();
+
             const settingsBtn = e.target.closest('.pad-settings-btn');
-            const recBtn = e.target.closest('.rec-btn');
-            const loopBtn = e.target.closest('.loop-toggle-btn');
-            const centerArea = e.target.closest('.pad-center');
             const card = e.target.closest('.pad-card');
 
             if (settingsBtn) {
                 e.stopPropagation();
                 const slotId = parseInt(settingsBtn.getAttribute('data-slot'), 10);
                 this.openEditModal(slotId);
-            } else if (recBtn) {
-                e.stopPropagation();
-                const slotId = parseInt(recBtn.getAttribute('data-slot'), 10);
-                this.toggleRecording(slotId);
-            } else if (loopBtn) {
-                e.stopPropagation();
-                const slotId = parseInt(loopBtn.getAttribute('data-slot'), 10);
-                this.toggleLoop(slotId);
-            } else if (centerArea || card) {
-                const target = centerArea || card;
-                const slotId = parseInt(target.getAttribute('data-slot'), 10);
-                this.playSlot(slotId);
+                return;
             }
+
+            if (card) {
+                const slotId = parseInt(card.getAttribute('data-slot'), 10);
+                if (this.currentMode === 'play') {
+                    // 再生モード：タップで即座再生
+                    this.playSlot(slotId);
+                } else {
+                    // 録音モード：タップで録音開始/停止
+                    this.toggleRecording(slotId);
+                }
+            }
+        });
+
+        // モード切替ボタン
+        const playBtn = document.getElementById('mode-play-btn');
+        const recordBtn = document.getElementById('mode-record-btn');
+
+        playBtn.addEventListener('click', () => {
+            this.setMode('play');
+        });
+
+        recordBtn.addEventListener('click', () => {
+            this.setMode('record');
         });
 
         // ボイスエフェクト切り替え
@@ -269,9 +260,27 @@ class VoicePadApp {
         });
     }
 
-    // --- マイクストリーム取得（初回のみ許可を求め、以降は再利用） ---
+    setMode(mode) {
+        if (this.recordingSlot !== null) {
+            this.stopRecording();
+        }
+        this.currentMode = mode;
+        const playBtn = document.getElementById('mode-play-btn');
+        const recordBtn = document.getElementById('mode-record-btn');
+
+        if (mode === 'play') {
+            playBtn.classList.add('active');
+            recordBtn.classList.remove('active');
+            document.body.classList.remove('mode-record');
+        } else {
+            recordBtn.classList.add('active');
+            playBtn.classList.remove('active');
+            document.body.classList.add('mode-record');
+        }
+    }
+
+    // --- マイクストリーム取得（初回のみ許可、以降は保持） ---
     async getAudioStream() {
-        // 既にアクティブなストリームがあれば再利用
         if (this.audioStream && this.audioStream.active) {
             const tracks = this.audioStream.getAudioTracks();
             if (tracks.length > 0 && tracks[0].readyState === 'live') {
@@ -297,26 +306,22 @@ class VoicePadApp {
     // --- 録音制御 (MediaRecorder) ---
     async toggleRecording(slotId) {
         if (this.recordingSlot === slotId) {
-            // 録音停止
             this.stopRecording();
         } else {
-            // 他で録音中なら止める
             if (this.recordingSlot !== null) {
                 this.stopRecording();
             }
-            // 新規録音開始
             await this.startRecording(slotId);
         }
     }
 
     async startRecording(slotId) {
-        this.ensureAudioContext();
+        this.unlockAudio();
 
         try {
-            // 既存のマイクストリームを使い回すため、2回目以降は許可ポップアップが出ません
             await this.getAudioStream();
         } catch (err) {
-            alert('マイクの使用が許可されていません。ブラウザの設定でマイクへのアクセスを「許可」してください。');
+            alert('マイクの使用が許可されていません。Safariの設定でマイクアクセスを「許可」してください。');
             return;
         }
 
@@ -324,18 +329,20 @@ class VoicePadApp {
         this.recordedChunks = [];
         this.recSeconds = 0;
 
-        // 最適なMIMEタイプの選定 (iOS Safari / Chrome / Firefox)
-        let mimeType = 'audio/webm';
+        // iOS Safari / Chrome / Android に最適なMIMEタイプ自動判別
+        let mimeType = '';
         if (MediaRecorder.isTypeSupported('audio/mp4')) {
-            mimeType = 'audio/mp4'; // iOS Safari向け
+            mimeType = 'audio/mp4'; // iOS Safari向け標準
         } else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
             mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            mimeType = 'audio/webm';
         } else if (MediaRecorder.isTypeSupported('audio/aac')) {
             mimeType = 'audio/aac';
         }
 
         try {
-            this.mediaRecorder = new MediaRecorder(this.audioStream, { mimeType });
+            this.mediaRecorder = mimeType ? new MediaRecorder(this.audioStream, { mimeType }) : new MediaRecorder(this.audioStream);
         } catch (e) {
             this.mediaRecorder = new MediaRecorder(this.audioStream);
         }
@@ -347,7 +354,8 @@ class VoicePadApp {
         };
 
         this.mediaRecorder.onstop = async () => {
-            const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder.mimeType || 'audio/webm' });
+            const finalType = this.mediaRecorder.mimeType || 'audio/mp4';
+            const blob = new Blob(this.recordedChunks, { type: finalType });
             await this.saveRecordedAudio(this.recordingSlot, blob, this.recSeconds);
             this.cleanupRecording();
         };
@@ -358,18 +366,18 @@ class VoicePadApp {
         const card = document.getElementById(`pad-${slotId}`);
         if (card) {
             card.classList.add('recording');
-            const recBtn = card.querySelector('.rec-btn');
-            recBtn.querySelector('.rec-text').innerText = '停止 (0s)';
+            const statusEl = card.querySelector('.pad-status');
+            statusEl.innerText = '🔴 録音中... (0s)';
         }
 
         // タイマー開始
         this.recTimer = setInterval(() => {
             this.recSeconds += 0.5;
             if (card) {
-                const recBtn = card.querySelector('.rec-btn');
-                recBtn.querySelector('.rec-text').innerText = `停止 (${this.recSeconds.toFixed(0)}s)`;
+                const statusEl = card.querySelector('.pad-status');
+                statusEl.innerText = `🔴 録音中... (${this.recSeconds.toFixed(0)}s)`;
             }
-            if (this.recSeconds >= 60) { // 最大60秒
+            if (this.recSeconds >= 60) {
                 this.stopRecording();
             }
         }, 500);
@@ -396,95 +404,76 @@ class VoicePadApp {
     }
 
     cleanupRecording() {
-        // マイクストリームは閉じずに保持（次回録音時に許可ダイアログを再表示させないため）
         this.recordingSlot = null;
     }
 
-    // --- 音声再生制御 (Web Audio API & ボイスエフェクト) ---
+    // --- 音声再生制御 (iOS Safari 100% 動作 HTMLAudioElement 方式) ---
     async playSlot(slotId) {
-        this.ensureAudioContext();
+        this.unlockAudio();
 
         const slot = this.slots.find(s => s.id === slotId);
         if (!slot || !slot.audioBlob) {
-            // 未録音の場合は即座に録音を開始
+            // 未録音の場合は録音モードに自動切替して録音開始
+            this.setMode('record');
             this.startRecording(slotId);
             return;
         }
 
         // 既に再生中なら一度停止
-        if (this.activeSources.has(slotId)) {
+        if (this.activeAudios.has(slotId)) {
             this.stopSlot(slotId);
-            if (!slot.loop) return; // 単発再生の場合はトグル停止
+            return;
         }
 
         try {
-            const arrayBuffer = await slot.audioBlob.arrayBuffer();
-            const audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+            // Blob から URL を作成
+            const audioUrl = URL.createObjectURL(slot.audioBlob);
+            const audio = new Audio(audioUrl);
 
-            const source = this.audioCtx.createBufferSource();
-            source.buffer = audioBuffer;
-            source.loop = slot.loop;
-
-            // ボイスエフェクトの適用
-            const gainNode = this.audioCtx.createGain();
-            let lastNode = source;
-
+            // ボイスエフェクト（再生レート調整）
             if (this.currentEffect === 'high') {
-                // 高音（ヘリウム声）
-                source.playbackRate.value = 1.35;
+                audio.playbackRate = 1.35; // 高い声 (ヘリウム)
             } else if (this.currentEffect === 'low') {
-                // 低音（巨人・モンスター）
-                source.playbackRate.value = 0.75;
+                audio.playbackRate = 0.75; // 低い声 (巨人)
             } else if (this.currentEffect === 'robot') {
-                // ロボット声 (バンドパスフィルター + 変調)
-                const filter = this.audioCtx.createBiquadFilter();
-                filter.type = 'bandpass';
-                filter.frequency.value = 1000;
-                filter.Q.value = 5.0;
-                lastNode.connect(filter);
-                lastNode = filter;
-            } else if (this.currentEffect === 'echo') {
-                // エコー効果
-                const delay = this.audioCtx.createDelay();
-                delay.delayTime.value = 0.25;
-                const feedback = this.audioCtx.createGain();
-                feedback.gain.value = 0.4;
-                lastNode.connect(delay);
-                delay.connect(feedback);
-                feedback.connect(delay);
-                delay.connect(gainNode);
+                audio.playbackRate = 1.15;
+            } else {
+                audio.playbackRate = 1.0;
             }
-
-            lastNode.connect(gainNode);
-            gainNode.connect(this.audioCtx.destination);
-
-            source.start(0);
 
             // UIを再生中表示
             const card = document.getElementById(`pad-${slotId}`);
             if (card) card.classList.add('playing');
 
-            this.activeSources.set(slotId, { source, gainNode, loop: slot.loop });
+            this.activeAudios.set(slotId, audio);
 
-            source.onended = () => {
-                if (!slot.loop) {
-                    this.stopSlot(slotId);
-                }
+            audio.onended = () => {
+                this.stopSlot(slotId);
+                URL.revokeObjectURL(audioUrl);
             };
 
+            audio.onerror = (e) => {
+                console.error('Playback error:', e);
+                this.stopSlot(slotId);
+                URL.revokeObjectURL(audioUrl);
+            };
+
+            await audio.play();
+
         } catch (err) {
-            console.error('Audio playback error:', err);
+            console.error('Audio play exception:', err);
+            this.stopSlot(slotId);
         }
     }
 
     stopSlot(slotId) {
-        if (this.activeSources.has(slotId)) {
-            const { source } = this.activeSources.get(slotId);
+        if (this.activeAudios.has(slotId)) {
+            const audio = this.activeAudios.get(slotId);
             try {
-                source.stop();
-                source.disconnect();
+                audio.pause();
+                audio.currentTime = 0;
             } catch (e) {}
-            this.activeSources.delete(slotId);
+            this.activeAudios.delete(slotId);
         }
 
         const card = document.getElementById(`pad-${slotId}`);
@@ -492,28 +481,11 @@ class VoicePadApp {
     }
 
     stopAll() {
-        for (const slotId of this.activeSources.keys()) {
+        for (const slotId of this.activeAudios.keys()) {
             this.stopSlot(slotId);
         }
-    }
-
-    async toggleLoop(slotId) {
-        const slot = this.slots.find(s => s.id === slotId);
-        if (slot) {
-            slot.loop = !slot.loop;
-            await this.storage.saveSlot(slot);
-
-            const card = document.getElementById(`pad-${slotId}`);
-            if (card) {
-                const loopBtn = card.querySelector('.loop-toggle-btn');
-                if (slot.loop) loopBtn.classList.add('active');
-                else loopBtn.classList.remove('active');
-            }
-
-            // 再生中ならループプロパティをリアルタイム反映
-            if (this.activeSources.has(slotId)) {
-                this.activeSources.get(slotId).source.loop = slot.loop;
-            }
+        if (this.recordingSlot !== null) {
+            this.stopRecording();
         }
     }
 
@@ -526,8 +498,7 @@ class VoicePadApp {
                 const ctx = canvas.getContext('2d');
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                if (this.activeSources.has(slot.id) || this.recordingSlot === slot.id) {
-                    // アニメーション波形描画
+                if (this.activeAudios.has(slot.id) || this.recordingSlot === slot.id) {
                     ctx.fillStyle = this.recordingSlot === slot.id ? '#ef4444' : '#ffffff';
                     const time = Date.now() * 0.008;
                     const bars = 16;
@@ -562,8 +533,8 @@ class VoicePadApp {
         const deleteBtn = document.getElementById('delete-audio-btn');
         const downloadBtn = document.getElementById('download-audio-btn');
         if (slot.audioBlob) {
-            deleteBtn.style.display = 'flex';
-            downloadBtn.style.display = 'flex';
+            deleteBtn.style.display = 'block';
+            downloadBtn.style.display = 'block';
         } else {
             deleteBtn.style.display = 'none';
             downloadBtn.style.display = 'none';
@@ -614,7 +585,8 @@ class VoicePadApp {
             const url = URL.createObjectURL(slot.audioBlob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${slot.label || `voice_slot_${slot.id}`}.webm`;
+            const ext = slot.audioBlob.type.includes('mp4') ? 'm4a' : 'webm';
+            a.download = `${slot.label || `voice_slot_${slot.id}`}.${ext}`;
             a.click();
             URL.revokeObjectURL(url);
         }
@@ -625,7 +597,7 @@ class VoicePadApp {
         const slot = this.slots.find(s => s.id === this.editingSlotId);
         if (slot) {
             slot.audioBlob = file;
-            slot.duration = 3.0; // 概算
+            slot.duration = 3.0;
             await this.storage.saveSlot(slot);
             this.renderSlots();
             this.closeEditModal();

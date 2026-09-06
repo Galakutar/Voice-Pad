@@ -37,12 +37,12 @@ body, html {
 #app-container {
     width: 100%;
     height: 100%;
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    padding: env(safe-area-inset-top, 16px) 16px env(safe-area-inset-bottom, 16px) 16px;
-    gap: 12px;
+    padding: env(safe-area-inset-top, 8px) 10px env(safe-area-inset-bottom, 8px) 10px;
+    gap: 8px;
 }
 
 /* ヘッダーエリア */
@@ -50,89 +50,119 @@ body, html {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
+    padding: 6px 12px;
     background: var(--bg-surface);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--border-color);
-    border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    border-radius: 14px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
+    gap: 8px;
 }
 
 .logo-group {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 .app-icon {
-    width: 38px;
-    height: 38px;
+    width: 32px;
+    height: 32px;
     background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    border-radius: 10px;
+    border-radius: 8px;
     display: flex;
     justify-content: center;
     align-items: center;
-    box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
 }
 
 .app-title {
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 800;
-    letter-spacing: -0.5px;
-    background: linear-gradient(90deg, #ffffff, #cbd5e1);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    white-space: nowrap;
 }
 
-.app-subtitle {
-    font-size: 11px;
-    color: var(--text-secondary);
-    font-weight: 500;
+/* モード切り替えスイッチ (再生 / 録音) */
+.mode-switch-container {
+    display: flex;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 3px;
+    gap: 4px;
 }
 
-/* グローバルコントロール */
+.mode-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 9px;
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.mode-toggle-btn.active[data-mode="play"] {
+    background: #3b82f6;
+    color: #ffffff;
+    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.4);
+}
+
+.mode-toggle-btn.active[data-mode="record"] {
+    background: #ef4444;
+    color: #ffffff;
+    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.4);
+    animation: modePulse 1s infinite alternate;
+}
+
+@keyframes modePulse {
+    0% { transform: scale(0.98); }
+    100% { transform: scale(1.02); }
+}
+
+/* ヘッダー右側コントロール */
 .header-controls {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
 .voice-effect-select {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid var(--border-color);
     color: #fff;
-    padding: 8px 12px;
-    border-radius: 10px;
-    font-size: 13px;
+    padding: 6px 8px;
+    border-radius: 9px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     outline: none;
-    transition: all 0.2s;
-}
-
-.voice-effect-select:focus {
-    border-color: #3b82f6;
 }
 
 .stop-all-btn {
     background: rgba(239, 68, 68, 0.15);
     border: 1px solid rgba(239, 68, 68, 0.35);
     color: #fca5a5;
-    padding: 8px 14px;
-    border-radius: 10px;
-    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 9px;
+    font-size: 12px;
     font-weight: 700;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 6px;
-    transition: all 0.2s;
+    gap: 4px;
+    white-space: nowrap;
 }
 
 .stop-all-btn:active {
     transform: scale(0.95);
-    background: rgba(239, 68, 68, 0.3);
 }
 
 /* 6スロットのメイングリッド */
@@ -141,8 +171,9 @@ body, html {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     grid-template-rows: repeat(2, 1fr);
-    gap: 14px;
-    min-height: 0; /* flexbox内の縮小対策 */
+    gap: 10px;
+    min-height: 0; /* 画面枠内フィット必須 */
+    height: 100%;
 }
 
 /* 各パッドカード */
@@ -152,19 +183,20 @@ body, html {
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 2px solid var(--slot-color);
-    border-radius: 20px;
+    border-radius: 16px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 16px;
+    padding: 10px 12px;
     cursor: pointer;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25), inset 0 0 15px rgba(255, 255, 255, 0.03);
-    transition: transform 0.12s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s, border-color 0.2s;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+    transition: transform 0.1s, box-shadow 0.2s, border-color 0.2s, background 0.2s;
     overflow: hidden;
+    min-height: 0;
 }
 
 .pad-card:active {
-    transform: scale(0.97);
+    transform: scale(0.96);
 }
 
 /* スロットごとのカラー設定 */
@@ -175,32 +207,46 @@ body, html {
 .pad-card[data-slot="5"] { --slot-color: var(--color-slot-5); }
 .pad-card[data-slot="6"] { --slot-color: var(--color-slot-6); }
 
+/* 録音モード時のパッド外観 */
+body.mode-record .pad-card {
+    border-style: dashed;
+    border-color: rgba(239, 68, 68, 0.7);
+    background: rgba(239, 68, 68, 0.06);
+}
+
+body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: #ef4444;
+}
+
 /* 再生中のグローエフェクト */
 .pad-card.playing {
-    border-color: #fff;
-    box-shadow: 0 0 35px var(--slot-color), inset 0 0 25px rgba(255, 255, 255, 0.15);
-    animation: playingPulse 1.2s infinite alternate ease-in-out;
+    border-color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 0 30px var(--slot-color), inset 0 0 20px rgba(255, 255, 255, 0.2);
+    animation: playingPulse 1s infinite alternate ease-in-out;
 }
 
 @keyframes playingPulse {
-    0% { transform: scale(0.99); box-shadow: 0 0 25px var(--slot-color); }
-    100% { transform: scale(1.02); box-shadow: 0 0 45px var(--slot-color); }
+    0% { transform: scale(0.98); }
+    100% { transform: scale(1.02); }
 }
 
 /* 録音中のレッドパルスエフェクト */
 .pad-card.recording {
     border-color: #ef4444 !important;
-    background: rgba(239, 68, 68, 0.18) !important;
+    border-style: solid !important;
+    background: rgba(239, 68, 68, 0.3) !important;
     box-shadow: 0 0 35px #ef4444, inset 0 0 20px #ef4444;
-    animation: recordPulse 0.6s infinite alternate ease-in-out;
+    animation: recordPulse 0.5s infinite alternate ease-in-out;
 }
 
 @keyframes recordPulse {
-    0% { transform: scale(0.98); }
+    0% { transform: scale(0.97); }
     100% { transform: scale(1.01); }
 }
 
-/* カード上部：スロット番号・ラベル・設定ボタン */
+/* カード上部：スロット番号 ＆ 設定ボタン */
 .pad-header {
     display: flex;
     justify-content: space-between;
@@ -210,35 +256,33 @@ body, html {
 }
 
 .slot-badge {
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 800;
     color: #fff;
     background: var(--slot-color);
-    padding: 3px 9px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    padding: 2px 7px;
+    border-radius: 6px;
 }
 
 .pad-settings-btn {
     background: rgba(255, 255, 255, 0.1);
     border: none;
     color: #fff;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: pointer;
-    transition: all 0.2s;
 }
 
 .pad-settings-btn:active {
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.3);
     transform: scale(0.9);
 }
 
-/* カード中央：大きな再生エリア ＆ アイコン */
+/* カード中央：大きなタッチターゲット ＆ アイコン */
 .pad-center {
     display: flex;
     flex-direction: column;
@@ -246,22 +290,19 @@ body, html {
     align-items: center;
     flex: 1;
     z-index: 2;
-    padding: 10px 0;
+    padding: 2px 0;
+    min-height: 0;
 }
 
 .pad-emoji {
-    font-size: 42px;
-    margin-bottom: 4px;
-    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.3));
-    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.pad-card:active .pad-emoji {
-    transform: scale(1.15);
+    font-size: clamp(24px, 5vh, 40px);
+    margin-bottom: 2px;
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+    transition: transform 0.15s;
 }
 
 .pad-label {
-    font-size: 18px;
+    font-size: clamp(13px, 2.5vh, 16px);
     font-weight: 800;
     color: #ffffff;
     text-align: center;
@@ -269,76 +310,13 @@ body, html {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
 .pad-status {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-secondary);
     font-weight: 600;
-    margin-top: 4px;
-}
-
-/* カード下部：録音ボタン ＆ ループ切替 */
-.pad-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    z-index: 2;
-    gap: 8px;
-}
-
-.rec-btn {
-    flex: 1;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid var(--border-color);
-    color: #fff;
-    padding: 9px 12px;
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: 700;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 6px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.rec-btn .rec-dot {
-    width: 10px;
-    height: 10px;
-    background: #ef4444;
-    border-radius: 50%;
-    box-shadow: 0 0 6px #ef4444;
-}
-
-.rec-btn:active {
-    background: rgba(239, 68, 68, 0.2);
-    border-color: #ef4444;
-    transform: scale(0.95);
-}
-
-.loop-toggle-btn {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    width: 38px;
-    height: 38px;
-    border-radius: 12px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.loop-toggle-btn.active {
-    background: rgba(16, 185, 129, 0.2);
-    border-color: #10b981;
-    color: #10b981;
-    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+    margin-top: 2px;
 }
 
 /* 背景波形アニメーション用Canvas */
@@ -347,8 +325,8 @@ body, html {
     bottom: 0;
     left: 0;
     width: 100%;
-    height: 50%;
-    opacity: 0.35;
+    height: 45%;
+    opacity: 0.3;
     pointer-events: none;
     z-index: 1;
 }
@@ -367,7 +345,7 @@ body, html {
     justify-content: center;
     align-items: center;
     z-index: 100;
-    padding: 20px;
+    padding: 16px;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
@@ -381,16 +359,18 @@ body, html {
 .modal-content {
     background: #18202c;
     border: 1px solid var(--border-color);
-    border-radius: 24px;
+    border-radius: 20px;
     width: 100%;
-    max-width: 420px;
-    padding: 24px;
+    max-width: 380px;
+    padding: 20px;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 14px;
     transform: scale(0.92);
-    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transition: transform 0.2s;
+    max-height: 90vh;
+    overflow-y: auto;
 }
 
 .modal-backdrop.open .modal-content {
@@ -404,7 +384,7 @@ body, html {
 }
 
 .modal-title {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 800;
 }
 
@@ -412,8 +392,8 @@ body, html {
     background: rgba(255, 255, 255, 0.1);
     border: none;
     color: #fff;
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     display: flex;
     justify-content: center;
@@ -424,11 +404,11 @@ body, html {
 .form-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
 }
 
 .form-label {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--text-secondary);
 }
@@ -437,73 +417,55 @@ body, html {
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid var(--border-color);
     color: #fff;
-    padding: 12px 14px;
-    border-radius: 12px;
-    font-size: 15px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 14px;
     outline: none;
-    font-family: inherit;
 }
 
-.form-input:focus {
-    border-color: #3b82f6;
-}
-
-/* 絵文字クイックセレクター */
 .emoji-selector {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     flex-wrap: wrap;
 }
 
 .emoji-opt {
-    font-size: 24px;
+    font-size: 20px;
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
-    width: 44px;
-    height: 44px;
+    border-radius: 8px;
+    width: 36px;
+    height: 36px;
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: pointer;
-    transition: all 0.15s;
 }
 
-.emoji-opt:hover, .emoji-opt.selected {
+.emoji-opt.selected {
     background: rgba(59, 130, 246, 0.3);
     border-color: #3b82f6;
-    transform: scale(1.1);
 }
 
 .modal-actions {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    margin-top: 10px;
+    gap: 8px;
+    margin-top: 6px;
 }
 
 .action-btn {
-    padding: 12px;
-    border-radius: 12px;
+    padding: 10px;
+    border-radius: 10px;
     font-weight: 700;
-    font-size: 14px;
+    font-size: 13px;
     cursor: pointer;
     border: none;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 6px;
-    transition: all 0.2s;
 }
 
 .save-btn {
     background: #3b82f6;
     color: #fff;
-    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
-}
-
-.save-btn:active {
-    transform: scale(0.98);
 }
 
 .delete-btn {
@@ -518,24 +480,47 @@ body, html {
     border: 1px solid var(--border-color);
 }
 
-/* レスポンシブ対応 (iPhone縦画面用: 2列×3行) */
-@media (max-width: 680px) {
+/* iPhone縦画面 (2列×3行) */
+@media (max-width: 600px) and (orientation: portrait) {
     .pad-grid {
         grid-template-columns: repeat(2, 1fr);
         grid-template-rows: repeat(3, 1fr);
-        gap: 10px;
+        gap: 8px;
     }
     .app-title {
-        font-size: 17px;
+        display: none;
+    }
+    .mode-toggle-btn {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+}
+
+/* 横画面 (Landscape: iPhone/iPad横向き) */
+@media (orientation: landscape) and (max-height: 500px) {
+    #app-container {
+        padding: 4px 8px;
+        gap: 4px;
+    }
+    .app-header {
+        padding: 4px 8px;
+    }
+    .pad-grid {
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+        gap: 6px;
+    }
+    .pad-card {
+        padding: 4px 8px;
     }
     .pad-emoji {
-        font-size: 34px;
+        font-size: 20px;
+        margin-bottom: 0;
     }
     .pad-label {
-        font-size: 15px;
-    }
-    .voice-effect-select {
-        padding: 6px 8px;
         font-size: 12px;
+    }
+    .pad-status {
+        font-size: 10px;
     }
 }
