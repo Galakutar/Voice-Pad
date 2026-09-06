@@ -45,17 +45,17 @@
 
             <!-- ヘッダー右側コントロール -->
             <div class="header-controls">
-                <!-- ボイスチェンジャー -->
-                <select id="voice-effect" class="voice-effect-select" title="ボイスチェンジャー（声の高さ変更）">
-                    <option value="normal">🎙️ 通常の声</option>
-                    <option value="high">🐿️ 高い声 (スピード同じ)</option>
-                    <option value="low">👹 低い声 (スピード同じ)</option>
-                    <option value="robot">🤖 ロボット声</option>
+                <!-- ボイスチェンジャー（縦画面でもはみ出さないコンパクト表記） -->
+                <select id="voice-effect" class="voice-effect-select" title="ボイスチェンジャー">
+                    <option value="normal">🎙️ 通常</option>
+                    <option value="high">🐿️ 高音</option>
+                    <option value="low">👹 低音</option>
+                    <option value="robot">🤖 ロボ</option>
                 </select>
 
-                <!-- QRコード＆全画面ボタン -->
-                <button id="show-qr-btn" class="qr-share-btn" title="共有用QRコード・全画面表示">
-                    📱 QR / 全画面
+                <!-- QRコード表示ボタン -->
+                <button id="show-qr-btn" class="qr-share-btn" title="共有用QRコードを表示">
+                    📱 QR
                 </button>
             </div>
         </header>
@@ -110,11 +110,11 @@
         </div>
     </div>
 
-    <!-- 📱 QRコード＆全画面案内モーダル -->
+    <!-- 📱 QRコード表示モーダル -->
     <div id="qr-modal-backdrop" class="modal-backdrop">
         <div class="modal-content" style="text-align: center; align-items: center; max-height: 95vh;">
             <div class="modal-header" style="width: 100%;">
-                <h3 class="modal-title">📱 共有 ＆ 全画面表示</h3>
+                <h3 class="modal-title">📱 共有用 QRコード</h3>
                 <button id="close-qr-modal-btn" class="close-modal-btn" title="閉じる">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
