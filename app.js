@@ -177,10 +177,216 @@ class PitchShiftEngine {
     }
 
     /**
+     * ⛰️ 洞窟エフェクト（深く何重にも反響するディレイ・エコー効果）
+     */
+    static processCave(buffer, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+
+        // 145ms のエコーディレイ
+        const delaySamples = Math.floor(sampleRate * 0.145);
+        const extraSamples = Math.floor(sampleRate * 0.75); // 残響用の余白
+        const totalLength = numSamples + extraSamples;
+
+        const outputBuffer = ctx.createBuffer(numChannels, totalLength, sampleRate);
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const inputData = buffer.getChannelData(ch);
+            const outputData = outputBuffer.getChannelData(ch);
+
+            // 原音をコピー
+            for (let i = 0; i < numSamples; i++) {
+                outputData[i] = inputData[i] * 0.9;
+            }
+
+            // 洞窟の多重反射ディレイ（減衰フィードバック）
+            const feedback = 0.58;
+            for (let i = delaySamples; i < totalLength; i++) {
+                outputData[i] += outputData[i - delaySamples] * feedback;
+            }
+        }
+
+        return outputBuffer;
+    }
+
+    /**
+     * 🫧 水の中エフェクト（こもった低音 ＋ 水の揺らぎ・バブル感）
+     */
+    static processUnderwater(buffer, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+        // 500Hz のローパスフィルタ
+        const rc = 1.0 / (2 * Math.PI * 480);
+        const dt = 1.0 / sampleRate;
+        const alpha = dt / (rc + dt);
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const inputData = buffer.getChannelData(ch);
+            const outputData = outputBuffer.getChannelData(ch);
+            let prev = 0;
+
+            for (let i = 0; i < numSamples; i++) {
+                // ローパスフィルタで高音をカット（水中のこもり）
+                prev = prev + alpha * (inputData[i] - prev);
+
+                // 水の揺らぎ（8.5Hz のうねり）
+                const wobble = 0.65 + 0.35 * Math.sin((2 * Math.PI * 8.5 * i) / sampleRate);
+                outputData[i] = prev * wobble * 1.8;
+            }
+        }
+
+        return outputBuffer;
+    }
+
+    /**
+     * 📱 電話エフェクト（レトロな帯域制限 ＋ 軽い歪み）
+     */
+    static processTelephone(buffer, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const inputData = buffer.getChannelData(ch);
+            const outputData = outputBuffer.getChannelData(ch);
+            let lp = 0;
+            let hp = 0;
+            const alphaLP = 0.32; // 高域カット（約3000Hz）
+            const alphaHP = 0.91; // 低域カット（約400Hz）
+
+            for (let i = 0; i < numSamples; i++) {
+                hp = alphaHP * (hp + inputData[i] - (i > 0 ? inputData[i - 1] : 0));
+                lp = lp + alphaLP * (hp - lp);
+
+                // 電話特有の軽いクリッピング
+                let s = lp * 1.6;
+                if (s > 0.82) s = 0.82;
+                if (s < -0.82) s = -0.82;
+                outputData[i] = s;
+            }
+        }
+
+        return outputBuffer;
+    }
+
+    /**
+     * 🏛️ 大ホールエフェクト（広大な空間の美しいロングリバーブ）
+     */
+    static processHall(buffer, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+        const extraSamples = Math.floor(sampleRate * 0.85);
+        const totalLength = numSamples + extraSamples;
+        const outputBuffer = ctx.createBuffer(numChannels, totalLength, sampleRate);
+
+        const delays = [
+            Math.floor(sampleRate * 0.042),
+            Math.floor(sampleRate * 0.078),
+            Math.floor(sampleRate * 0.115),
+            Math.floor(sampleRate * 0.165)
+        ];
+        const gains = [0.42, 0.32, 0.24, 0.16];
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const inputData = buffer.getChannelData(ch);
+            const outputData = outputBuffer.getChannelData(ch);
+
+            for (let i = 0; i < numSamples; i++) {
+                outputData[i] = inputData[i] * 0.8;
+            }
+
+            for (let d = 0; d < delays.length; d++) {
+                const delay = delays[d];
+                const gain = gains[d];
+                for (let i = delay; i < totalLength; i++) {
+                    const srcIdx = i - delay;
+                    const sample = srcIdx < numSamples ? inputData[srcIdx] : 0;
+                    outputData[i] += sample * gain + (outputData[i - delay] * 0.25 * gain);
+                }
+            }
+        }
+
+        return outputBuffer;
+    }
+
+    /**
+     * 📢 メガホンエフェクト（拡声器のキンキンした音 ＋ 歪み）
+     */
+    static processMegaphone(buffer, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const inputData = buffer.getChannelData(ch);
+            const outputData = outputBuffer.getChannelData(ch);
+            let hp = 0;
+
+            for (let i = 0; i < numSamples; i++) {
+                hp = 0.86 * (hp + inputData[i] - (i > 0 ? inputData[i - 1] : 0));
+                // 拡声器の飽和歪み（ソフトクリップ）
+                let sample = hp * 2.3;
+                sample = Math.tanh(sample);
+                outputData[i] = sample * 0.9;
+            }
+        }
+
+        return outputBuffer;
+    }
+
+    /**
+     * 📻 古いラジオエフェクト（AM放送の狭い帯域 ＋ レトロな真空管歪み ＋ アナログノイズ質感）
+     */
+    static processRadio(buffer, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const inputData = buffer.getChannelData(ch);
+            const outputData = outputBuffer.getChannelData(ch);
+            let lp = 0;
+            let hp = 0;
+            // AMラジオ帯域（約500Hz〜2500Hz）
+            const alphaLP = 0.28;
+            const alphaHP = 0.89;
+
+            for (let i = 0; i < numSamples; i++) {
+                // バンドパスフィルタ
+                hp = alphaHP * (hp + inputData[i] - (i > 0 ? inputData[i - 1] : 0));
+                lp = lp + alphaLP * (hp - lp);
+
+                // レトロなアナログノイズ（微小なパチパチ・サー音）
+                const crackle = (Math.random() - 0.5) * 0.025;
+
+                // 真空管/トランジスタの温かみのあるサチュレーション歪み
+                let sample = (lp + crackle) * 2.4;
+                sample = Math.tanh(sample);
+
+                // わずかな電波フェージング（0.8Hz の揺らぎ）
+                const fading = 0.9 + 0.1 * Math.sin((2 * Math.PI * 0.8 * i) / sampleRate);
+
+                outputData[i] = sample * fading * 0.88;
+            }
+        }
+
+        return outputBuffer;
+    }
+
+    /**
      * 指定されたエフェクト名に応じたボイス変換を実行
      */
     static applyEffect(buffer, effectName, ctx) {
         switch (effectName) {
+            // --- キャラクターボイス ---
             case 'baby': // 👶 赤ちゃん（超高音）
                 return this.process(buffer, 1.55, ctx);
 
@@ -210,6 +416,25 @@ class PitchShiftEngine {
 
             case 'monster': // 👹 怪獣（迫力の超重低音）
                 return this.process(buffer, 0.58, ctx);
+
+            // --- 環境・空間エフェクト ---
+            case 'cave': // ⛰️ 洞窟（深い反響エコー）
+                return this.processCave(buffer, ctx);
+
+            case 'underwater': // 🫧 水の中（低音こもり ＋ 水の揺らぎ）
+                return this.processUnderwater(buffer, ctx);
+
+            case 'radio': // 📻 古いラジオ（レトロAM放送・真空管歪み）
+                return this.processRadio(buffer, ctx);
+
+            case 'telephone': // 📱 電話（レトロな帯域制限・歪み）
+                return this.processTelephone(buffer, ctx);
+
+            case 'hall': // 🏛️ 大ホール（豊かな空間リバーブ）
+                return this.processHall(buffer, ctx);
+
+            case 'megaphone': // 📢 メガホン（拡声器ボイス）
+                return this.processMegaphone(buffer, ctx);
 
             case 'normal':
             default:

@@ -163,6 +163,13 @@ body, html {
     padding: 6px;
 }
 
+.voice-effect-select optgroup {
+    background: #0f172a;
+    color: #93c5fd;
+    font-weight: 800;
+    font-size: 11px;
+}
+
 .qr-share-btn {
     background: rgba(59, 130, 246, 0.15);
     border: 1px solid rgba(59, 130, 246, 0.4);
