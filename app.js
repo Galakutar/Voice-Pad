@@ -669,14 +669,23 @@ class VoicePadApp {
 
     // --- 写真選択・カメラ撮影関連イベント ---
     initEditorEvents() {
-        // 位置選択ボタン（上・中・下）
+        // 位置選択ボタン（枠の一番上・真ん中・一番下）
         document.querySelectorAll('.pos-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 document.getElementById('edit-label-pos').value = btn.getAttribute('data-pos');
+                this.updateModalPhotoPreview();
             });
         });
+
+        // ラベル文字入力時のリアルタイムプレビュー反映
+        const labelInputEl = document.getElementById('edit-label');
+        if (labelInputEl) {
+            labelInputEl.addEventListener('input', () => {
+                this.updateModalPhotoPreview();
+            });
+        }
 
         const selectPhotoBtn = document.getElementById('select-photo-btn');
         const photoFileInput = document.getElementById('photo-file-input');
@@ -884,6 +893,10 @@ class VoicePadApp {
         const removePhotoBtn = document.getElementById('remove-photo-btn');
         const cropImg = document.getElementById('photo-crop-img');
         const zoomSlider = document.getElementById('photo-zoom-slider');
+        const viewport = document.getElementById('photo-crop-viewport');
+
+        const currentLabel = document.getElementById('edit-label')?.value || (this.editingSlotId ? `ボタン ${this.editingSlotId}` : '');
+        const currentPos = document.getElementById('edit-label-pos')?.value || 'bottom';
 
         if (this.editingImageUrl) {
             if (adjustBox) adjustBox.style.display = 'flex';
@@ -901,6 +914,17 @@ class VoicePadApp {
                 else btn.classList.remove('active');
             });
             document.querySelectorAll('.emoji-opt').forEach(opt => opt.classList.remove('selected'));
+
+            // プレビュー枠上のラベルテキストと位置クラスの更新
+            if (viewport) {
+                viewport.className = `photo-crop-viewport pad-card-preview pos-${currentPos}`;
+                const topEl = document.getElementById('preview-label-top');
+                const centerEl = document.getElementById('preview-label-center');
+                const bottomEl = document.getElementById('preview-label-bottom');
+                if (topEl) topEl.innerText = currentLabel;
+                if (centerEl) centerEl.innerText = currentLabel;
+                if (bottomEl) bottomEl.innerText = currentLabel;
+            }
         } else {
             if (adjustBox) adjustBox.style.display = 'none';
             if (removePhotoBtn) removePhotoBtn.style.display = 'none';
@@ -926,6 +950,32 @@ class VoicePadApp {
         this.editingImageOffsetX = slot.imageOffsetX !== undefined ? slot.imageOffsetX : 0;
         this.editingImageOffsetY = slot.imageOffsetY !== undefined ? slot.imageOffsetY : 0;
         this.editingImageFit = slot.imageFit || 'cover';
+
+        // 実際のボタンカードのサイズ・縦横比を取得してプレビュー枠に完全反映
+        const targetCard = document.getElementById(`pad-${slotId}`);
+        const viewport = document.getElementById('photo-crop-viewport');
+        if (targetCard && viewport) {
+            const rect = targetCard.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                const ratio = rect.width / rect.height;
+                // モーダル内で邪魔にならない適切な基準横幅（最大220px）
+                const baseWidth = Math.min(220, window.innerWidth - 80);
+                const targetHeight = Math.round(baseWidth / ratio);
+                viewport.style.width = `${baseWidth}px`;
+                viewport.style.height = `${targetHeight}px`;
+                viewport.style.aspectRatio = `${rect.width} / ${rect.height}`;
+            }
+            // スロットカラーの同期
+            viewport.style.setProperty('--preview-slot-color', `var(--color-slot-${slotId})`);
+            
+            // スロット番号バッジ＆ステータスの同期
+            const badge = document.getElementById('preview-slot-badge');
+            if (badge) badge.innerText = slot.id;
+            const statusEl = document.getElementById('preview-status');
+            if (statusEl) {
+                statusEl.innerText = slot.audioBlob ? `${slot.duration.toFixed(1)}秒` : '未録音';
+            }
+        }
 
         // 名前位置ボタンの選択反映
         const currentPos = slot.labelPosition || 'bottom';

@@ -123,12 +123,31 @@
                             <span class="crop-hint">（プレビューをドラッグして移動）</span>
                         </div>
 
-                        <!-- インタラクティブ調整プレビュー枠 -->
-                        <div id="photo-crop-viewport" class="photo-crop-viewport">
-                            <img id="photo-crop-img" src="" alt="preview">
-                            <div class="photo-crop-grid-overlay">
-                                <div class="grid-line horizontal"></div>
-                                <div class="grid-line vertical"></div>
+                        <!-- 実際のボタンと全く同じ形状・比率のインタラクティブ調整プレビュー枠 -->
+                        <div class="photo-preview-wrapper">
+                            <div id="photo-crop-viewport" class="photo-crop-viewport pad-card-preview">
+                                <div class="crop-image-layer">
+                                    <img id="photo-crop-img" src="" alt="preview">
+                                </div>
+                                <div class="pad-photo-overlay"></div>
+
+                                <!-- プレビュー上の枠内上部（番号＆上位置ラベル） -->
+                                <div class="preview-header">
+                                    <span id="preview-slot-badge" class="slot-badge">1</span>
+                                    <div id="preview-label-top" class="pad-label preview-label"></div>
+                                    <div class="preview-dummy-btn">⚙️</div>
+                                </div>
+
+                                <!-- プレビュー上の枠内中央（中位置ラベル） -->
+                                <div class="preview-body">
+                                    <div id="preview-label-center" class="pad-label preview-label"></div>
+                                </div>
+
+                                <!-- プレビュー上の枠内下部（下位置ラベル＆秒数） -->
+                                <div class="preview-footer">
+                                    <div id="preview-label-bottom" class="pad-label preview-label"></div>
+                                    <div id="preview-status" class="pad-status">未録音</div>
+                                </div>
                             </div>
                         </div>
 

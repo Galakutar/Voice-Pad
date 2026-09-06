@@ -559,28 +559,57 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
     color: #94a3b8;
 }
 
-/* インタラクティブプレビュー枠（ドラッグ移動対応） */
-.photo-crop-viewport {
-    position: relative;
-    width: 100%;
-    height: 125px;
-    background: #090d14;
-    border-radius: 8px;
-    overflow: hidden;
-    cursor: grab;
-    touch-action: none;
-    border: 2px dashed rgba(59, 130, 246, 0.5);
+/* プレビューラッパー（中央配置） */
+.photo-preview-wrapper {
     display: flex;
     justify-content: center;
     align-items: center;
+    width: 100%;
+    padding: 4px 0;
 }
 
-.photo-crop-viewport:active {
+/* 実際のボタンと完全に同じ形状・比率・スロットカラーのプレビュー枠 */
+.photo-crop-viewport.pad-card-preview {
+    position: relative;
+    width: 220px;
+    height: 140px; /* JavaScriptで画面上のボタンの縦横比に動的調整 */
+    border-radius: 16px;
+    border: 2.5px solid var(--preview-slot-color, #3b82f6);
+    background: #0f141c;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    user-select: none;
+    transition: width 0.2s, height 0.2s;
+}
+
+.photo-crop-viewport.pad-card-preview:active {
     cursor: grabbing;
 }
 
-.photo-crop-viewport img {
+.crop-image-layer {
     position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    z-index: 1;
+    pointer-events: none;
+    border-radius: 13px;
+}
+
+.crop-image-layer img {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -590,33 +619,91 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
     -webkit-user-drag: none;
 }
 
-/* プレビュー内の十字ガイド線 */
-.photo-crop-grid-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
+/* プレビュー枠内の文字・ヘッダー・フッター（実際のボタンと同一配置） */
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     width: 100%;
-    height: 100%;
+    z-index: 4;
+    min-height: 24px;
+    gap: 4px;
     pointer-events: none;
-    box-sizing: border-box;
 }
 
-.photo-crop-grid-overlay .grid-line.horizontal {
-    position: absolute;
-    top: 50%;
-    left: 0;
+.preview-header .slot-badge {
+    background: var(--preview-slot-color, #3b82f6);
+}
+
+.preview-dummy-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 10px;
+    color: #fff;
+    opacity: 0.8;
+}
+
+.preview-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    flex: 1;
     width: 100%;
-    height: 1px;
-    background: rgba(255, 255, 255, 0.2);
+    z-index: 4;
+    pointer-events: none;
 }
 
-.photo-crop-grid-overlay .grid-line.vertical {
-    position: absolute;
-    top: 0;
-    left: 50%;
-    width: 1px;
-    height: 100%;
-    background: rgba(255, 255, 255, 0.2);
+.preview-footer {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    width: 100%;
+    z-index: 4;
+    pointer-events: none;
+    gap: 2px;
+}
+
+.preview-label {
+    display: none;
+}
+
+.pad-card-preview.pos-top #preview-label-top {
+    display: block;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+}
+
+.pad-card-preview.pos-center #preview-label-center {
+    display: block;
+    background: rgba(0, 0, 0, 0.72);
+    padding: 3px 12px;
+    border-radius: 8px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+}
+
+.pad-card-preview.pos-bottom #preview-label-bottom {
+    display: block;
+    background: rgba(0, 0, 0, 0.65);
+    padding: 2px 10px;
+    border-radius: 6px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 /* 拡大縮小スライダー列 */
