@@ -49,18 +49,17 @@ body, html {
     gap: 8px;
 }
 
-/* ヘッダーエリア */
+/* ヘッダーエリア（大きな外枠を削除し、すっきりフラットに配置） */
 .app-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 10px;
-    background: var(--bg-surface);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--border-color);
-    border-radius: 14px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     flex-shrink: 0;
     gap: 6px;
     width: 100%;
@@ -69,24 +68,16 @@ body, html {
 .logo-group {
     display: flex;
     align-items: center;
-    gap: 6px;
     flex-shrink: 0;
-}
-
-.app-icon {
-    width: 28px;
-    height: 28px;
-    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    border-radius: 8px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
 }
 
 .app-title {
     font-size: 15px;
     font-weight: 800;
     white-space: nowrap;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 /* モード切り替えスイッチ (再生 / 録音) */
@@ -995,14 +986,14 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
         gap: 8px;
     }
     .app-title {
-        display: none;
+        font-size: 13px;
     }
     .mode-toggle-btn {
-        padding: 5px 8px;
+        padding: 4px 8px;
         font-size: 11px;
     }
     .voice-effect-select {
-        max-width: 76px;
+        max-width: 82px;
         padding: 4px;
         font-size: 10px;
     }
@@ -1026,8 +1017,8 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
         gap: 4px;
     }
     .app-header {
-        padding: 4px 8px;
-        margin-right: 4px;
+        padding: 0;
+        margin-right: 0;
     }
     .pad-grid {
         grid-template-columns: repeat(3, 1fr);
