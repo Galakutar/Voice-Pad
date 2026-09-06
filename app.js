@@ -229,6 +229,46 @@ class VoicePadApp {
             this.stopAll();
         });
 
+        // QRコードモーダル関連イベント
+        const showQrBtn = document.getElementById('show-qr-btn');
+        const qrModal = document.getElementById('qr-modal-backdrop');
+        const closeQrBtn = document.getElementById('close-qr-modal-btn');
+        const copyUrlBtn = document.getElementById('copy-url-btn');
+
+        if (showQrBtn) {
+            showQrBtn.addEventListener('click', () => {
+                qrModal.classList.add('open');
+            });
+        }
+
+        if (closeQrBtn) {
+            closeQrBtn.addEventListener('click', () => {
+                qrModal.classList.remove('open');
+            });
+        }
+
+        if (qrModal) {
+            qrModal.addEventListener('click', (e) => {
+                if (e.target.id === 'qr-modal-backdrop') {
+                    qrModal.classList.remove('open');
+                }
+            });
+        }
+
+        if (copyUrlBtn) {
+            copyUrlBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText('https://galakutar.github.io/Voice-Pad/');
+                    copyUrlBtn.innerText = '✅ コピーしました！';
+                    setTimeout(() => {
+                        copyUrlBtn.innerText = '🔗 URLをコピーする';
+                    }, 2000);
+                } catch (e) {
+                    alert('URL: https://galakutar.github.io/Voice-Pad/');
+                }
+            });
+        }
+
         // モーダル関連イベント
         document.getElementById('close-modal-btn').addEventListener('click', () => this.closeEditModal());
         document.getElementById('modal-backdrop').addEventListener('click', (e) => {
@@ -430,15 +470,22 @@ class VoicePadApp {
             const audioUrl = URL.createObjectURL(slot.audioBlob);
             const audio = new Audio(audioUrl);
 
-            // ボイスエフェクト（再生レート調整）
+            // iOS Safari & 各種ブラウザでピッチ（声の高さ）を劇的に変化させる設定
+            // ※これらを false にしないと、ブラウザが勝手に音程を元に戻して早送り/スローになってしまいます
+            audio.preservesPitch = false;
+            audio.webkitPreservesPitch = false;
+            audio.mozPreservesPitch = false;
+
+            // ボイスエフェクト（ピッチ・声の高さ調整）
             if (this.currentEffect === 'high') {
-                audio.playbackRate = 1.35; // 高い声 (ヘリウム)
+                audio.playbackRate = 1.45; // 🐿️ 高い声（ヘリウム声 / こども声）
             } else if (this.currentEffect === 'low') {
-                audio.playbackRate = 0.75; // 低い声 (巨人)
+                audio.playbackRate = 0.68; // 👹 低い声（巨人 / モンスター声）
             } else if (this.currentEffect === 'robot') {
-                audio.playbackRate = 1.15;
+                audio.playbackRate = 1.25; // 🤖 ロボット風ハイトーン
             } else {
-                audio.playbackRate = 1.0;
+                audio.playbackRate = 1.0; // 🎙️ 通常の声
+                audio.preservesPitch = true;
             }
 
             // UIを再生中表示
