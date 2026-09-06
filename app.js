@@ -459,14 +459,16 @@ class VoicePadApp {
 
         this.currentEffect = 'normal'; // 'normal', 'high', 'low', 'robot'
 
-        // 6つのスロットの初期データ定義
+        // 8つのスロットの初期データ定義
         this.slots = [
             { id: 1, label: 'ボタン 1', labelPosition: 'bottom', emoji: '🔴', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
             { id: 2, label: 'ボタン 2', labelPosition: 'bottom', emoji: '🟠', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
             { id: 3, label: 'ボタン 3', labelPosition: 'bottom', emoji: '🟡', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
             { id: 4, label: 'ボタン 4', labelPosition: 'bottom', emoji: '🟢', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
             { id: 5, label: 'ボタン 5', labelPosition: 'bottom', emoji: '🔵', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
-            { id: 6, label: 'ボタン 6', labelPosition: 'bottom', emoji: '🟣', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 }
+            { id: 6, label: 'ボタン 6', labelPosition: 'bottom', emoji: '🔷', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
+            { id: 7, label: 'ボタン 7', labelPosition: 'bottom', emoji: '🟣', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
+            { id: 8, label: 'ボタン 8', labelPosition: 'bottom', emoji: '🌸', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 }
         ];
 
         // 再生中のオーディオソース (slotId -> AudioBufferSourceNode)
@@ -488,7 +490,6 @@ class VoicePadApp {
         await this.loadSavedSlots();
         this.renderSlots();
         this.initEvents();
-        this.initCanvasVisualizers();
     }
 
     // iOS Safari 向けのオーディオアンロック

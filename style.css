@@ -7,13 +7,15 @@
     --text-primary: #ffffff;
     --text-secondary: #94a3b8;
     
-    /* 6スロットのテーマカラー */
+    /* 8スロットのテーマカラー */
     --color-slot-1: #ef4444; /* レッド */
     --color-slot-2: #f97316; /* オレンジ */
     --color-slot-3: #eab308; /* イエロー */
     --color-slot-4: #10b981; /* グリーン */
-    --color-slot-5: #06b6d4; /* シアン/ブルー */
-    --color-slot-6: #8b5cf6; /* パープル */
+    --color-slot-5: #06b6d4; /* シアン */
+    --color-slot-6: #3b82f6; /* ブルー */
+    --color-slot-7: #8b5cf6; /* パープル */
+    --color-slot-8: #ec4899; /* ピンク */
 }
 
 * {
@@ -182,13 +184,13 @@ body, html {
     transform: scale(0.95);
 }
 
-/* 6スロットのメイングリッド */
+/* 8スロットのメイングリッド（横長時: 4列×2行） */
 .pad-grid {
     flex: 1;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     grid-template-rows: repeat(2, 1fr);
-    gap: 10px;
+    gap: 8px;
     min-height: 0;
     height: 100%;
 }
@@ -272,13 +274,15 @@ body, html {
     pointer-events: none;
 }
 
-/* スロットごとのカラー設定 */
+/* スロットごとのカラー設定（全8スロット） */
 .pad-card[data-slot="1"] { --slot-color: var(--color-slot-1); }
 .pad-card[data-slot="2"] { --slot-color: var(--color-slot-2); }
 .pad-card[data-slot="3"] { --slot-color: var(--color-slot-3); }
 .pad-card[data-slot="4"] { --slot-color: var(--color-slot-4); }
 .pad-card[data-slot="5"] { --slot-color: var(--color-slot-5); }
 .pad-card[data-slot="6"] { --slot-color: var(--color-slot-6); }
+.pad-card[data-slot="7"] { --slot-color: var(--color-slot-7); }
+.pad-card[data-slot="8"] { --slot-color: var(--color-slot-8); }
 
 /* 録音モード時のパッド外観 */
 body.mode-record .pad-card {
@@ -977,12 +981,12 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
 }
 
 /* ==========================================
-   📱 縦画面（Portrait: iPhone）最適化
+   📱 縦画面（Portrait: iPhone / iPad）最適化（2列×4行 = 8個）
    ========================================== */
-@media (max-width: 600px) and (orientation: portrait) {
+@media (orientation: portrait) {
     .pad-grid {
         grid-template-columns: repeat(2, 1fr);
-        grid-template-rows: repeat(3, 1fr);
+        grid-template-rows: repeat(4, 1fr);
         gap: 8px;
     }
     .app-title {
@@ -1001,17 +1005,29 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
         padding: 4px 6px;
         font-size: 10px;
     }
+    .pad-card {
+        padding: 4px 6px;
+    }
+    .pad-emoji {
+        font-size: 24px;
+    }
+    .pad-label {
+        font-size: 12px;
+    }
+    .pad-status {
+        font-size: 10px;
+    }
 }
 
 /* ==========================================
-   📱 横画面（Landscape: iPhone / iPad）最適化
+   📱 横画面（Landscape: iPhone / iPad / Desktop）最適化（4列×2行 = 8個）
    インカメラ（ノッチ/ダイナミックアイランド）の干渉を完全回避！
    ========================================== */
 @media (orientation: landscape) {
     #app-container {
         padding-top: max(4px, env(safe-area-inset-top, 4px));
         padding-bottom: max(4px, env(safe-area-inset-bottom, 4px));
-        /* インカメラがある右端＆左端に十分なマージンを確保（ボタン3と6の見切れ防止） */
+        /* インカメラがある右端＆左端に十分なマージンを確保 */
         padding-left: max(16px, env(safe-area-inset-left, 16px));
         padding-right: max(44px, env(safe-area-inset-right, 44px));
         gap: 4px;
@@ -1021,10 +1037,9 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
         margin-right: 0;
     }
     .pad-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
         grid-template-rows: repeat(2, 1fr);
         gap: 6px;
-        /* 右側のインカメラ領域を避けて少し左寄りに縮小フィット */
         width: 100%;
         max-width: 98%;
     }
