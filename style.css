@@ -188,7 +188,7 @@ body, html {
     height: 100%;
 }
 
-/* 各パッドカード */
+/* パッドカード全体 */
 .pad-card {
     position: relative;
     background: var(--bg-surface);
@@ -199,16 +199,59 @@ body, html {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 8px 10px;
+    align-items: center;
+    padding: 6px 8px;
     cursor: pointer;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
     transition: transform 0.1s, box-shadow 0.2s, border-color 0.2s, background 0.2s;
     overflow: hidden;
     min-height: 0;
+    box-sizing: border-box;
 }
 
 .pad-card:active {
     transform: scale(0.96);
+}
+
+/* 写真が設定されているボタン（枠内いっぱいに写真を表示） */
+.pad-card.has-photo {
+    padding: 6px 8px !important;
+    border-width: 2.5px;
+}
+
+/* 枠内いっぱいのフルサイズ背景写真 */
+.pad-photo-full {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+    pointer-events: none;
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.pad-card:active .pad-photo-full {
+    transform: scale(1.06);
+}
+
+/* 写真上の暗幕オーバーレイ（文字をくっきり見せるための半透明グラデーション） */
+.pad-photo-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        180deg, 
+        rgba(0, 0, 0, 0.45) 0%, 
+        rgba(0, 0, 0, 0.1) 30%, 
+        rgba(0, 0, 0, 0.2) 65%, 
+        rgba(0, 0, 0, 0.75) 100%
+    );
+    z-index: 2;
+    pointer-events: none;
 }
 
 /* スロットごとのカラー設定 */
@@ -235,7 +278,7 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
 .pad-card.playing {
     border-color: #ffffff !important;
     background: rgba(255, 255, 255, 0.12) !important;
-    box-shadow: 0 0 30px var(--slot-color), inset 0 0 20px rgba(255, 255, 255, 0.2);
+    box-shadow: 0 0 35px var(--slot-color), inset 0 0 20px rgba(255, 255, 255, 0.3);
     animation: playingPulse 1s infinite alternate ease-in-out;
 }
 
@@ -258,141 +301,169 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
     100% { transform: scale(1.01); }
 }
 
-/* カード上部：スロット番号 ＆ 設定ボタン */
+/* 1. カード上部エリア（枠の一番上） */
 .pad-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     width: 100%;
-    z-index: 2;
+    z-index: 4;
+    min-height: 28px;
+    gap: 4px;
+    box-sizing: border-box;
 }
 
-.slot-badge {
+.pad-header .slot-badge {
     font-size: 11px;
     font-weight: 800;
     color: #fff;
     background: var(--slot-color);
-    padding: 1px 6px;
-    border-radius: 5px;
+    padding: 2px 7px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    flex-shrink: 0;
 }
 
-.pad-settings-btn {
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
+.pad-header .pad-settings-btn {
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.25);
     color: #fff;
-    width: 26px;
-    height: 26px;
-    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: pointer;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    flex-shrink: 0;
 }
 
-.pad-settings-btn:active {
-    background: rgba(255, 255, 255, 0.3);
+.pad-header .pad-settings-btn:active {
+    background: rgba(255, 255, 255, 0.4);
     transform: scale(0.9);
 }
 
-/* カード中央：大きなタッチターゲット ＆ アイコン */
-.pad-center {
+/* 枠の一番上にある名前ラベル */
+.pad-header .pad-label {
+    flex: 1;
+    font-size: clamp(12px, 2.2vh, 15px);
+    font-weight: 800;
+    color: #ffffff;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+    padding: 2px 6px;
+}
+
+.pad-card.has-photo .pad-header .pad-label {
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+}
+
+/* 2. カード中央ボディエリア（枠の真ん中） */
+.pad-body {
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
     flex: 1;
-    z-index: 2;
-    padding: 2px 0;
+    width: 100%;
+    z-index: 4;
     min-height: 0;
     position: relative;
-    width: 100%;
+    pointer-events: none;
+    box-sizing: border-box;
 }
 
-/* 名前（ラベル）の位置：上（Top） */
-.pad-center.pos-top .pad-label {
-    order: 1;
+.pad-body .pad-emoji {
+    font-size: clamp(26px, 5.5vh, 46px);
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+    transition: transform 0.15s;
+    line-height: 1.1;
     margin-bottom: 2px;
 }
-.pad-center.pos-top .pad-emoji, .pad-center.pos-top .pad-photo-img {
-    order: 2;
-}
-.pad-center.pos-top .pad-status {
-    order: 3;
+
+/* 枠の真ん中にある名前ラベル */
+.pad-body .pad-label {
+    font-size: clamp(13px, 2.4vh, 17px);
+    font-weight: 800;
+    color: #ffffff;
+    text-align: center;
+    max-width: 92%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+    background: rgba(0, 0, 0, 0.72);
+    padding: 3px 12px;
+    border-radius: 8px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
 }
 
-/* 名前（ラベル）の位置：下（Bottom: 標準） */
-.pad-center.pos-bottom .pad-emoji, .pad-center.pos-bottom .pad-photo-img {
-    order: 1;
-}
-.pad-center.pos-bottom .pad-label {
-    order: 2;
-    margin-top: 1px;
-}
-.pad-center.pos-bottom .pad-status {
-    order: 3;
-}
-
-/* 名前（ラベル）の位置：中央（Center / 重ね合わせ） */
-.pad-center.pos-center {
-    justify-content: center;
+/* 3. カード下部フッターエリア（枠の一番下） */
+.pad-footer {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
     align-items: center;
-}
-.pad-center.pos-center .pad-emoji, .pad-center.pos-center .pad-photo-img {
-    order: 1;
-}
-.pad-center.pos-center .pad-label {
-    order: 2;
-    background: rgba(0, 0, 0, 0.7);
-    padding: 1px 8px;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-    margin-top: -8px; /* アイコンの下部に少し重ねてリッチに表示 */
-    z-index: 3;
-}
-.pad-center.pos-center .pad-status {
-    order: 3;
+    width: 100%;
+    z-index: 4;
+    pointer-events: none;
+    gap: 2px;
+    box-sizing: border-box;
 }
 
-.pad-emoji {
-    font-size: clamp(22px, 4.5vh, 38px);
-    margin-bottom: 2px;
-    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.4));
-    transition: transform 0.15s;
-}
-
-/* 取り込んだ写真アイコンのスタイル */
-.pad-photo-img {
-    width: clamp(34px, 6vh, 52px);
-    height: clamp(34px, 6vh, 52px);
-    border-radius: 12px;
-    object-fit: cover;
-    margin-bottom: 2px;
-    border: 1.5px solid rgba(255, 255, 255, 0.3);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-    transition: transform 0.15s;
-}
-
-.pad-card:active .pad-photo-img {
-    transform: scale(1.1);
-}
-
-.pad-label {
+/* 枠の一番下にある名前ラベル */
+.pad-footer .pad-label {
     font-size: clamp(12px, 2.2vh, 15px);
     font-weight: 800;
     color: #ffffff;
     text-align: center;
-    max-width: 100%;
+    max-width: 96%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
 }
 
+.pad-card.has-photo .pad-footer .pad-label {
+    background: rgba(0, 0, 0, 0.65);
+    padding: 2px 10px;
+    border-radius: 6px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ステータス（秒数） */
 .pad-status {
+    font-size: 11px;
+    color: #cbd5e1;
+    font-weight: 700;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+    line-height: 1.2;
+}
+
+.pad-card.has-photo .pad-status {
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    padding: 1px 8px;
+    border-radius: 6px;
+    color: #e2e8f0;
     font-size: 10px;
-    color: var(--text-secondary);
-    font-weight: 600;
-    margin-top: 1px;
 }
 
 /* 位置選択セグメントボタン */
@@ -412,9 +483,10 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     cursor: pointer;
+    white-space: nowrap;
     transition: all 0.15s;
 }
 

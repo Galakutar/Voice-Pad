@@ -222,7 +222,9 @@ class VoicePadApp {
 
         this.slots.forEach(slot => {
             const card = document.createElement('div');
-            card.className = 'pad-card';
+            const hasPhoto = !!slot.imageUrl;
+            const pos = slot.labelPosition || 'bottom';
+            card.className = `pad-card pos-${pos}${hasPhoto ? ' has-photo' : ''}`;
             card.setAttribute('data-slot', slot.id);
             card.id = `pad-${slot.id}`;
 
@@ -232,16 +234,18 @@ class VoicePadApp {
                 statusText = `${slot.duration.toFixed(1)}秒`;
             }
 
-            // 写真が設定されていれば画像、なければ絵文字
-            const iconHtml = slot.imageUrl 
-                ? `<img src="${slot.imageUrl}" class="pad-photo-img" alt="icon">` 
-                : `<div class="pad-emoji">${slot.emoji}</div>`;
-
-            const posClass = `pos-${slot.labelPosition || 'bottom'}`;
+            const labelHtml = `<div class="pad-label">${slot.label}</div>`;
 
             card.innerHTML = `
+                ${hasPhoto ? `
+                    <img src="${slot.imageUrl}" class="pad-photo-full" alt="photo">
+                    <div class="pad-photo-overlay"></div>
+                ` : ''}
+
+                <!-- 枠の一番上 (Top) -->
                 <div class="pad-header">
                     <span class="slot-badge">${slot.id}</span>
+                    ${pos === 'top' ? labelHtml : ''}
                     <button class="pad-settings-btn" title="設定・名前変更" data-slot="${slot.id}">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="3"></circle>
@@ -250,13 +254,17 @@ class VoicePadApp {
                     </button>
                 </div>
 
-                <div class="pad-center ${posClass}">
-                    ${iconHtml}
-                    <div class="pad-label">${slot.label}</div>
-                    <div class="pad-status">${statusText}</div>
+                <!-- 枠の真ん中 (Center) -->
+                <div class="pad-body">
+                    ${!hasPhoto ? `<div class="pad-emoji">${slot.emoji}</div>` : ''}
+                    ${pos === 'center' ? labelHtml : ''}
                 </div>
 
-                <canvas class="wave-canvas" id="canvas-${slot.id}"></canvas>
+                <!-- 枠の一番下 (Bottom) -->
+                <div class="pad-footer">
+                    ${pos === 'bottom' ? labelHtml : ''}
+                    <div class="pad-status">${statusText}</div>
+                </div>
             `;
 
             grid.appendChild(card);
@@ -648,7 +656,7 @@ class VoicePadApp {
                 const img = new Image();
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    const size = 256; // 軽量かつクッキリな 256x256px
+                    const size = 512; // ボタン枠いっぱいに高精細で綺麗に表示する 512x512px
                     canvas.width = size;
                     canvas.height = size;
                     const ctx = canvas.getContext('2d');
