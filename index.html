@@ -45,12 +45,19 @@
 
             <!-- ヘッダー右側コントロール -->
             <div class="header-controls">
-                <!-- ボイスチェンジャー（縦画面でもはみ出さないコンパクト表記） -->
+                <!-- ボイスチェンジャー（豊富な声のキャラクター） -->
                 <select id="voice-effect" class="voice-effect-select" title="ボイスチェンジャー">
                     <option value="normal">🎙️ 通常</option>
-                    <option value="high">🐿️ 高音</option>
-                    <option value="low">👹 低音</option>
-                    <option value="robot">🤖 ロボ</option>
+                    <option value="baby">👶 赤ちゃん</option>
+                    <option value="boy">👦 男の子</option>
+                    <option value="girl">👧 女の子</option>
+                    <option value="man">👨 男の人</option>
+                    <option value="woman">👩 女の人</option>
+                    <option value="old_man">👴 おじいさん</option>
+                    <option value="old_woman">👵 おばあさん</option>
+                    <option value="alien">👽 宇宙人</option>
+                    <option value="robot">🤖 ロボット</option>
+                    <option value="monster">👹 怪獣</option>
                 </select>
 
                 <!-- QRコード表示ボタン -->
@@ -98,18 +105,57 @@
             <div class="form-group">
                 <label class="form-label">アイコン（写真 または 絵文字）</label>
                 
-                <!-- 写真取り込み＆プレビューエリア -->
+                <!-- 写真取り込み＆プレビュー・調整エリア -->
                 <div class="photo-select-container">
-                    <div id="photo-preview-box" class="photo-preview-box">
-                        <span id="current-icon-display" style="font-size: 28px;">🔊</span>
-                    </div>
-                    <div class="photo-btn-group">
-                        <button type="button" id="select-photo-btn" class="action-btn download-btn" style="margin: 0; padding: 6px 10px; font-size: 11px;">
+                    <div class="photo-top-bar">
+                        <button type="button" id="select-photo-btn" class="action-btn download-btn" style="margin: 0; padding: 7px 12px; font-size: 12px; flex: 1;">
                             📷 写真を撮る / アルバムから選ぶ
                         </button>
-                        <button type="button" id="remove-photo-btn" class="action-btn delete-btn" style="display: none; margin: 0; padding: 4px 8px; font-size: 10px;">
-                            🗑️ 写真を消して絵文字に戻す
+                        <button type="button" id="remove-photo-btn" class="action-btn delete-btn" style="display: none; margin: 0; padding: 7px 10px; font-size: 11px;">
+                            🗑️ 写真を削除
                         </button>
+                    </div>
+
+                    <!-- 写真が選択されている時に表示される調整プレビューエリア -->
+                    <div id="photo-adjust-box" class="photo-adjust-box" style="display: none;">
+                        <div class="photo-adjust-header">
+                            <span>🖼️ 写真の大きさ・位置の調整</span>
+                            <span class="crop-hint">（プレビューをドラッグして移動）</span>
+                        </div>
+
+                        <!-- インタラクティブ調整プレビュー枠 -->
+                        <div id="photo-crop-viewport" class="photo-crop-viewport">
+                            <img id="photo-crop-img" src="" alt="preview">
+                            <div class="photo-crop-grid-overlay">
+                                <div class="grid-line horizontal"></div>
+                                <div class="grid-line vertical"></div>
+                            </div>
+                        </div>
+
+                        <!-- 拡大・縮小ズームスライダー -->
+                        <div class="adjust-control-row">
+                            <span class="adjust-label">🔍 大きさ</span>
+                            <input type="range" id="photo-zoom-slider" min="50" max="300" value="100" class="adjust-slider">
+                            <span id="photo-zoom-val" class="adjust-val">100%</span>
+                        </div>
+
+                        <!-- 位置微調整ボタン＆クイックフィット -->
+                        <div class="adjust-tools-row">
+                            <div class="dpad-container">
+                                <button type="button" class="dpad-btn" data-move="up" title="上へ移動">⬆️</button>
+                                <div class="dpad-middle">
+                                    <button type="button" class="dpad-btn" data-move="left" title="左へ移動">⬅️</button>
+                                    <button type="button" class="dpad-btn dpad-reset" data-move="reset" title="中央・等倍に戻す">🔄</button>
+                                    <button type="button" class="dpad-btn" data-move="right" title="右へ移動">➡️</button>
+                                </div>
+                                <button type="button" class="dpad-btn" data-move="down" title="下へ移動">⬇️</button>
+                            </div>
+
+                            <div class="fit-mode-container">
+                                <button type="button" id="btn-fit-cover" class="fit-mode-btn active" data-fit="cover">🔲 枠いっぱい</button>
+                                <button type="button" id="btn-fit-contain" class="fit-mode-btn" data-fit="contain">🔳 全体を表示</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

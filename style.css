@@ -153,7 +153,14 @@ body, html {
     font-weight: 700;
     cursor: pointer;
     outline: none;
-    max-width: 86px;
+    max-width: 95px;
+}
+
+.voice-effect-select option {
+    background: #1e293b;
+    color: #ffffff;
+    font-size: 13px;
+    padding: 6px;
 }
 
 .qr-share-btn {
@@ -219,7 +226,20 @@ body, html {
     border-width: 2.5px;
 }
 
-/* 枠内いっぱいのフルサイズ背景写真 */
+/* 写真ラッパー（カード枠内に収め、拡大時のはみ出しを防止） */
+.pad-photo-wrapper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    z-index: 1;
+    pointer-events: none;
+    border-radius: 14px;
+}
+
+/* 枠内背景写真（拡大・位置調整対応） */
 .pad-photo-full {
     position: absolute;
     top: 0;
@@ -227,13 +247,13 @@ body, html {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    z-index: 1;
     pointer-events: none;
-    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transform-origin: center center;
+    transition: transform 0.1s ease-out;
 }
 
 .pad-card:active .pad-photo-full {
-    transform: scale(1.06);
+    filter: brightness(1.1);
 }
 
 /* 写真上の暗幕オーバーレイ（文字をくっきり見せるための半透明グラデーション） */
@@ -496,42 +516,218 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
     box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
 }
 
-/* 写真選択プレビューUI */
+/* 写真選択＆調整エリア */
 .photo-select-container {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-direction: column;
+    gap: 8px;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border-color);
-    padding: 8px;
+    padding: 10px;
     border-radius: 12px;
     margin-bottom: 6px;
 }
 
-.photo-preview-box {
-    width: 48px;
-    height: 48px;
+.photo-top-bar {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.photo-adjust-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 10px;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px dashed var(--border-color);
+    padding: 8px;
+    margin-top: 4px;
+}
+
+.photo-adjust-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #93c5fd;
+}
+
+.photo-adjust-header .crop-hint {
+    font-size: 10px;
+    color: #94a3b8;
+}
+
+/* インタラクティブプレビュー枠（ドラッグ移動対応） */
+.photo-crop-viewport {
+    position: relative;
+    width: 100%;
+    height: 125px;
+    background: #090d14;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    border: 2px dashed rgba(59, 130, 246, 0.5);
     display: flex;
     justify-content: center;
     align-items: center;
-    overflow: hidden;
-    flex-shrink: 0;
 }
 
-.photo-preview-box img {
+.photo-crop-viewport:active {
+    cursor: grabbing;
+}
+
+.photo-crop-viewport img {
+    position: absolute;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    pointer-events: none;
+    transform-origin: center center;
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
-.photo-btn-group {
+/* プレビュー内の十字ガイド線 */
+.photo-crop-grid-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.photo-crop-grid-overlay .grid-line.horizontal {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.photo-crop-grid-overlay .grid-line.vertical {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 1px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* 拡大縮小スライダー列 */
+.adjust-control-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.adjust-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #cbd5e1;
+    white-space: nowrap;
+}
+
+.adjust-slider {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.2);
+    accent-color: #3b82f6;
+    cursor: pointer;
+}
+
+.adjust-val {
+    font-size: 11px;
+    font-weight: 800;
+    color: #38bdf8;
+    width: 40px;
+    text-align: right;
+}
+
+/* 十字キーとフィットモード */
+.adjust-tools-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding-top: 2px;
+}
+
+.dpad-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.dpad-middle {
+    display: flex;
+    gap: 2px;
+}
+
+.dpad-btn {
+    width: 28px;
+    height: 24px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.1s;
+}
+
+.dpad-btn:active {
+    background: #3b82f6;
+    transform: scale(0.9);
+}
+
+.dpad-btn.dpad-reset {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.4);
+    font-size: 12px;
+}
+
+.dpad-btn.dpad-reset:active {
+    background: #ef4444;
+}
+
+.fit-mode-container {
     display: flex;
     flex-direction: column;
     gap: 4px;
     flex: 1;
+    max-width: 140px;
+}
+
+.fit-mode-btn {
+    padding: 6px 8px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.06);
+    color: #cbd5e1;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s;
+}
+
+.fit-mode-btn.active {
+    background: #3b82f6;
+    color: #fff;
+    border-color: #3b82f6;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
 }
 
 /* 背景波形アニメーション用Canvas */

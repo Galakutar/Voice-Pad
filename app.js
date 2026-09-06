@@ -45,6 +45,10 @@ class StorageManager {
                 labelPosition: slotData.labelPosition || 'bottom',
                 emoji: slotData.emoji,
                 imageUrl: slotData.imageUrl || null,
+                imageScale: slotData.imageScale !== undefined ? slotData.imageScale : 1.0,
+                imageOffsetX: slotData.imageOffsetX !== undefined ? slotData.imageOffsetX : 0,
+                imageOffsetY: slotData.imageOffsetY !== undefined ? slotData.imageOffsetY : 0,
+                imageFit: slotData.imageFit || 'cover',
                 audioBlob: slotData.audioBlob,
                 duration: slotData.duration
             };
@@ -66,27 +70,30 @@ class StorageManager {
     }
 }
 
-// --- 再生スピードを変えずに音程（声の高さ）だけを変えるピッチシフター ---
+// --- 再生スピードを変えずに音程（声の高さ）や声質を変えるボイスチェンジエンジン ---
 class PitchShiftEngine {
     /**
-     * グラニュラー・オーバーラップ・アド法による高品質ピッチシフト
+     * グラニュラー・オーバーラップ・アド法による高品質ピッチシフト＆エフェクト
      * @param {AudioBuffer} buffer - 元の音声バッファ
-     * @param {number} pitchRatio - ピッチ倍率 (1.35 = 高い声, 0.72 = 低い声)
+     * @param {number} pitchRatio - ピッチ倍率
      * @param {AudioContext} ctx - AudioContext
-     * @returns {AudioBuffer} ピッチシフト後のバッファ（再生時間は元と同一！）
+     * @param {Object} options - トレモロやリングモジュレーション等の追加効果
+     * @returns {AudioBuffer} 変換後のバッファ（再生時間は元と同一＝スピード不変！）
      */
-    static process(buffer, pitchRatio, ctx) {
-        if (pitchRatio === 1.0) return buffer;
-
+    static process(buffer, pitchRatio, ctx, options = {}) {
         const numChannels = buffer.numberOfChannels;
         const sampleRate = buffer.sampleRate;
         const numSamples = buffer.length;
 
-        // グレインサイズ（約50ms）
-        const grainSize = Math.floor(sampleRate * 0.05);
+        // ピッチも変えず追加エフェクトもない場合はそのまま返す
+        if (pitchRatio === 1.0 && !options.tremoloFreq && !options.ringModFreq) {
+            return buffer;
+        }
+
+        // グレインサイズ（約45ms）
+        const grainSize = Math.floor(sampleRate * 0.045);
         const hopSize = Math.floor(grainSize / 2);
 
-        // 出力バッファ作成（長さは元とまったく同じ＝スピード不変）
         const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
 
         for (let ch = 0; ch < numChannels; ch++) {
@@ -99,22 +106,46 @@ class PitchShiftEngine {
                 windowTable[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (grainSize - 1)));
             }
 
-            for (let inPos = 0; inPos < numSamples - grainSize; inPos += hopSize) {
-                for (let i = 0; i < grainSize; i++) {
-                    const outPos = inPos + i;
-                    if (outPos >= numSamples) break;
+            if (pitchRatio === 1.0) {
+                // ピッチ変更なしの場合はそのままコピー
+                for (let i = 0; i < numSamples; i++) {
+                    outputData[i] = inputData[i];
+                }
+            } else {
+                // ピッチシフト処理
+                for (let inPos = 0; inPos < numSamples - grainSize; inPos += hopSize) {
+                    for (let i = 0; i < grainSize; i++) {
+                        const outPos = inPos + i;
+                        if (outPos >= numSamples) break;
 
-                    // ピッチ倍率に応じたリサンプリング位置計算
-                    const srcIndex = inPos + (i * pitchRatio);
-                    const i0 = Math.floor(srcIndex);
-                    const i1 = Math.min(i0 + 1, numSamples - 1);
-                    const frac = srcIndex - i0;
+                        const srcIndex = inPos + (i * pitchRatio);
+                        const i0 = Math.floor(srcIndex);
+                        const i1 = Math.min(i0 + 1, numSamples - 1);
+                        const frac = srcIndex - i0;
 
-                    if (i0 < numSamples && i0 >= 0) {
-                        // 線形補間
-                        const sample = inputData[i0] * (1 - frac) + inputData[i1] * frac;
-                        outputData[outPos] += sample * windowTable[i] * 0.9;
+                        if (i0 < numSamples && i0 >= 0) {
+                            const sample = inputData[i0] * (1 - frac) + inputData[i1] * frac;
+                            outputData[outPos] += sample * windowTable[i] * 0.9;
+                        }
                     }
+                }
+            }
+
+            // オプション1: 声の震え（おじいさん・おばあさん向けビブラート・トレモロ効果）
+            if (options.tremoloFreq) {
+                const depth = options.tremoloDepth || 0.35;
+                for (let i = 0; i < numSamples; i++) {
+                    const lfo = 1.0 - depth + depth * Math.sin((2 * Math.PI * options.tremoloFreq * i) / sampleRate);
+                    outputData[i] *= lfo;
+                }
+            }
+
+            // オプション2: SFリングモジュレーション（宇宙人向けエフェクト）
+            if (options.ringModFreq) {
+                const mix = options.ringModMix || 0.7;
+                for (let i = 0; i < numSamples; i++) {
+                    const carrier = Math.sin((2 * Math.PI * options.ringModFreq * i) / sampleRate);
+                    outputData[i] = outputData[i] * (1 - mix + mix * carrier * 1.4);
                 }
             }
         }
@@ -123,15 +154,14 @@ class PitchShiftEngine {
     }
 
     /**
-     * ロボット声エフェクト
+     * ロボット声エフェクト（65Hz 金属的モジュレーション）
      */
     static processRobot(buffer, ctx) {
         const numChannels = buffer.numberOfChannels;
         const sampleRate = buffer.sampleRate;
         const numSamples = buffer.length;
         const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
-
-        const modFreq = 65; // 65Hzの金属的モジュレーション
+        const modFreq = 65;
 
         for (let ch = 0; ch < numChannels; ch++) {
             const inputData = buffer.getChannelData(ch);
@@ -139,11 +169,52 @@ class PitchShiftEngine {
 
             for (let i = 0; i < numSamples; i++) {
                 const carrier = Math.sin((2 * Math.PI * modFreq * i) / sampleRate);
-                outputData[i] = inputData[i] * carrier * 1.2;
+                outputData[i] = inputData[i] * carrier * 1.25;
             }
         }
 
         return outputBuffer;
+    }
+
+    /**
+     * 指定されたエフェクト名に応じたボイス変換を実行
+     */
+    static applyEffect(buffer, effectName, ctx) {
+        switch (effectName) {
+            case 'baby': // 👶 赤ちゃん（超高音）
+                return this.process(buffer, 1.55, ctx);
+
+            case 'boy': // 👦 男の子（元気な子供声）
+                return this.process(buffer, 1.15, ctx);
+
+            case 'girl': // 👧 女の子（澄んだ高音）
+                return this.process(buffer, 1.32, ctx);
+
+            case 'man': // 👨 男の人（落ち着いた大人の低音）
+                return this.process(buffer, 0.85, ctx);
+
+            case 'woman': // 👩 女の人（自然な女性声）
+                return this.process(buffer, 1.22, ctx);
+
+            case 'old_man': // 👴 おじいさん（低音 ＋ ゆっくりした声の震え）
+                return this.process(buffer, 0.72, ctx, { tremoloFreq: 5.5, tremoloDepth: 0.38 });
+
+            case 'old_woman': // 👵 おばあさん（高め ＋ 声の震え）
+                return this.process(buffer, 1.25, ctx, { tremoloFreq: 6.0, tremoloDepth: 0.38 });
+
+            case 'alien': // 👽 宇宙人（高音 ＋ SFワブルリングモジュレーション）
+                return this.process(buffer, 1.38, ctx, { ringModFreq: 35, ringModMix: 0.75 });
+
+            case 'robot': // 🤖 ロボット（金属的ロボットボイス）
+                return this.processRobot(buffer, ctx);
+
+            case 'monster': // 👹 怪獣（迫力の超重低音）
+                return this.process(buffer, 0.58, ctx);
+
+            case 'normal':
+            default:
+                return buffer;
+        }
     }
 }
 
@@ -165,20 +236,24 @@ class VoicePadApp {
 
         // 6つのスロットの初期データ定義
         this.slots = [
-            { id: 1, label: 'ボタン 1', labelPosition: 'bottom', emoji: '🔴', imageUrl: null, audioBlob: null, duration: 0 },
-            { id: 2, label: 'ボタン 2', labelPosition: 'bottom', emoji: '🟠', imageUrl: null, audioBlob: null, duration: 0 },
-            { id: 3, label: 'ボタン 3', labelPosition: 'bottom', emoji: '🟡', imageUrl: null, audioBlob: null, duration: 0 },
-            { id: 4, label: 'ボタン 4', labelPosition: 'bottom', emoji: '🟢', imageUrl: null, audioBlob: null, duration: 0 },
-            { id: 5, label: 'ボタン 5', labelPosition: 'bottom', emoji: '🔵', imageUrl: null, audioBlob: null, duration: 0 },
-            { id: 6, label: 'ボタン 6', labelPosition: 'bottom', emoji: '🟣', imageUrl: null, audioBlob: null, duration: 0 }
+            { id: 1, label: 'ボタン 1', labelPosition: 'bottom', emoji: '🔴', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
+            { id: 2, label: 'ボタン 2', labelPosition: 'bottom', emoji: '🟠', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
+            { id: 3, label: 'ボタン 3', labelPosition: 'bottom', emoji: '🟡', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
+            { id: 4, label: 'ボタン 4', labelPosition: 'bottom', emoji: '🟢', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
+            { id: 5, label: 'ボタン 5', labelPosition: 'bottom', emoji: '🔵', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 },
+            { id: 6, label: 'ボタン 6', labelPosition: 'bottom', emoji: '🟣', imageUrl: null, imageScale: 1.0, imageOffsetX: 0, imageOffsetY: 0, imageFit: 'cover', audioBlob: null, duration: 0 }
         ];
 
         // 再生中のオーディオソース (slotId -> AudioBufferSourceNode)
         this.activeSources = new Map();
 
-        // 編集モーダル用
+        // 編集モーダル用の一時状態
         this.editingSlotId = null;
-        this.editingImageUrl = null; // モーダル内で一時編集中の画像
+        this.editingImageUrl = null;
+        this.editingImageScale = 1.0;
+        this.editingImageOffsetX = 0;
+        this.editingImageOffsetY = 0;
+        this.editingImageFit = 'cover';
 
         this.init();
     }
@@ -236,9 +311,18 @@ class VoicePadApp {
 
             const labelHtml = `<div class="pad-label">${slot.label}</div>`;
 
+            // 写真の位置・拡大率・フィットスタイルの生成
+            const scale = slot.imageScale !== undefined ? slot.imageScale : 1.0;
+            const offsetX = slot.imageOffsetX !== undefined ? slot.imageOffsetX : 0;
+            const offsetY = slot.imageOffsetY !== undefined ? slot.imageOffsetY : 0;
+            const fit = slot.imageFit || 'cover';
+            const photoStyle = `transform: scale(${scale}) translate(${offsetX}%, ${offsetY}%); object-fit: ${fit};`;
+
             card.innerHTML = `
                 ${hasPhoto ? `
-                    <img src="${slot.imageUrl}" class="pad-photo-full" alt="photo">
+                    <div class="pad-photo-wrapper">
+                        <img src="${slot.imageUrl}" class="pad-photo-full" style="${photoStyle}" alt="photo">
+                    </div>
                     <div class="pad-photo-overlay"></div>
                 ` : ''}
 
@@ -525,15 +609,8 @@ class VoicePadApp {
             const arrayBuffer = await slot.audioBlob.arrayBuffer();
             const originalBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
 
-            // ピッチシフト（再生速度は1.0倍のまま、声の高さだけを変換！）
-            let finalBuffer = originalBuffer;
-            if (this.currentEffect === 'high') {
-                finalBuffer = PitchShiftEngine.process(originalBuffer, 1.35, this.audioCtx); // 高音（スピード不変）
-            } else if (this.currentEffect === 'low') {
-                finalBuffer = PitchShiftEngine.process(originalBuffer, 0.72, this.audioCtx); // 低音（スピード不変）
-            } else if (this.currentEffect === 'robot') {
-                finalBuffer = PitchShiftEngine.processRobot(originalBuffer, this.audioCtx); // ロボット声
-            }
+            // ボイスチェンジエフェクト適用（再生速度は1.0倍のまま、多彩な声質に変換！）
+            const finalBuffer = PitchShiftEngine.applyEffect(originalBuffer, this.currentEffect, this.audioCtx);
 
             const source = this.audioCtx.createBufferSource();
             source.buffer = finalBuffer;
@@ -621,9 +698,61 @@ class VoicePadApp {
         if (removePhotoBtn) {
             removePhotoBtn.addEventListener('click', () => {
                 this.editingImageUrl = null;
-                this.updateModalIconPreview();
+                this.editingImageScale = 1.0;
+                this.editingImageOffsetX = 0;
+                this.editingImageOffsetY = 0;
+                this.editingImageFit = 'cover';
+                this.updateModalPhotoPreview();
             });
         }
+
+        // ズームスライダーイベント
+        const zoomSlider = document.getElementById('photo-zoom-slider');
+        if (zoomSlider) {
+            zoomSlider.addEventListener('input', (e) => {
+                this.editingImageScale = parseInt(e.target.value, 10) / 100;
+                document.getElementById('photo-zoom-val').innerText = `${e.target.value}%`;
+                this.applyPhotoCropTransform();
+            });
+        }
+
+        // 十字キー位置調整＆リセットボタン
+        document.querySelectorAll('.dpad-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const moveType = btn.getAttribute('data-move');
+                const step = 6; // 6%移動
+                if (moveType === 'up') this.editingImageOffsetY -= step;
+                else if (moveType === 'down') this.editingImageOffsetY += step;
+                else if (moveType === 'left') this.editingImageOffsetX -= step;
+                else if (moveType === 'right') this.editingImageOffsetX += step;
+                else if (moveType === 'reset') {
+                    this.editingImageScale = 1.0;
+                    this.editingImageOffsetX = 0;
+                    this.editingImageOffsetY = 0;
+                    this.editingImageFit = 'cover';
+                    if (zoomSlider) zoomSlider.value = 100;
+                    document.getElementById('photo-zoom-val').innerText = '100%';
+                    document.querySelectorAll('.fit-mode-btn').forEach(b => {
+                        if (b.getAttribute('data-fit') === 'cover') b.classList.add('active');
+                        else b.classList.remove('active');
+                    });
+                }
+                this.applyPhotoCropTransform();
+            });
+        });
+
+        // フィットモード切り替えボタン
+        document.querySelectorAll('.fit-mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.fit-mode-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.editingImageFit = btn.getAttribute('data-fit');
+                this.applyPhotoCropTransform();
+            });
+        });
+
+        // プレビュー枠のインタラクティブ・ドラッグ＆スワイプ操作
+        this.initCropViewportDrag();
 
         // 絵文字クイック選択
         document.querySelectorAll('.emoji-opt').forEach(opt => {
@@ -632,7 +761,7 @@ class VoicePadApp {
                 opt.classList.add('selected');
                 document.getElementById('edit-emoji').value = opt.innerText;
                 this.editingImageUrl = null; // 絵文字を選んだら写真は解除
-                this.updateModalIconPreview();
+                this.updateModalPhotoPreview();
             });
         });
 
@@ -648,7 +777,66 @@ class VoicePadApp {
         });
     }
 
-    // 画像ファイル読み込み ＆ 正方形・軽量リサイズ (Canvas 圧縮)
+    // プレビュー枠でのドラッグ＆タッチ操作（ポインターイベントで統一対応）
+    initCropViewportDrag() {
+        const viewport = document.getElementById('photo-crop-viewport');
+        if (!viewport) return;
+
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+        let initialOffsetX = 0;
+        let initialOffsetY = 0;
+
+        const onPointerDown = (e) => {
+            if (!this.editingImageUrl) return;
+            isDragging = true;
+            startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            initialOffsetX = this.editingImageOffsetX;
+            initialOffsetY = this.editingImageOffsetY;
+            viewport.setPointerCapture?.(e.pointerId);
+        };
+
+        const onPointerMove = (e) => {
+            if (!isDragging) return;
+            const currentX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            const currentY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            
+            const dx = currentX - startX;
+            const dy = currentY - startY;
+
+            // 枠のサイズに対する割合を計算してオフセットに加算
+            const rect = viewport.getBoundingClientRect();
+            const percentX = (dx / rect.width) * 100;
+            const percentY = (dy / rect.height) * 100;
+
+            this.editingImageOffsetX = initialOffsetX + percentX;
+            this.editingImageOffsetY = initialOffsetY + percentY;
+
+            this.applyPhotoCropTransform();
+        };
+
+        const onPointerUp = (e) => {
+            isDragging = false;
+        };
+
+        viewport.addEventListener('pointerdown', onPointerDown);
+        viewport.addEventListener('pointermove', onPointerMove);
+        viewport.addEventListener('pointerup', onPointerUp);
+        viewport.addEventListener('pointercancel', onPointerUp);
+    }
+
+    // プレビュー枠内のトランスフォーム適用
+    applyPhotoCropTransform() {
+        const cropImg = document.getElementById('photo-crop-img');
+        if (cropImg) {
+            cropImg.style.transform = `scale(${this.editingImageScale}) translate(${this.editingImageOffsetX}%, ${this.editingImageOffsetY}%)`;
+            cropImg.style.objectFit = this.editingImageFit;
+        }
+    }
+
+    // 画像ファイル読み込み ＆ 高精細リサイズ
     async handlePhotoUpload(file) {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -656,21 +844,32 @@ class VoicePadApp {
                 const img = new Image();
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    const size = 512; // ボタン枠いっぱいに高精細で綺麗に表示する 512x512px
-                    canvas.width = size;
-                    canvas.height = size;
+                    const maxDim = 800; // 高精細 800px 基準
+                    let w = img.width;
+                    let h = img.height;
+
+                    if (w > maxDim || h > maxDim) {
+                        if (w > h) {
+                            h = Math.round((h * maxDim) / w);
+                            w = maxDim;
+                        } else {
+                            w = Math.round((w * maxDim) / h);
+                            h = maxDim;
+                        }
+                    }
+
+                    canvas.width = w;
+                    canvas.height = h;
                     const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
 
-                    // 中央正方形にクロップ＆リサイズ
-                    const minDim = Math.min(img.width, img.height);
-                    const sx = (img.width - minDim) / 2;
-                    const sy = (img.height - minDim) / 2;
+                    this.editingImageUrl = canvas.toDataURL('image/jpeg', 0.88);
+                    this.editingImageScale = 1.0;
+                    this.editingImageOffsetX = 0;
+                    this.editingImageOffsetY = 0;
+                    this.editingImageFit = 'cover';
 
-                    ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
-
-                    // WebP または JPEG で圧縮
-                    this.editingImageUrl = canvas.toDataURL('image/jpeg', 0.85);
-                    this.updateModalIconPreview();
+                    this.updateModalPhotoPreview();
                     resolve();
                 };
                 img.src = e.target.result;
@@ -679,18 +878,37 @@ class VoicePadApp {
         });
     }
 
-    // モーダル内のアイコンプレビュー更新
-    updateModalIconPreview() {
-        const previewBox = document.getElementById('photo-preview-box');
+    // モーダル内の写真プレビュー＆コントロール更新
+    updateModalPhotoPreview() {
+        const adjustBox = document.getElementById('photo-adjust-box');
         const removePhotoBtn = document.getElementById('remove-photo-btn');
-        const emojiVal = document.getElementById('edit-emoji').value || '🔊';
+        const cropImg = document.getElementById('photo-crop-img');
+        const zoomSlider = document.getElementById('photo-zoom-slider');
 
         if (this.editingImageUrl) {
-            previewBox.innerHTML = `<img src="${this.editingImageUrl}" alt="preview">`;
+            if (adjustBox) adjustBox.style.display = 'flex';
             if (removePhotoBtn) removePhotoBtn.style.display = 'block';
+            if (cropImg) {
+                cropImg.src = this.editingImageUrl;
+                this.applyPhotoCropTransform();
+            }
+            if (zoomSlider) {
+                zoomSlider.value = Math.round(this.editingImageScale * 100);
+                document.getElementById('photo-zoom-val').innerText = `${zoomSlider.value}%`;
+            }
+            document.querySelectorAll('.fit-mode-btn').forEach(btn => {
+                if (btn.getAttribute('data-fit') === this.editingImageFit) btn.classList.add('active');
+                else btn.classList.remove('active');
+            });
+            document.querySelectorAll('.emoji-opt').forEach(opt => opt.classList.remove('selected'));
         } else {
-            previewBox.innerHTML = `<span style="font-size: 28px;">${emojiVal}</span>`;
+            if (adjustBox) adjustBox.style.display = 'none';
             if (removePhotoBtn) removePhotoBtn.style.display = 'none';
+            const currentEmoji = document.getElementById('edit-emoji')?.value;
+            document.querySelectorAll('.emoji-opt').forEach(opt => {
+                if (opt.innerText === currentEmoji) opt.classList.add('selected');
+                else opt.classList.remove('selected');
+            });
         }
     }
 
@@ -704,6 +922,10 @@ class VoicePadApp {
         document.getElementById('edit-label').value = slot.label;
         document.getElementById('edit-emoji').value = slot.emoji;
         this.editingImageUrl = slot.imageUrl || null;
+        this.editingImageScale = slot.imageScale !== undefined ? slot.imageScale : 1.0;
+        this.editingImageOffsetX = slot.imageOffsetX !== undefined ? slot.imageOffsetX : 0;
+        this.editingImageOffsetY = slot.imageOffsetY !== undefined ? slot.imageOffsetY : 0;
+        this.editingImageFit = slot.imageFit || 'cover';
 
         // 名前位置ボタンの選択反映
         const currentPos = slot.labelPosition || 'bottom';
@@ -718,7 +940,7 @@ class VoicePadApp {
             else opt.classList.remove('selected');
         });
 
-        this.updateModalIconPreview();
+        this.updateModalPhotoPreview();
 
         const deleteBtn = document.getElementById('delete-audio-btn');
         const downloadBtn = document.getElementById('download-audio-btn');
@@ -750,6 +972,10 @@ class VoicePadApp {
             slot.labelPosition = labelPos;
             slot.emoji = emojiInput || '🔊';
             slot.imageUrl = this.editingImageUrl;
+            slot.imageScale = this.editingImageScale;
+            slot.imageOffsetX = this.editingImageOffsetX;
+            slot.imageOffsetY = this.editingImageOffsetY;
+            slot.imageFit = this.editingImageFit;
 
             await this.storage.saveSlot(slot);
             this.renderSlots();
