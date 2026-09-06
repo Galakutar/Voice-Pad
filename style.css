@@ -150,7 +150,7 @@ body, html {
     background: rgba(59, 130, 246, 0.15);
     border: 1px solid rgba(59, 130, 246, 0.4);
     color: #93c5fd;
-    padding: 6px 10px;
+    padding: 6px 12px;
     border-radius: 9px;
     font-size: 12px;
     font-weight: 700;
@@ -164,25 +164,6 @@ body, html {
 
 .qr-share-btn:active {
     background: rgba(59, 130, 246, 0.35);
-    transform: scale(0.95);
-}
-
-.stop-all-btn {
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-    color: #fca5a5;
-    padding: 6px 10px;
-    border-radius: 9px;
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    white-space: nowrap;
-}
-
-.stop-all-btn:active {
     transform: scale(0.95);
 }
 

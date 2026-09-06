@@ -1,6 +1,6 @@
 /**
  * Voice Pad 6 - 音声録音＆サンプラー アプリケーションロジック
- * iOS Safari / iPadOS / 各種モダンブラウザ完全対応（HTMLAudioElement + Web Audio ハイブリッド方式）
+ * スピード等倍・音程ピッチシフト対応 ＆ iOS Safari 完全対応
  */
 
 // --- IndexedDB ストレージマネージャー ---
@@ -39,7 +39,6 @@ class StorageManager {
         return new Promise((resolve) => {
             const tx = this.db.transaction('slots', 'readwrite');
             const store = tx.objectStore('slots');
-            // Blobとメタデータのみ保存（Audioオブジェクト等は除外）
             const dataToSave = {
                 id: slotData.id,
                 label: slotData.label,
@@ -62,6 +61,87 @@ class StorageManager {
             req.onsuccess = () => resolve(req.result || []);
             req.onerror = () => resolve([]);
         });
+    }
+}
+
+// --- 再生スピードを変えずに音程（声の高さ）だけを変えるピッチシフター ---
+class PitchShiftEngine {
+    /**
+     * グラニュラー・オーバーラップ・アド法による高品質ピッチシフト
+     * @param {AudioBuffer} buffer - 元の音声バッファ
+     * @param {number} pitchRatio - ピッチ倍率 (1.35 = 高い声, 0.72 = 低い声)
+     * @param {AudioContext} ctx - AudioContext
+     * @returns {AudioBuffer} ピッチシフト後のバッファ（再生時間は元と同一！）
+     */
+    static process(buffer, pitchRatio, ctx) {
+        if (pitchRatio === 1.0) return buffer;
+
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+
+        // グレインサイズ（約50ms）
+        const grainSize = Math.floor(sampleRate * 0.05);
+        const hopSize = Math.floor(grainSize / 2);
+
+        // 出力バッファ作成（長さは元とまったく同じ＝スピード不変）
+        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const inputData = buffer.getChannelData(ch);
+            const outputData = outputBuffer.getChannelData(ch);
+
+            // ハン窓（Hann Window）の作成
+            const windowTable = new Float32Array(grainSize);
+            for (let i = 0; i < grainSize; i++) {
+                windowTable[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (grainSize - 1)));
+            }
+
+            for (let inPos = 0; inPos < numSamples - grainSize; inPos += hopSize) {
+                for (let i = 0; i < grainSize; i++) {
+                    const outPos = inPos + i;
+                    if (outPos >= numSamples) break;
+
+                    // ピッチ倍率に応じたリサンプリング位置計算
+                    const srcIndex = inPos + (i * pitchRatio);
+                    const i0 = Math.floor(srcIndex);
+                    const i1 = Math.min(i0 + 1, numSamples - 1);
+                    const frac = srcIndex - i0;
+
+                    if (i0 < numSamples && i0 >= 0) {
+                        // 線形補間
+                        const sample = inputData[i0] * (1 - frac) + inputData[i1] * frac;
+                        outputData[outPos] += sample * windowTable[i] * 0.9;
+                    }
+                }
+            }
+        }
+
+        return outputBuffer;
+    }
+
+    /**
+     * ロボット声エフェクト
+     */
+    static processRobot(buffer, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+        const modFreq = 65; // 65Hzの金属的モジュレーション
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const inputData = buffer.getChannelData(ch);
+            const outputData = outputBuffer.getChannelData(ch);
+
+            for (let i = 0; i < numSamples; i++) {
+                const carrier = Math.sin((2 * Math.PI * modFreq * i) / sampleRate);
+                outputData[i] = inputData[i] * carrier * 1.2;
+            }
+        }
+
+        return outputBuffer;
     }
 }
 
@@ -91,10 +171,10 @@ class VoicePadApp {
             { id: 6, label: 'ボタン 6', emoji: '🟣', audioBlob: null, duration: 0 }
         ];
 
-        // 再生中のオーディオオブジェクト管理 (slotId -> HTMLAudioElement)
-        this.activeAudios = new Map();
+        // 再生中のオーディオソース (slotId -> AudioBufferSourceNode)
+        this.activeSources = new Map();
 
-        // 編集モーダル用の選択スロット
+        // 編集モーダル用
         this.editingSlotId = null;
 
         this.init();
@@ -175,7 +255,6 @@ class VoicePadApp {
 
     // イベントリスナー設定
     initEvents() {
-        // 画面タップでオーディオアンロック
         window.addEventListener('click', () => this.unlockAudio(), { once: true });
         window.addEventListener('touchstart', () => this.unlockAudio(), { once: true });
 
@@ -198,10 +277,8 @@ class VoicePadApp {
             if (card) {
                 const slotId = parseInt(card.getAttribute('data-slot'), 10);
                 if (this.currentMode === 'play') {
-                    // 再生モード：タップで即座再生
                     this.playSlot(slotId);
                 } else {
-                    // 録音モード：タップで録音開始/停止
                     this.toggleRecording(slotId);
                 }
             }
@@ -211,22 +288,12 @@ class VoicePadApp {
         const playBtn = document.getElementById('mode-play-btn');
         const recordBtn = document.getElementById('mode-record-btn');
 
-        playBtn.addEventListener('click', () => {
-            this.setMode('play');
-        });
-
-        recordBtn.addEventListener('click', () => {
-            this.setMode('record');
-        });
+        playBtn.addEventListener('click', () => this.setMode('play'));
+        recordBtn.addEventListener('click', () => this.setMode('record'));
 
         // ボイスエフェクト切り替え
         document.getElementById('voice-effect').addEventListener('change', (e) => {
             this.currentEffect = e.target.value;
-        });
-
-        // 全停止ボタン
-        document.getElementById('stop-all-btn').addEventListener('click', () => {
-            this.stopAll();
         });
 
         // QRコードモーダル関連イベント
@@ -236,22 +303,16 @@ class VoicePadApp {
         const copyUrlBtn = document.getElementById('copy-url-btn');
 
         if (showQrBtn) {
-            showQrBtn.addEventListener('click', () => {
-                qrModal.classList.add('open');
-            });
+            showQrBtn.addEventListener('click', () => qrModal.classList.add('open'));
         }
 
         if (closeQrBtn) {
-            closeQrBtn.addEventListener('click', () => {
-                qrModal.classList.remove('open');
-            });
+            closeQrBtn.addEventListener('click', () => qrModal.classList.remove('open'));
         }
 
         if (qrModal) {
             qrModal.addEventListener('click', (e) => {
-                if (e.target.id === 'qr-modal-backdrop') {
-                    qrModal.classList.remove('open');
-                }
+                if (e.target.id === 'qr-modal-backdrop') qrModal.classList.remove('open');
             });
         }
 
@@ -319,7 +380,7 @@ class VoicePadApp {
         }
     }
 
-    // --- マイクストリーム取得（初回のみ許可、以降は保持） ---
+    // --- マイクストリーム取得 ---
     async getAudioStream() {
         if (this.audioStream && this.audioStream.active) {
             const tracks = this.audioStream.getAudioTracks();
@@ -343,7 +404,7 @@ class VoicePadApp {
         }
     }
 
-    // --- 録音制御 (MediaRecorder) ---
+    // --- 録音制御 ---
     async toggleRecording(slotId) {
         if (this.recordingSlot === slotId) {
             this.stopRecording();
@@ -369,16 +430,13 @@ class VoicePadApp {
         this.recordedChunks = [];
         this.recSeconds = 0;
 
-        // iOS Safari / Chrome / Android に最適なMIMEタイプ自動判別
         let mimeType = '';
         if (MediaRecorder.isTypeSupported('audio/mp4')) {
-            mimeType = 'audio/mp4'; // iOS Safari向け標準
+            mimeType = 'audio/mp4';
         } else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
             mimeType = 'audio/webm;codecs=opus';
         } else if (MediaRecorder.isTypeSupported('audio/webm')) {
             mimeType = 'audio/webm';
-        } else if (MediaRecorder.isTypeSupported('audio/aac')) {
-            mimeType = 'audio/aac';
         }
 
         try {
@@ -402,7 +460,6 @@ class VoicePadApp {
 
         this.mediaRecorder.start(100);
 
-        // UIを録音中状態に
         const card = document.getElementById(`pad-${slotId}`);
         if (card) {
             card.classList.add('recording');
@@ -410,7 +467,6 @@ class VoicePadApp {
             statusEl.innerText = '🔴 録音中... (0s)';
         }
 
-        // タイマー開始
         this.recTimer = setInterval(() => {
             this.recSeconds += 0.5;
             if (card) {
@@ -447,93 +503,90 @@ class VoicePadApp {
         this.recordingSlot = null;
     }
 
-    // --- 音声再生制御 (iOS Safari 100% 動作 HTMLAudioElement 方式) ---
+    // --- 音声再生制御（スピード等倍・声の高さのみ変更） ---
     async playSlot(slotId) {
         this.unlockAudio();
 
         const slot = this.slots.find(s => s.id === slotId);
         if (!slot || !slot.audioBlob) {
-            // 未録音の場合は録音モードに自動切替して録音開始
             this.setMode('record');
             this.startRecording(slotId);
             return;
         }
 
-        // 既に再生中なら一度停止
-        if (this.activeAudios.has(slotId)) {
+        // 既に再生中ならトグル停止
+        if (this.activeSources.has(slotId)) {
             this.stopSlot(slotId);
             return;
         }
 
         try {
-            // Blob から URL を作成
-            const audioUrl = URL.createObjectURL(slot.audioBlob);
-            const audio = new Audio(audioUrl);
+            const arrayBuffer = await slot.audioBlob.arrayBuffer();
+            const originalBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
 
-            // iOS Safari & 各種ブラウザでピッチ（声の高さ）を劇的に変化させる設定
-            // ※これらを false にしないと、ブラウザが勝手に音程を元に戻して早送り/スローになってしまいます
-            audio.preservesPitch = false;
-            audio.webkitPreservesPitch = false;
-            audio.mozPreservesPitch = false;
-
-            // ボイスエフェクト（ピッチ・声の高さ調整）
+            // ピッチシフト（再生速度は1.0倍のまま、声の高さだけを変換！）
+            let finalBuffer = originalBuffer;
             if (this.currentEffect === 'high') {
-                audio.playbackRate = 1.45; // 🐿️ 高い声（ヘリウム声 / こども声）
+                finalBuffer = PitchShiftEngine.process(originalBuffer, 1.35, this.audioCtx); // 高音（スピード不変）
             } else if (this.currentEffect === 'low') {
-                audio.playbackRate = 0.68; // 👹 低い声（巨人 / モンスター声）
+                finalBuffer = PitchShiftEngine.process(originalBuffer, 0.72, this.audioCtx); // 低音（スピード不変）
             } else if (this.currentEffect === 'robot') {
-                audio.playbackRate = 1.25; // 🤖 ロボット風ハイトーン
-            } else {
-                audio.playbackRate = 1.0; // 🎙️ 通常の声
-                audio.preservesPitch = true;
+                finalBuffer = PitchShiftEngine.processRobot(originalBuffer, this.audioCtx); // ロボット声
             }
 
-            // UIを再生中表示
+            const source = this.audioCtx.createBufferSource();
+            source.buffer = finalBuffer;
+
+            const gainNode = this.audioCtx.createGain();
+            source.connect(gainNode);
+            gainNode.connect(this.audioCtx.destination);
+
+            source.start(0);
+
             const card = document.getElementById(`pad-${slotId}`);
             if (card) card.classList.add('playing');
 
-            this.activeAudios.set(slotId, audio);
+            this.activeSources.set(slotId, source);
 
-            audio.onended = () => {
+            source.onended = () => {
                 this.stopSlot(slotId);
-                URL.revokeObjectURL(audioUrl);
             };
-
-            audio.onerror = (e) => {
-                console.error('Playback error:', e);
-                this.stopSlot(slotId);
-                URL.revokeObjectURL(audioUrl);
-            };
-
-            await audio.play();
 
         } catch (err) {
-            console.error('Audio play exception:', err);
-            this.stopSlot(slotId);
+            console.error('Audio play error:', err);
+            // フォールバック再生
+            this.fallbackPlay(slot, slotId);
+        }
+    }
+
+    fallbackPlay(slot, slotId) {
+        try {
+            const audioUrl = URL.createObjectURL(slot.audioBlob);
+            const audio = new Audio(audioUrl);
+            audio.play();
+            const card = document.getElementById(`pad-${slotId}`);
+            if (card) card.classList.add('playing');
+            audio.onended = () => {
+                if (card) card.classList.remove('playing');
+                URL.revokeObjectURL(audioUrl);
+            };
+        } catch (e) {
+            console.error('Fallback error:', e);
         }
     }
 
     stopSlot(slotId) {
-        if (this.activeAudios.has(slotId)) {
-            const audio = this.activeAudios.get(slotId);
+        if (this.activeSources.has(slotId)) {
+            const source = this.activeSources.get(slotId);
             try {
-                audio.pause();
-                audio.currentTime = 0;
+                source.stop();
+                source.disconnect();
             } catch (e) {}
-            this.activeAudios.delete(slotId);
+            this.activeSources.delete(slotId);
         }
 
         const card = document.getElementById(`pad-${slotId}`);
         if (card) card.classList.remove('playing');
-    }
-
-    stopAll() {
-        for (const slotId of this.activeAudios.keys()) {
-            this.stopSlot(slotId);
-        }
-        if (this.recordingSlot !== null) {
-            this.stopRecording();
-        }
     }
 
     // --- 波形ビジュアライザー (Canvas) ---
@@ -545,7 +598,7 @@ class VoicePadApp {
                 const ctx = canvas.getContext('2d');
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                if (this.activeAudios.has(slot.id) || this.recordingSlot === slot.id) {
+                if (this.activeSources.has(slot.id) || this.recordingSlot === slot.id) {
                     ctx.fillStyle = this.recordingSlot === slot.id ? '#ef4444' : '#ffffff';
                     const time = Date.now() * 0.008;
                     const bars = 16;
