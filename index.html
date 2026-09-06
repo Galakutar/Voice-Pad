@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Voice Pad 6 - 6ボタン音声録音＆サンプラー</title>
+    <meta name="description" content="iPhoneやiPadで簡単に音声を6つのボタンに録音・再生できるタッチサンプラーアプリ。ボイスチェンジャーやループ機能付き。">
+    
+    <!-- iOS / iPadOS Web App 最適化 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Voice Pad 6">
+    <meta name="theme-color" content="#0f141c">
+    <link rel="manifest" href="manifest.json">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app-container">
+        <!-- アプリヘッダー -->
+        <header class="app-header">
+            <div class="logo-group">
+                <div class="app-icon">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"></path>
+                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="app-title">Voice Pad 6</h1>
+                    <p class="app-subtitle">タップで再生 / 各ボタンから録音</p>
+                </div>
+            </div>
+
+            <!-- ヘッダー右側コントロール -->
+            <div class="header-controls">
+                <!-- ボイスチェンジャー -->
+                <select id="voice-effect" class="voice-effect-select" title="ボイスチェンジャー">
+                    <option value="normal">🎙️ 通常の声</option>
+                    <option value="high">🐿️ 高い声 (ヘリウム)</option>
+                    <option value="low">👹 低い声 (巨人)</option>
+                    <option value="robot">🤖 ロボット声</option>
+                    <option value="echo">🌌 エコー効果</option>
+                </select>
+
+                <!-- 全停止ボタン -->
+                <button id="stop-all-btn" class="stop-all-btn" title="すべての音声を停止">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+                    </svg>
+                    全停止
+                </button>
+            </div>
+        </header>
+
+        <!-- 6スロットメイングリッド -->
+        <main id="pad-grid" class="pad-grid">
+            <!-- JavaScript (app.js) で自動生成されます -->
+        </main>
+    </div>
+
+    <!-- 設定・名前変更モーダル -->
+    <div id="modal-backdrop" class="modal-backdrop">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">ボタン <span id="modal-slot-num">1</span> の設定</h3>
+                <button id="close-modal-btn" class="close-modal-btn" title="閉じる">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="edit-label">ボタンの名前（ラベル）</label>
+                <input type="text" id="edit-label" class="form-input" placeholder="例: こんにちは、パパの声..." maxlength="20">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">アイコン（絵文字）</label>
+                <div class="emoji-selector">
+                    <button type="button" class="emoji-opt">🔊</button>
+                    <button type="button" class="emoji-opt">👋</button>
+                    <button type="button" class="emoji-opt">🎉</button>
+                    <button type="button" class="emoji-opt">🐶</button>
+                    <button type="button" class="emoji-opt">🐱</button>
+                    <button type="button" class="emoji-opt">🎵</button>
+                    <button type="button" class="emoji-opt">⭐</button>
+                    <button type="button" class="emoji-opt">❤️</button>
+                </div>
+                <input type="hidden" id="edit-emoji" value="🔊">
+            </div>
+
+            <div class="modal-actions">
+                <button id="save-slot-btn" class="action-btn save-btn">設定を保存する</button>
+                <button id="import-file-btn" class="action-btn download-btn">📁 好きな音声ファイルを読み込む</button>
+                <button id="download-audio-btn" class="action-btn download-btn" style="display: none;">💾 録音音声をダウンロード</button>
+                <button id="delete-audio-btn" class="action-btn delete-btn" style="display: none;">🗑️ 録音データを削除</button>
+            </div>
+
+            <input type="file" id="audio-file-input" accept="audio/*" style="display: none;">
+        </div>
+    </div>
+
+    <!-- アプリスクリプト -->
+    <script src="app.js"></script>
+</body>
+</html>
