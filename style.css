@@ -64,7 +64,7 @@ body, html {
     gap: 6px;
 }
 
-/* ==================== ヘッダー ==================== */
+/* ==================== 1段目：ヘッダー ==================== */
 .app-header {
     display: flex;
     justify-content: space-between;
@@ -83,7 +83,7 @@ body, html {
 }
 
 .app-title {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 800;
     letter-spacing: -0.02em;
     white-space: nowrap;
@@ -107,12 +107,12 @@ body, html {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 4px 10px;
+    padding: 4px 12px;
     border-radius: 9999px;
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 700;
     font-family: inherit;
     cursor: pointer;
@@ -142,7 +142,7 @@ body, html {
 .header-controls {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     flex-shrink: 0;
 }
 
@@ -150,13 +150,13 @@ body, html {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid var(--border-color);
     color: #fff;
-    padding: 4px 6px;
+    padding: 5px 8px;
     border-radius: 8px;
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 700;
     cursor: pointer;
     outline: none;
-    max-width: 90px;
+    max-width: 105px;
 }
 
 .header-action-btn {
@@ -167,9 +167,9 @@ body, html {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
-    padding: 4px 8px;
+    padding: 5px 10px;
     border-radius: 8px;
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 700;
     font-family: inherit;
     cursor: pointer;
@@ -178,8 +178,8 @@ body, html {
 }
 
 .header-action-btn.icon-only {
-    padding: 4px 6px;
-    font-size: 13px;
+    padding: 5px 8px;
+    font-size: 14px;
 }
 
 .header-action-btn:hover {
@@ -191,7 +191,7 @@ body, html {
     transform: scale(0.94);
 }
 
-/* ==================== スクロール（グループ）タブバー ==================== */
+/* ==================== ２段目：スクロールタブバー ==================== */
 .scroll-tabs-bar {
     display: flex;
     align-items: center;
@@ -210,7 +210,7 @@ body, html {
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     flex: 1;
-    padding: 2px;
+    padding: 3px 2px;
 }
 
 .scroll-tabs-container::-webkit-scrollbar {
@@ -230,8 +230,9 @@ body, html {
     font-weight: 700;
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     flex-shrink: 0;
+    touch-action: pan-y;
 }
 
 .scroll-tab-item:hover {
@@ -244,6 +245,21 @@ body, html {
     border-color: rgba(255, 255, 255, 0.3);
     color: #ffffff;
     box-shadow: 0 2px 10px rgba(59, 130, 246, 0.35);
+}
+
+/* 長押しドラッグ中アニメーション */
+.scroll-tab-item.dragging {
+    opacity: 0.85;
+    transform: scale(1.08);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6), 0 0 12px rgba(59, 130, 246, 0.6);
+    border-color: var(--accent-cyan);
+    z-index: 100;
+    cursor: grabbing;
+}
+
+.scroll-tab-item.drag-over {
+    border-left: 3px solid var(--accent-cyan);
+    transform: translateX(4px);
 }
 
 .scroll-tab-name {
@@ -276,7 +292,7 @@ body, html {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 5px 10px;
+    padding: 5px 12px;
     border-radius: 9999px;
     background: rgba(59, 130, 246, 0.12);
     border: 1px dashed rgba(59, 130, 246, 0.4);
@@ -296,32 +312,31 @@ body, html {
     color: #ffffff;
 }
 
-/* ==================== サブツールバー ＆ ページネーション ==================== */
+/* ==================== ３段目：ページネーション ==================== */
 .sub-toolbar {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
     width: 100%;
     flex-shrink: 0;
     padding: 1px 2px;
-    gap: 8px;
 }
 
 .pagination-controls {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    background: rgba(0, 0, 0, 0.3);
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.35);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: 2px 6px;
+    padding: 3px 8px;
 }
 
 .page-nav-btn {
     background: transparent;
     border: none;
     color: var(--text-secondary);
-    font-size: 11px;
+    font-size: 11.5px;
     cursor: pointer;
     padding: 2px 6px;
     border-radius: 4px;
@@ -334,37 +349,15 @@ body, html {
 }
 
 .page-nav-btn:disabled {
-    opacity: 0.3;
+    opacity: 0.25;
     cursor: not-allowed;
 }
 
 .page-indicator {
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 700;
     color: var(--text-secondary);
     white-space: nowrap;
-}
-
-.quick-add-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid rgba(16, 185, 129, 0.35);
-    color: #6ee7b7;
-    padding: 3px 8px;
-    border-radius: 8px;
-    font-size: 11px;
-    font-weight: 700;
-    font-family: inherit;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    white-space: nowrap;
-}
-
-.quick-add-btn:hover {
-    background: rgba(16, 185, 129, 0.25);
-    color: #ffffff;
 }
 
 /* ==================== スイッチメイングリッド ==================== */
@@ -607,7 +600,7 @@ body.mode-record .pad-card:not(.recording):hover {
     margin-right: 4px;
 }
 
-/* 「＋ 新規スイッチ」カード */
+/* 「＋ 追加」カード */
 .pad-card-add-new {
     border: 1.5px dashed rgba(255, 255, 255, 0.2);
     background: rgba(255, 255, 255, 0.02);
@@ -740,6 +733,31 @@ body.mode-record .pad-card:not(.recording):hover {
 
 .form-input:focus {
     border-color: var(--accent-blue);
+}
+
+/* バージョンカード */
+.version-card {
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.version-badge {
+    font-family: monospace;
+    font-size: 11.5px;
+    font-weight: 700;
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.update-btn {
+    background: linear-gradient(135deg, #059669, #10b981) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
 
 /* 位置セレクター */

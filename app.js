@@ -1,7 +1,10 @@
 /**
  * Voice Pad - 音声録音＆タッチサンプラー
- * 完全ローカル完結・AudioContext自動復帰・グループ管理・ページネーション・3階層バックアップ対応
+ * 完全ローカル完結・AudioContext自動復帰・スクロール管理・長押しドラッグ並び替え
+ * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
+
+const APP_VERSION = '2026.09.10.0004';
 
 // ==================== 1. Web Audio API / AudioContext 覚醒ユーティリティ ====================
 class AudioUnlocker {
@@ -32,7 +35,6 @@ class AudioUnlocker {
 
         if (!this.isUnlocked) {
             try {
-                // iOS Safari 向け微小サイレントバッファの再生によるハードウェア覚醒
                 const buffer = ctx.createBuffer(1, 1, 22050);
                 const source = ctx.createBufferSource();
                 source.buffer = buffer;
@@ -343,23 +345,25 @@ class StorageManager {
         });
     }
 
-    // 旧DB（VoicePad6DB）からの自動マイグレーション
     async migrateLegacyDataIfNeeded() {
         try {
             const scrolls = await this.getAllScrolls();
-            if (scrolls.length > 0) return; // 既に移行済み
+            if (scrolls.length > 0) return;
 
-            // 旧DBの存在チェックとデータ取得
             const legacySlots = await this.readLegacyDB();
             const defaultScroll = {
                 id: 'scroll_default',
                 name: 'メイン',
                 order: 0,
+                voiceEffect: 'inherit',
+                playbackSpeed: 'inherit',
                 createdAt: Date.now()
             };
             await this.saveScroll(defaultScroll);
             await this.saveSetting('currentScrollId', defaultScroll.id);
             await this.saveSetting('pageSize', 32);
+            await this.saveSetting('globalPlaybackSpeed', 1.0);
+            await this.saveSetting('effect', 'normal');
 
             if (legacySlots && legacySlots.length > 0) {
                 for (const slot of legacySlots) {
@@ -367,11 +371,12 @@ class StorageManager {
                         ...slot,
                         id: `slot_${slot.id}`,
                         scrollId: defaultScroll.id,
+                        voiceEffect: 'inherit',
+                        playbackSpeed: 'inherit',
                         order: slot.id
                     });
                 }
             } else {
-                // 初期8スロットを生成
                 const emojis = ['🔴', '🟠', '🟡', '🟢', '🔵', '🔷', '🟣', '🌸'];
                 for (let i = 1; i <= 8; i++) {
                     await this.saveSlot({
@@ -387,6 +392,8 @@ class StorageManager {
                         imageFit: 'cover',
                         audioBlob: null,
                         duration: 0,
+                        voiceEffect: 'inherit',
+                        playbackSpeed: 'inherit',
                         order: i
                     });
                 }
@@ -415,7 +422,6 @@ class StorageManager {
         });
     }
 
-    // 設定
     async saveSetting(key, value) {
         if (!this.db) return;
         return new Promise((resolve) => {
@@ -436,12 +442,22 @@ class StorageManager {
         });
     }
 
-    // スクロール（グループ）
     async saveScroll(scroll) {
         if (!this.db) return;
         return new Promise((resolve) => {
             const tx = this.db.transaction('scrolls', 'readwrite');
             tx.objectStore('scrolls').put(scroll);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+        });
+    }
+
+    async saveAllScrolls(scrolls) {
+        if (!this.db) return;
+        return new Promise((resolve) => {
+            const tx = this.db.transaction('scrolls', 'readwrite');
+            const store = tx.objectStore('scrolls');
+            scrolls.forEach(s => store.put(s));
             tx.oncomplete = () => resolve();
             tx.onerror = () => resolve();
         });
@@ -466,7 +482,6 @@ class StorageManager {
         return new Promise((resolve) => {
             const tx = this.db.transaction(['scrolls', 'slots'], 'readwrite');
             tx.objectStore('scrolls').delete(id);
-            // 該当スクロールのスロットも削除
             const slotStore = tx.objectStore('slots');
             const req = slotStore.getAll();
             req.onsuccess = () => {
@@ -480,7 +495,6 @@ class StorageManager {
         });
     }
 
-    // スロット（スイッチ）
     async saveSlot(slot) {
         if (!this.db) return;
         return new Promise((resolve) => {
@@ -536,27 +550,24 @@ class VoicePadApp {
         this.mediaRecorder = null;
         this.audioStream = null;
 
-        this.currentMode = 'play'; // 'play' | 'record'
+        this.currentMode = 'play';
         this.recordingSlotId = null;
         this.recordedChunks = [];
         this.recTimer = null;
         this.recSeconds = 0;
 
-        this.currentEffect = 'normal';
+        this.currentEffect = 'normal'; // 全体基本ボイスエフェクト
+        this.globalPlaybackSpeed = 1.0; // 全体基本再生スピード
 
-        // スクロールとスロットデータ
         this.scrolls = [];
         this.currentScrollId = null;
         this.slots = [];
 
-        // ページネーション
-        this.pageSize = 32; // デフォルト32個表示
+        this.pageSize = 32;
         this.currentPage = 1;
 
-        // アクティブ再生中のAudioSource (slotId -> AudioBufferSourceNode)
         this.activeSources = new Map();
 
-        // 編集モーダル状態
         this.editingSlotId = null;
         this.editingScrollId = null;
         this.editingImageUrl = null;
@@ -565,12 +576,19 @@ class VoicePadApp {
         this.editingImageOffsetY = 0;
         this.editingImageFit = 'cover';
 
+        this.dragScrollId = null;
+        this.dragTimer = null;
+        this.isDraggingScroll = false;
+
         this.init();
     }
 
     async init() {
         AudioUnlocker.initListeners();
         this.audioCtx = AudioUnlocker.getContext();
+
+        const badge = document.getElementById('app-version-badge');
+        if (badge) badge.innerText = `v${APP_VERSION}`;
 
         await this.storage.init();
         await this.loadAllData();
@@ -582,13 +600,21 @@ class VoicePadApp {
 
     async loadAllData() {
         this.pageSize = await this.storage.getSetting('pageSize', 32);
+        this.globalPlaybackSpeed = await this.storage.getSetting('globalPlaybackSpeed', 1.0);
         const savedEffect = await this.storage.getSetting('effect', 'normal');
         this.currentEffect = savedEffect;
+
         const effectEl = document.getElementById('voice-effect');
         if (effectEl) effectEl.value = this.currentEffect;
 
+        const globalEffectSelect = document.getElementById('setting-global-effect');
+        if (globalEffectSelect) globalEffectSelect.value = this.currentEffect;
+
         const pageSizeSelect = document.getElementById('setting-page-size');
         if (pageSizeSelect) pageSizeSelect.value = String(this.pageSize);
+
+        const globalSpeedSelect = document.getElementById('setting-global-speed');
+        if (globalSpeedSelect) globalSpeedSelect.value = String(this.globalPlaybackSpeed);
 
         this.scrolls = await this.storage.getAllScrolls();
         this.slots = await this.storage.getAllSlots();
@@ -599,11 +625,12 @@ class VoicePadApp {
         } else if (this.scrolls.length > 0) {
             this.currentScrollId = this.scrolls[0].id;
         } else {
-            // グループがゼロの場合は作成
             const initialScroll = {
                 id: 'scroll_' + Date.now(),
                 name: 'メイン',
                 order: 0,
+                voiceEffect: 'inherit',
+                playbackSpeed: 'inherit',
                 createdAt: Date.now()
             };
             await this.storage.saveScroll(initialScroll);
@@ -612,11 +639,78 @@ class VoicePadApp {
         }
     }
 
-    // 現在のスクロール内のスロット一覧を取得
     getCurrentSlots() {
         return this.slots
             .filter(s => s.scrollId === this.currentScrollId)
             .sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+
+    // ==================== 階層的ボイスエフェクト＆再生スピード計算 ====================
+    getEffectiveVoiceEffect(slot) {
+        // 1. スイッチ個別設定チェック
+        if (slot && slot.voiceEffect && slot.voiceEffect !== 'inherit') {
+            return slot.voiceEffect;
+        }
+        // 2. スクロール設定チェック
+        const scroll = this.scrolls.find(s => s.id === (slot ? slot.scrollId : this.currentScrollId));
+        if (scroll && scroll.voiceEffect && scroll.voiceEffect !== 'inherit') {
+            return scroll.voiceEffect;
+        }
+        // 3. 全体設定
+        return this.currentEffect || 'normal';
+    }
+
+    getScrollEffectiveVoiceEffect(scrollId) {
+        const scroll = this.scrolls.find(s => s.id === scrollId);
+        if (scroll && scroll.voiceEffect && scroll.voiceEffect !== 'inherit') {
+            return scroll.voiceEffect;
+        }
+        return this.currentEffect || 'normal';
+    }
+
+    getEffectivePlaybackSpeed(slot) {
+        // 1. スイッチ個別設定チェック
+        if (slot && slot.playbackSpeed && slot.playbackSpeed !== 'inherit') {
+            return parseFloat(slot.playbackSpeed);
+        }
+        // 2. スクロール設定チェック
+        const scroll = this.scrolls.find(s => s.id === (slot ? slot.scrollId : this.currentScrollId));
+        if (scroll && scroll.playbackSpeed && scroll.playbackSpeed !== 'inherit') {
+            return parseFloat(scroll.playbackSpeed);
+        }
+        // 3. 全体設定
+        return parseFloat(this.globalPlaybackSpeed) || 1.0;
+    }
+
+    getScrollEffectiveSpeed(scrollId) {
+        const scroll = this.scrolls.find(s => s.id === scrollId);
+        if (scroll && scroll.playbackSpeed && scroll.playbackSpeed !== 'inherit') {
+            return parseFloat(scroll.playbackSpeed);
+        }
+        return parseFloat(this.globalPlaybackSpeed) || 1.0;
+    }
+
+    getVoiceEffectLabel(effectVal) {
+        const names = {
+            'normal': '🎙️ 通常',
+            'baby': '👶 赤ちゃん',
+            'boy': '👦 男の子',
+            'girl': '👧 女の子',
+            'man': '👨 男の人',
+            'woman': '👩 女の人',
+            'old_man': '👴 おじいさん',
+            'old_woman': '👵 おばあさん',
+            'alien': '👽 宇宙人',
+            'robot': '🤖 ロボット',
+            'monster': '👹 怪獣',
+            'cave': '⛰️ 洞窟',
+            'underwater': '🫧 水の中',
+            'radio': '📻 古いラジオ',
+            'telephone': '📱 電話',
+            'hall': '🏛️ 大ホール',
+            'megaphone': '📢 メガホン'
+        };
+        return names[effectVal] || effectVal;
     }
 
     // ==================== 描画処理 ====================
@@ -625,19 +719,21 @@ class VoicePadApp {
         if (!container) return;
         container.innerHTML = '';
 
-        this.scrolls.forEach((scroll) => {
+        this.scrolls.forEach((scroll, index) => {
             const count = this.slots.filter(s => s.scrollId === scroll.id).length;
             const tab = document.createElement('div');
             tab.className = `scroll-tab-item${scroll.id === this.currentScrollId ? ' active' : ''}`;
             tab.setAttribute('data-scroll-id', scroll.id);
+            tab.setAttribute('data-index', index);
 
             tab.innerHTML = `
                 <span class="scroll-tab-name">${this.escapeHtml(scroll.name)}</span>
                 <span class="scroll-tab-badge">${count}</span>
-                <span class="scroll-tab-edit-icon" title="グループ設定">⚙️</span>
+                <span class="scroll-tab-edit-icon" title="スクロール設定">⚙️</span>
             `;
 
             tab.addEventListener('click', (e) => {
+                if (this.isDraggingScroll) return;
                 if (e.target.classList.contains('scroll-tab-edit-icon')) {
                     e.stopPropagation();
                     this.openScrollModal(scroll.id);
@@ -646,8 +742,95 @@ class VoicePadApp {
                 }
             });
 
+            this.attachTabDragListeners(tab, scroll.id);
             container.appendChild(tab);
         });
+    }
+
+    attachTabDragListeners(tab, scrollId) {
+        let isLongPress = false;
+        let startX = 0, startY = 0;
+
+        const onPointerDown = (e) => {
+            if (e.target.classList.contains('scroll-tab-edit-icon')) return;
+            startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            isLongPress = false;
+
+            this.dragTimer = setTimeout(() => {
+                isLongPress = true;
+                this.isDraggingScroll = true;
+                this.dragScrollId = scrollId;
+                tab.classList.add('dragging');
+                if (navigator.vibrate) navigator.vibrate(40);
+            }, 320);
+        };
+
+        const onPointerMove = (e) => {
+            const currentX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            const currentY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+
+            if (!isLongPress) {
+                if (Math.abs(currentX - startX) > 10 || Math.abs(currentY - startY) > 10) {
+                    clearTimeout(this.dragTimer);
+                }
+                return;
+            }
+
+            const elemBelow = document.elementFromPoint(currentX, currentY);
+            const targetTab = elemBelow ? elemBelow.closest('.scroll-tab-item') : null;
+
+            document.querySelectorAll('.scroll-tab-item').forEach(t => t.classList.remove('drag-over'));
+            if (targetTab && targetTab !== tab) {
+                targetTab.classList.add('drag-over');
+            }
+        };
+
+        const onPointerUp = async (e) => {
+            clearTimeout(this.dragTimer);
+
+            if (this.isDraggingScroll && this.dragScrollId) {
+                const currentX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX) || 0;
+                const currentY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY) || 0;
+                const elemBelow = document.elementFromPoint(currentX, currentY);
+                const targetTab = elemBelow ? elemBelow.closest('.scroll-tab-item') : null;
+
+                if (targetTab && targetTab !== tab) {
+                    const targetScrollId = targetTab.getAttribute('data-scroll-id');
+                    await this.reorderScrolls(this.dragScrollId, targetScrollId);
+                }
+
+                tab.classList.remove('dragging');
+                document.querySelectorAll('.scroll-tab-item').forEach(t => t.classList.remove('drag-over'));
+
+                setTimeout(() => {
+                    this.isDraggingScroll = false;
+                    this.dragScrollId = null;
+                }, 80);
+            }
+        };
+
+        tab.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
+    }
+
+    async reorderScrolls(fromId, toId) {
+        const fromIndex = this.scrolls.findIndex(s => s.id === fromId);
+        const toIndex = this.scrolls.findIndex(s => s.id === toId);
+        if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+
+        const [moved] = this.scrolls.splice(fromIndex, 1);
+        this.scrolls.splice(toIndex, 0, moved);
+
+        this.scrolls.forEach((s, idx) => {
+            s.order = idx;
+        });
+
+        await this.storage.saveAllScrolls(this.scrolls);
+        this.renderScrollTabs();
+        this.showToast('↔️ スクロールの順番を入れ替えました');
     }
 
     renderSlots() {
@@ -655,7 +838,6 @@ class VoicePadApp {
         if (!grid) return;
         grid.innerHTML = '';
 
-        // グリッドクラスを適用
         grid.className = `pad-grid grid-count-${this.pageSize}`;
 
         const currentSlots = this.getCurrentSlots();
@@ -666,12 +848,10 @@ class VoicePadApp {
             this.currentPage = totalPages;
         }
 
-        // ページネーション計算
         const startIndex = (this.currentPage - 1) * this.pageSize;
         const endIndex = startIndex + this.pageSize;
         const pageSlots = currentSlots.slice(startIndex, endIndex);
 
-        // ページネーションUIの更新
         const pageIndicator = document.getElementById('page-indicator');
         const prevBtn = document.getElementById('prev-page-btn');
         const nextBtn = document.getElementById('next-page-btn');
@@ -682,7 +862,6 @@ class VoicePadApp {
         if (prevBtn) prevBtn.disabled = (this.currentPage <= 1);
         if (nextBtn) nextBtn.disabled = (this.currentPage >= totalPages);
 
-        // スロットカードの生成
         pageSlots.forEach((slot, idx) => {
             const card = document.createElement('div');
             const hasPhoto = !!slot.imageUrl;
@@ -693,14 +872,15 @@ class VoicePadApp {
             card.setAttribute('data-slot-id', slot.id);
             card.id = `pad-${slot.id}`;
 
-            // スロットカラーの循環
             const colorIdx = ((displayIndex - 1) % 8) + 1;
             card.style.setProperty('--slot-color', `var(--slot-c${colorIdx})`);
 
             const hasAudio = slot.audioBlob !== null;
             let statusText = '未録音';
             if (hasAudio) {
-                statusText = `${slot.duration.toFixed(1)}s`;
+                const speed = this.getEffectivePlaybackSpeed(slot);
+                const speedLabel = speed !== 1.0 ? ` (${speed}x)` : '';
+                statusText = `${slot.duration.toFixed(1)}s${speedLabel}`;
             }
 
             const labelHtml = `<div class="pad-label">${this.escapeHtml(slot.label)}</div>`;
@@ -718,7 +898,6 @@ class VoicePadApp {
                     <div class="pad-photo-overlay"></div>
                 ` : ''}
 
-                <!-- 上部ヘッダー -->
                 <div class="pad-header">
                     <span class="slot-badge">${displayIndex}</span>
                     ${pos === 'top' ? labelHtml : ''}
@@ -727,13 +906,11 @@ class VoicePadApp {
                     </button>
                 </div>
 
-                <!-- 中央ボディ -->
                 <div class="pad-body">
                     ${!hasPhoto ? `<div class="pad-emoji">${slot.emoji || '🔊'}</div>` : ''}
                     ${pos === 'center' ? labelHtml : ''}
                 </div>
 
-                <!-- 下部フッター -->
                 <div class="pad-footer">
                     ${pos === 'bottom' ? labelHtml : ''}
                     <div class="pad-status">${statusText}</div>
@@ -743,7 +920,6 @@ class VoicePadApp {
             grid.appendChild(card);
         });
 
-        // 最後のページかつ枠に空きがある場合は「＋ 新規スイッチ」カードを追加
         if (this.currentPage === totalPages && pageSlots.length < this.pageSize) {
             const addCard = document.createElement('div');
             addCard.className = 'pad-card pad-card-add-new';
@@ -758,7 +934,6 @@ class VoicePadApp {
 
     // ==================== イベントリスナー設定 ====================
     initEvents() {
-        // パッドグリッドのクリックイベント
         const grid = document.getElementById('pad-grid');
         if (grid) {
             grid.addEventListener('click', (e) => {
@@ -785,24 +960,20 @@ class VoicePadApp {
             });
         }
 
-        // 再生 / 録音モード切り替え
         document.getElementById('mode-play-btn')?.addEventListener('click', () => this.setMode('play'));
         document.getElementById('mode-record-btn')?.addEventListener('click', () => this.setMode('record'));
 
-        // ボイスエフェクト切り替え
+        // ヘッダーのボイスエフェクト変更
         document.getElementById('voice-effect')?.addEventListener('change', async (e) => {
             this.currentEffect = e.target.value;
             await this.storage.saveSetting('effect', this.currentEffect);
-            this.showToast(`ボイスエフェクト: ${e.target.options[e.target.selectedIndex].text}`);
+            const globalEffectSelect = document.getElementById('setting-global-effect');
+            if (globalEffectSelect) globalEffectSelect.value = this.currentEffect;
+            this.showToast(`全体のボイスエフェクト: ${this.getVoiceEffectLabel(this.currentEffect)}`);
         });
 
-        // スクロール（グループ）追加
         document.getElementById('add-scroll-btn')?.addEventListener('click', () => this.addNewScroll());
 
-        // クイックスイッチ追加
-        document.getElementById('add-slot-btn')?.addEventListener('click', () => this.addNewSlotToCurrentScroll());
-
-        // ページネーション
         document.getElementById('prev-page-btn')?.addEventListener('click', () => {
             if (this.currentPage > 1) {
                 this.currentPage--;
@@ -818,10 +989,8 @@ class VoicePadApp {
             }
         });
 
-        // スワイプによるページ送り操作（タッチジェスチャー対応）
         this.initSwipeGesture();
 
-        // ヘッダーアクション
         document.getElementById('header-import-btn')?.addEventListener('click', () => {
             document.getElementById('global-import-input')?.click();
         });
@@ -830,11 +999,15 @@ class VoicePadApp {
             this.openSettingsModal();
         });
 
-        document.getElementById('show-qr-btn')?.addEventListener('click', () => {
+        document.getElementById('settings-open-qr-btn')?.addEventListener('click', () => {
+            this.closeSettingsModal();
             this.openQrModal();
         });
 
-        // グローバルファイルインポート
+        document.getElementById('check-update-btn')?.addEventListener('click', () => {
+            this.openBackupConfirmModal();
+        });
+
         document.getElementById('global-import-input')?.addEventListener('change', async (e) => {
             if (e.target.files.length > 0) {
                 await this.handleGlobalImport(e.target.files[0]);
@@ -842,14 +1015,10 @@ class VoicePadApp {
             }
         });
 
-        // 各種モーダルの閉じるイベント
         this.initModalEvents();
-
-        // 写真・絵文字エディタイベント
         this.initEditorEvents();
     }
 
-    // スワイプ操作
     initSwipeGesture() {
         const grid = document.getElementById('pad-grid');
         if (!grid) return;
@@ -871,11 +1040,9 @@ class VoicePadApp {
                     const currentSlots = this.getCurrentSlots();
                     const totalPages = Math.ceil(currentSlots.length / this.pageSize);
                     if (diffX < 0 && this.currentPage < totalPages) {
-                        // 左スワイプ ➔ 次へ
                         this.currentPage++;
                         this.renderSlots();
                     } else if (diffX > 0 && this.currentPage > 1) {
-                        // 右スワイプ ➔ 前へ
                         this.currentPage--;
                         this.renderSlots();
                     }
@@ -884,7 +1051,6 @@ class VoicePadApp {
         }, { passive: true });
     }
 
-    // モード切り替え
     setMode(mode) {
         if (this.recordingSlotId !== null) {
             this.stopRecording();
@@ -905,7 +1071,7 @@ class VoicePadApp {
         }
     }
 
-    // ==================== スクロール（グループ）制御 ====================
+    // ==================== スクロール制御 ====================
     async switchScroll(scrollId) {
         this.currentScrollId = scrollId;
         this.currentPage = 1;
@@ -915,20 +1081,21 @@ class VoicePadApp {
     }
 
     async addNewScroll(name = null) {
-        const scrollName = name || prompt('新しいグループ（スクロール）の名前を入力してください:', `グループ ${this.scrolls.length + 1}`);
+        const scrollName = name || prompt('新しいスクロールの名前を入力してください:', `スクロール ${this.scrolls.length + 1}`);
         if (!scrollName || !scrollName.trim()) return;
 
         const newScroll = {
             id: 'scroll_' + Date.now(),
             name: scrollName.trim(),
             order: this.scrolls.length,
+            voiceEffect: 'inherit',
+            playbackSpeed: 'inherit',
             createdAt: Date.now()
         };
 
         await this.storage.saveScroll(newScroll);
         this.scrolls.push(newScroll);
 
-        // 初期スイッチを8個作成
         const emojis = ['🔴', '🟠', '🟡', '🟢', '🔵', '🔷', '🟣', '🌸'];
         for (let i = 1; i <= 8; i++) {
             const newSlot = {
@@ -944,6 +1111,8 @@ class VoicePadApp {
                 imageFit: 'cover',
                 audioBlob: null,
                 duration: 0,
+                voiceEffect: 'inherit',
+                playbackSpeed: 'inherit',
                 order: i
             };
             await this.storage.saveSlot(newSlot);
@@ -951,7 +1120,7 @@ class VoicePadApp {
         }
 
         await this.switchScroll(newScroll.id);
-        this.showToast(`✨ グループ「${newScroll.name}」を作成しました`);
+        this.showToast(`✨ スクロール「${newScroll.name}」を作成しました`);
     }
 
     openScrollModal(scrollId) {
@@ -961,6 +1130,21 @@ class VoicePadApp {
 
         const nameInput = document.getElementById('edit-scroll-name');
         if (nameInput) nameInput.value = scroll.name;
+
+        // ボイスエフェクト設定同期
+        const effectSelect = document.getElementById('edit-scroll-effect');
+        if (effectSelect) {
+            effectSelect.value = scroll.voiceEffect || 'inherit';
+            const globalEffLabel = this.getVoiceEffectLabel(this.currentEffect);
+            effectSelect.options[0].text = `🔄 全体設定に従う (現在: ${globalEffLabel})`;
+        }
+
+        // スピード設定同期
+        const speedSelect = document.getElementById('edit-scroll-speed');
+        if (speedSelect) {
+            speedSelect.value = scroll.playbackSpeed || 'inherit';
+            speedSelect.options[0].text = `🔄 全体設定に従う (現在: ${this.globalPlaybackSpeed}x)`;
+        }
 
         document.getElementById('scroll-modal-backdrop')?.classList.add('open');
     }
@@ -979,23 +1163,34 @@ class VoicePadApp {
         const newName = nameInput?.value.trim() || scroll.name;
         scroll.name = newName;
 
+        const effectSelect = document.getElementById('edit-scroll-effect');
+        if (effectSelect) {
+            scroll.voiceEffect = effectSelect.value;
+        }
+
+        const speedSelect = document.getElementById('edit-scroll-speed');
+        if (speedSelect) {
+            scroll.playbackSpeed = speedSelect.value;
+        }
+
         await this.storage.saveScroll(scroll);
         this.renderScrollTabs();
+        this.renderSlots();
         this.closeScrollModal();
-        this.showToast(`💾 グループ名を「${newName}」に更新しました`);
+        this.showToast(`💾 スクロール「${newName}」の設定を更新しました`);
     }
 
     async deleteScrollModal() {
         if (!this.editingScrollId) return;
         if (this.scrolls.length <= 1) {
-            alert('最後のグループは削除できません。');
+            alert('最後のスクロールは削除できません。');
             return;
         }
 
         const scroll = this.scrolls.find(s => s.id === this.editingScrollId);
         if (!scroll) return;
 
-        if (confirm(`グループ「${scroll.name}」とその中のすべてのスイッチを削除しますか？`)) {
+        if (confirm(`スクロール「${scroll.name}」とその中のすべてのスイッチを削除しますか？`)) {
             const idToDelete = this.editingScrollId;
             await this.storage.deleteScroll(idToDelete);
 
@@ -1011,7 +1206,7 @@ class VoicePadApp {
 
             this.renderScrollTabs();
             this.renderSlots();
-            this.showToast(`🗑️ グループ「${scroll.name}」を削除しました`);
+            this.showToast(`🗑️ スクロール「${scroll.name}」を削除しました`);
         }
     }
 
@@ -1025,13 +1220,14 @@ class VoicePadApp {
             id: newScrollId,
             name: `${scroll.name} (コピー)`,
             order: this.scrolls.length,
+            voiceEffect: scroll.voiceEffect || 'inherit',
+            playbackSpeed: scroll.playbackSpeed || 'inherit',
             createdAt: Date.now()
         };
 
         await this.storage.saveScroll(duplicatedScroll);
         this.scrolls.push(duplicatedScroll);
 
-        // スロットの複製
         const targetSlots = this.slots.filter(s => s.scrollId === scroll.id);
         for (const slot of targetSlots) {
             const newSlot = {
@@ -1045,10 +1241,10 @@ class VoicePadApp {
 
         this.closeScrollModal();
         await this.switchScroll(newScrollId);
-        this.showToast(`📋 グループ「${duplicatedScroll.name}」を複製しました`);
+        this.showToast(`📋 スクロール「${duplicatedScroll.name}」を複製しました`);
     }
 
-    // ==================== スイッチ（スロット）追加・制御 ====================
+    // ==================== スイッチ追加・制御 ====================
     async addNewSlotToCurrentScroll() {
         const currentSlots = this.getCurrentSlots();
         const nextOrder = currentSlots.length + 1;
@@ -1065,13 +1261,14 @@ class VoicePadApp {
             imageFit: 'cover',
             audioBlob: null,
             duration: 0,
+            voiceEffect: 'inherit',
+            playbackSpeed: 'inherit',
             order: nextOrder
         };
 
         await this.storage.saveSlot(newSlot);
         this.slots.push(newSlot);
 
-        // ページを最後のページに移動
         const totalPages = Math.ceil(this.getCurrentSlots().length / this.pageSize);
         this.currentPage = totalPages;
 
@@ -1234,34 +1431,39 @@ class VoicePadApp {
         this.recordingSlotId = null;
     }
 
-    // ==================== 音声再生制御 ====================
+    // ==================== 音声再生制御（階層エフェクト＆スピード反映） ====================
     async playSlot(slotId) {
         await AudioUnlocker.unlock();
         const ctx = AudioUnlocker.getContext();
 
         const slot = this.slots.find(s => s.id === slotId);
         if (!slot || !slot.audioBlob) {
-            // 未録音の場合は即座に録音モードにして録音開始
             this.setMode('record');
             this.startRecording(slotId);
             return;
         }
 
-        // 既に再生中なら停止（トグル）
         if (this.activeSources.has(slotId)) {
             this.stopSlot(slotId);
             return;
         }
+
+        // 実効ボイスエフェクトと再生スピードの取得
+        const effectiveEffect = this.getEffectiveVoiceEffect(slot);
+        const effectiveSpeed = this.getEffectivePlaybackSpeed(slot);
 
         try {
             const arrayBuffer = await slot.audioBlob.arrayBuffer();
             const originalBuffer = await ctx.decodeAudioData(arrayBuffer);
 
             // ピッチシフト＆エフェクト適用
-            const finalBuffer = PitchShiftEngine.applyEffect(originalBuffer, this.currentEffect, ctx);
+            const finalBuffer = PitchShiftEngine.applyEffect(originalBuffer, effectiveEffect, ctx);
 
             const source = ctx.createBufferSource();
             source.buffer = finalBuffer;
+
+            // 再生スピード設定
+            source.playbackRate.value = effectiveSpeed;
 
             const gainNode = ctx.createGain();
             source.connect(gainNode);
@@ -1279,14 +1481,15 @@ class VoicePadApp {
             };
         } catch (err) {
             console.error('Audio play error, using fallback:', err);
-            this.fallbackPlay(slot, slotId);
+            this.fallbackPlay(slot, slotId, effectiveSpeed);
         }
     }
 
-    fallbackPlay(slot, slotId) {
+    fallbackPlay(slot, slotId, speed = 1.0) {
         try {
             const audioUrl = URL.createObjectURL(slot.audioBlob);
             const audio = new Audio(audioUrl);
+            audio.playbackRate = speed;
             audio.play();
             const card = document.getElementById(`pad-${slotId}`);
             if (card) card.classList.add('playing');
@@ -1312,9 +1515,7 @@ class VoicePadApp {
         if (card) card.classList.remove('playing');
     }
 
-    // ==================== 5. 3階層エクスポート（.vpad）＆ Web Share API ====================
-    
-    // Blob ➔ Base64変換
+    // ==================== 5. 写真・エフェクト・スピード完全対応 3階層エクスポート＆インポート ====================
     blobToBase64(blob) {
         return new Promise((resolve) => {
             if (!blob) {
@@ -1327,7 +1528,6 @@ class VoicePadApp {
         });
     }
 
-    // Base64 ➔ Blob変換
     base64ToBlob(base64Str) {
         if (!base64Str) return null;
         const parts = base64Str.split(';base64,');
@@ -1341,12 +1541,10 @@ class VoicePadApp {
         return new Blob([uInt8Array], { type: contentType });
     }
 
-    // 共通共有 / ダウンロードハンドラー
     async shareOrDownloadFile(fileName, jsonString) {
         const blob = new Blob([jsonString], { type: 'application/json' });
         const file = new File([blob], fileName, { type: 'application/json' });
 
-        // Web Share API（スマホの共有メニュー・LINE等への送信）
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
             try {
                 await navigator.share({
@@ -1363,7 +1561,6 @@ class VoicePadApp {
             }
         }
 
-        // フォールバック: ファイルダウンロード
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -1387,12 +1584,14 @@ class VoicePadApp {
                 label: slot.label,
                 labelPosition: slot.labelPosition,
                 emoji: slot.emoji,
-                imageUrl: slot.imageUrl,
-                imageScale: slot.imageScale,
-                imageOffsetX: slot.imageOffsetX,
-                imageOffsetY: slot.imageOffsetY,
-                imageFit: slot.imageFit,
+                imageUrl: slot.imageUrl || null,
+                imageScale: slot.imageScale !== undefined ? slot.imageScale : 1.0,
+                imageOffsetX: slot.imageOffsetX !== undefined ? slot.imageOffsetX : 0,
+                imageOffsetY: slot.imageOffsetY !== undefined ? slot.imageOffsetY : 0,
+                imageFit: slot.imageFit || 'cover',
                 duration: slot.duration,
+                voiceEffect: slot.voiceEffect || 'inherit',
+                playbackSpeed: slot.playbackSpeed || 'inherit',
                 audioBase64: audioBase64
             }
         };
@@ -1402,7 +1601,7 @@ class VoicePadApp {
         await this.shareOrDownloadFile(fileName, JSON.stringify(exportData, null, 2));
     }
 
-    // ② スクロール（グループ）単位のエクスポート
+    // ② スクロール単位のエクスポート
     async exportScroll(scrollId) {
         const scroll = this.scrolls.find(s => s.id === scrollId);
         if (!scroll) return;
@@ -1416,12 +1615,14 @@ class VoicePadApp {
                 label: slot.label,
                 labelPosition: slot.labelPosition,
                 emoji: slot.emoji,
-                imageUrl: slot.imageUrl,
-                imageScale: slot.imageScale,
-                imageOffsetX: slot.imageOffsetX,
-                imageOffsetY: slot.imageOffsetY,
-                imageFit: slot.imageFit,
+                imageUrl: slot.imageUrl || null,
+                imageScale: slot.imageScale !== undefined ? slot.imageScale : 1.0,
+                imageOffsetX: slot.imageOffsetX !== undefined ? slot.imageOffsetX : 0,
+                imageOffsetY: slot.imageOffsetY !== undefined ? slot.imageOffsetY : 0,
+                imageFit: slot.imageFit || 'cover',
                 duration: slot.duration,
+                voiceEffect: slot.voiceEffect || 'inherit',
+                playbackSpeed: slot.playbackSpeed || 'inherit',
                 order: slot.order,
                 audioBase64: audioBase64
             });
@@ -1432,13 +1633,15 @@ class VoicePadApp {
             version: '2.0',
             exportedAt: new Date().toISOString(),
             scroll: {
-                name: scroll.name
+                name: scroll.name,
+                voiceEffect: scroll.voiceEffect || 'inherit',
+                playbackSpeed: scroll.playbackSpeed || 'inherit'
             },
             slots: serializedSlots
         };
 
-        const safeName = (scroll.name || 'group').replace(/[\\/:*?"<>|]/g, '_');
-        const fileName = `VoicePad_Group_${safeName}.vpad`;
+        const safeName = (scroll.name || 'scroll').replace(/[\\/:*?"<>|]/g, '_');
+        const fileName = `VoicePad_Scroll_${safeName}.vpad`;
         await this.shareOrDownloadFile(fileName, JSON.stringify(exportData, null, 2));
     }
 
@@ -1451,6 +1654,8 @@ class VoicePadApp {
             serializedScrolls.push({
                 id: scroll.id,
                 name: scroll.name,
+                voiceEffect: scroll.voiceEffect || 'inherit',
+                playbackSpeed: scroll.playbackSpeed || 'inherit',
                 order: scroll.order
             });
         }
@@ -1463,12 +1668,14 @@ class VoicePadApp {
                 label: slot.label,
                 labelPosition: slot.labelPosition,
                 emoji: slot.emoji,
-                imageUrl: slot.imageUrl,
-                imageScale: slot.imageScale,
-                imageOffsetX: slot.imageOffsetX,
-                imageOffsetY: slot.imageOffsetY,
-                imageFit: slot.imageFit,
+                imageUrl: slot.imageUrl || null,
+                imageScale: slot.imageScale !== undefined ? slot.imageScale : 1.0,
+                imageOffsetX: slot.imageOffsetX !== undefined ? slot.imageOffsetX : 0,
+                imageOffsetY: slot.imageOffsetY !== undefined ? slot.imageOffsetY : 0,
+                imageFit: slot.imageFit || 'cover',
                 duration: slot.duration,
+                voiceEffect: slot.voiceEffect || 'inherit',
+                playbackSpeed: slot.playbackSpeed || 'inherit',
                 order: slot.order,
                 audioBase64: audioBase64
             });
@@ -1481,6 +1688,7 @@ class VoicePadApp {
             settings: {
                 pageSize: this.pageSize,
                 effect: this.currentEffect,
+                globalPlaybackSpeed: this.globalPlaybackSpeed,
                 currentScrollId: this.currentScrollId
             },
             scrolls: serializedScrolls,
@@ -1492,11 +1700,10 @@ class VoicePadApp {
         await this.shareOrDownloadFile(fileName, JSON.stringify(exportData, null, 2));
     }
 
-    // ==================== 6. アプリ内インポート（ファイルピッカー） ====================
+    // アプリ内インポート処理
     async handleGlobalImport(file) {
         if (!file) return;
 
-        // 音声ファイル（MP3/WAV/M4A/AAC/OGG）が直接選択された場合
         if (file.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg)$/i.test(file.name)) {
             const currentSlots = this.getCurrentSlots();
             const slotName = file.name.replace(/\.[^/.]+$/, '');
@@ -1513,6 +1720,8 @@ class VoicePadApp {
                 imageFit: 'cover',
                 audioBlob: file,
                 duration: 3.0,
+                voiceEffect: 'inherit',
+                playbackSpeed: 'inherit',
                 order: currentSlots.length + 1
             };
             await this.storage.saveSlot(newSlot);
@@ -1523,13 +1732,11 @@ class VoicePadApp {
             return;
         }
 
-        // .vpad / .json ファイルの解析
         try {
             const text = await file.text();
             const data = JSON.parse(text);
 
             if (data.type === 'voicepad_all') {
-                // ③ 全体バックアップの復元
                 if (confirm('アプリ全体のバックアップデータを読み込みますか？（既存のデータに統合または上書きされます）')) {
                     if (data.settings?.pageSize) {
                         this.pageSize = data.settings.pageSize;
@@ -1537,8 +1744,21 @@ class VoicePadApp {
                         const pageSizeSelect = document.getElementById('setting-page-size');
                         if (pageSizeSelect) pageSizeSelect.value = String(this.pageSize);
                     }
+                    if (data.settings?.effect) {
+                        this.currentEffect = data.settings.effect;
+                        await this.storage.saveSetting('effect', this.currentEffect);
+                        const effectEl = document.getElementById('voice-effect');
+                        if (effectEl) effectEl.value = this.currentEffect;
+                        const globalEffectSelect = document.getElementById('setting-global-effect');
+                        if (globalEffectSelect) globalEffectSelect.value = this.currentEffect;
+                    }
+                    if (data.settings?.globalPlaybackSpeed) {
+                        this.globalPlaybackSpeed = data.settings.globalPlaybackSpeed;
+                        await this.storage.saveSetting('globalPlaybackSpeed', this.globalPlaybackSpeed);
+                        const globalSpeedSelect = document.getElementById('setting-global-speed');
+                        if (globalSpeedSelect) globalSpeedSelect.value = String(this.globalPlaybackSpeed);
+                    }
 
-                    // スクロールの登録
                     if (Array.isArray(data.scrolls)) {
                         for (const s of data.scrolls) {
                             const existing = this.scrolls.find(sc => sc.id === s.id);
@@ -1549,13 +1769,14 @@ class VoicePadApp {
                         }
                     }
 
-                    // スロットの復元
                     if (Array.isArray(data.slots)) {
                         for (const s of data.slots) {
                             const blob = this.base64ToBlob(s.audioBase64);
                             const slotObj = {
                                 ...s,
-                                audioBlob: blob
+                                audioBlob: blob,
+                                voiceEffect: s.voiceEffect || 'inherit',
+                                playbackSpeed: s.playbackSpeed || 'inherit'
                             };
                             delete slotObj.audioBase64;
                             await this.storage.saveSlot(slotObj);
@@ -1571,14 +1792,15 @@ class VoicePadApp {
 
                     this.renderScrollTabs();
                     this.renderSlots();
-                    this.showToast('🎉 アプリ全体のバックアップを復元しました！');
+                    this.showToast('🎉 写真・エフェクト・スピードを含む全データを復元しました！');
                 }
             } else if (data.type === 'voicepad_scroll') {
-                // ② スクロール（グループ）のインポート
                 const newScrollId = 'scroll_' + Date.now();
                 const newScroll = {
                     id: newScrollId,
-                    name: data.scroll?.name || 'インポートグループ',
+                    name: data.scroll?.name || 'インポートスクロール',
+                    voiceEffect: data.scroll?.voiceEffect || 'inherit',
+                    playbackSpeed: data.scroll?.playbackSpeed || 'inherit',
                     order: this.scrolls.length,
                     createdAt: Date.now()
                 };
@@ -1595,12 +1817,14 @@ class VoicePadApp {
                             labelPosition: s.labelPosition || 'bottom',
                             emoji: s.emoji || '🔊',
                             imageUrl: s.imageUrl || null,
-                            imageScale: s.imageScale || 1.0,
-                            imageOffsetX: s.imageOffsetX || 0,
-                            imageOffsetY: s.imageOffsetY || 0,
+                            imageScale: s.imageScale !== undefined ? s.imageScale : 1.0,
+                            imageOffsetX: s.imageOffsetX !== undefined ? s.imageOffsetX : 0,
+                            imageOffsetY: s.imageOffsetY !== undefined ? s.imageOffsetY : 0,
                             imageFit: s.imageFit || 'cover',
                             audioBlob: blob,
                             duration: s.duration || 0,
+                            voiceEffect: s.voiceEffect || 'inherit',
+                            playbackSpeed: s.playbackSpeed || 'inherit',
                             order: s.order || 1
                         };
                         await this.storage.saveSlot(slotObj);
@@ -1609,9 +1833,8 @@ class VoicePadApp {
                 }
 
                 await this.switchScroll(newScrollId);
-                this.showToast(`✨ グループ「${newScroll.name}」をインポートしました！`);
+                this.showToast(`✨ スクロール「${newScroll.name}」を復元・インポートしました！`);
             } else if (data.type === 'voicepad_slot' || data.slot) {
-                // ① 単体スイッチのインポート
                 const s = data.slot || data;
                 const blob = this.base64ToBlob(s.audioBase64);
                 const currentSlots = this.getCurrentSlots();
@@ -1622,12 +1845,14 @@ class VoicePadApp {
                     labelPosition: s.labelPosition || 'bottom',
                     emoji: s.emoji || '🔊',
                     imageUrl: s.imageUrl || null,
-                    imageScale: s.imageScale || 1.0,
-                    imageOffsetX: s.imageOffsetX || 0,
-                    imageOffsetY: s.imageOffsetY || 0,
+                    imageScale: s.imageScale !== undefined ? s.imageScale : 1.0,
+                    imageOffsetX: s.imageOffsetX !== undefined ? s.imageOffsetX : 0,
+                    imageOffsetY: s.imageOffsetY !== undefined ? s.imageOffsetY : 0,
                     imageFit: s.imageFit || 'cover',
                     audioBlob: blob,
                     duration: s.duration || 0,
+                    voiceEffect: s.voiceEffect || 'inherit',
+                    playbackSpeed: s.playbackSpeed || 'inherit',
                     order: currentSlots.length + 1
                 };
 
@@ -1635,7 +1860,7 @@ class VoicePadApp {
                 this.slots.push(newSlot);
                 this.renderSlots();
                 this.renderScrollTabs();
-                this.showToast(`✨ スイッチ「${newSlot.label}」をインポートしました！`);
+                this.showToast(`✨ 写真・設定付きスイッチ「${newSlot.label}」をインポートしました！`);
             } else {
                 alert('対応していないファイル形式です。(.vpad / .json / 音声ファイル)');
             }
@@ -1647,7 +1872,6 @@ class VoicePadApp {
 
     // ==================== モーダルイベント初期化 ====================
     initModalEvents() {
-        // ① スイッチ設定モーダル
         document.getElementById('close-modal-btn')?.addEventListener('click', () => this.closeEditModal());
         document.getElementById('modal-backdrop')?.addEventListener('click', (e) => {
             if (e.target.id === 'modal-backdrop') this.closeEditModal();
@@ -1675,7 +1899,7 @@ class VoicePadApp {
             }
         });
 
-        // ② スクロールモーダル
+        // スクロールモーダル
         document.getElementById('close-scroll-modal-btn')?.addEventListener('click', () => this.closeScrollModal());
         document.getElementById('scroll-modal-backdrop')?.addEventListener('click', (e) => {
             if (e.target.id === 'scroll-modal-backdrop') this.closeScrollModal();
@@ -1687,7 +1911,7 @@ class VoicePadApp {
         document.getElementById('duplicate-scroll-btn')?.addEventListener('click', () => this.duplicateCurrentScroll());
         document.getElementById('delete-scroll-btn')?.addEventListener('click', () => this.deleteScrollModal());
 
-        // ③ 全体設定モーダル
+        // 全体設定モーダル
         document.getElementById('close-settings-modal-btn')?.addEventListener('click', () => this.closeSettingsModal());
         document.getElementById('settings-modal-backdrop')?.addEventListener('click', (e) => {
             if (e.target.id === 'settings-modal-backdrop') this.closeSettingsModal();
@@ -1699,19 +1923,32 @@ class VoicePadApp {
             this.renderSlots();
             this.showToast(`1画面のスイッチ表示数を「${this.pageSize}個」に変更しました`);
         });
+        document.getElementById('setting-global-effect')?.addEventListener('change', async (e) => {
+            this.currentEffect = e.target.value;
+            await this.storage.saveSetting('effect', this.currentEffect);
+            const effectEl = document.getElementById('voice-effect');
+            if (effectEl) effectEl.value = this.currentEffect;
+            this.showToast(`全体のボイスエフェクトを「${this.getVoiceEffectLabel(this.currentEffect)}」に変更しました`);
+        });
+        document.getElementById('setting-global-speed')?.addEventListener('change', async (e) => {
+            this.globalPlaybackSpeed = parseFloat(e.target.value);
+            await this.storage.saveSetting('globalPlaybackSpeed', this.globalPlaybackSpeed);
+            this.renderSlots();
+            this.showToast(`全体の基本再生スピードを「${this.globalPlaybackSpeed}倍速」に変更しました`);
+        });
         document.getElementById('export-all-btn')?.addEventListener('click', () => this.exportAllData());
         document.getElementById('import-from-settings-btn')?.addEventListener('click', () => {
             this.closeSettingsModal();
             document.getElementById('global-import-input')?.click();
         });
         document.getElementById('reset-all-data-btn')?.addEventListener('click', async () => {
-            if (confirm('すべてのグループ・録音音声・設定を初期状態にリセットしますか？この操作は取り消せません。')) {
+            if (confirm('すべてのスクロール・録音音声・設定を初期状態にリセットしますか？この操作は取り消せません。')) {
                 await this.storage.clearAll();
                 location.reload();
             }
         });
 
-        // ④ QRモーダル
+        // QRモーダル
         document.getElementById('close-qr-modal-btn')?.addEventListener('click', () => this.closeQrModal());
         document.getElementById('qr-modal-backdrop')?.addEventListener('click', (e) => {
             if (e.target.id === 'qr-modal-backdrop') this.closeQrModal();
@@ -1724,6 +1961,34 @@ class VoicePadApp {
             } catch (e) {
                 alert(`URL: ${urlText}`);
             }
+        });
+
+        // ⑤ アップデート前バックアップ確認モーダル (YES / NO / キャンセル)
+        document.getElementById('close-confirm-modal-btn')?.addEventListener('click', () => this.closeBackupConfirmModal());
+        document.getElementById('btn-update-cancel')?.addEventListener('click', () => this.closeBackupConfirmModal());
+        document.getElementById('backup-confirm-modal-backdrop')?.addEventListener('click', (e) => {
+            if (e.target.id === 'backup-confirm-modal-backdrop') this.closeBackupConfirmModal();
+        });
+
+        // YES: バックアップしてから更新を連続で実行
+        document.getElementById('btn-update-yes')?.addEventListener('click', async () => {
+            this.closeBackupConfirmModal();
+            this.showToast('📦 バックアップを作成中...');
+            try {
+                await this.exportAllData();
+            } catch (err) {
+                console.error('Backup error:', err);
+            }
+            this.showToast('🚀 バックアップ完了！最新バージョンへ更新して再起動します...');
+            setTimeout(() => {
+                this.performAppUpdate();
+            }, 1200);
+        });
+
+        // NO: バックアップせずに直接更新
+        document.getElementById('btn-update-no')?.addEventListener('click', () => {
+            this.closeBackupConfirmModal();
+            this.performAppUpdate();
         });
     }
 
@@ -1742,6 +2007,23 @@ class VoicePadApp {
         const labelInput = document.getElementById('edit-label');
         if (labelInput) labelInput.value = slot.label;
 
+        // ボイスエフェクト設定同期
+        const effectSelect = document.getElementById('edit-slot-effect');
+        if (effectSelect) {
+            effectSelect.value = slot.voiceEffect || 'inherit';
+            const parentEffect = this.getScrollEffectiveVoiceEffect(slot.scrollId);
+            const parentEffLabel = this.getVoiceEffectLabel(parentEffect);
+            effectSelect.options[0].text = `🔄 スクロール設定に従う (現在: ${parentEffLabel})`;
+        }
+
+        // スピード設定同期
+        const speedSelect = document.getElementById('edit-slot-speed');
+        if (speedSelect) {
+            speedSelect.value = slot.playbackSpeed || 'inherit';
+            const parentSpeed = this.getScrollEffectiveSpeed(slot.scrollId);
+            speedSelect.options[0].text = `🔄 スクロール設定に従う (現在: ${parentSpeed}x)`;
+        }
+
         const emojiInput = document.getElementById('edit-emoji');
         if (emojiInput) emojiInput.value = slot.emoji || '🔊';
 
@@ -1751,7 +2033,6 @@ class VoicePadApp {
         this.editingImageOffsetY = slot.imageOffsetY !== undefined ? slot.imageOffsetY : 0;
         this.editingImageFit = slot.imageFit || 'cover';
 
-        // プレビュー枠のスタイリング
         const targetCard = document.getElementById(`pad-${slotId}`);
         const viewport = document.getElementById('photo-crop-viewport');
         if (targetCard && viewport) {
@@ -1774,7 +2055,6 @@ class VoicePadApp {
             }
         }
 
-        // ラベル位置
         const currentPos = slot.labelPosition || 'bottom';
         const posInput = document.getElementById('edit-label-pos');
         if (posInput) posInput.value = currentPos;
@@ -1783,7 +2063,6 @@ class VoicePadApp {
             else btn.classList.remove('active');
         });
 
-        // 絵文字選択
         document.querySelectorAll('.emoji-opt').forEach(opt => {
             if (!this.editingImageUrl && opt.innerText === slot.emoji) opt.classList.add('selected');
             else opt.classList.remove('selected');
@@ -1817,6 +2096,8 @@ class VoicePadApp {
         const labelInput = document.getElementById('edit-label')?.value.trim();
         const emojiInput = document.getElementById('edit-emoji')?.value.trim();
         const labelPos = document.getElementById('edit-label-pos')?.value || 'bottom';
+        const effectSelect = document.getElementById('edit-slot-effect');
+        const speedSelect = document.getElementById('edit-slot-speed');
 
         slot.label = labelInput || `ボタン`;
         slot.labelPosition = labelPos;
@@ -1826,6 +2107,13 @@ class VoicePadApp {
         slot.imageOffsetX = this.editingImageOffsetX;
         slot.imageOffsetY = this.editingImageOffsetY;
         slot.imageFit = this.editingImageFit;
+
+        if (effectSelect) {
+            slot.voiceEffect = effectSelect.value;
+        }
+        if (speedSelect) {
+            slot.playbackSpeed = speedSelect.value;
+        }
 
         await this.storage.saveSlot(slot);
         this.renderSlots();
@@ -1877,9 +2165,7 @@ class VoicePadApp {
         }
     }
 
-    // エディタイベント設定
     initEditorEvents() {
-        // ラベル位置選択
         document.querySelectorAll('.pos-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('active'));
@@ -1890,12 +2176,10 @@ class VoicePadApp {
             });
         });
 
-        // ラベル文字入力連動
         document.getElementById('edit-label')?.addEventListener('input', () => {
             this.updateModalPhotoPreview();
         });
 
-        // 写真選択
         const selectPhotoBtn = document.getElementById('select-photo-btn');
         const photoFileInput = document.getElementById('photo-file-input');
         const removePhotoBtn = document.getElementById('remove-photo-btn');
@@ -1921,7 +2205,6 @@ class VoicePadApp {
             });
         }
 
-        // ズームスライダー
         const zoomSlider = document.getElementById('photo-zoom-slider');
         if (zoomSlider) {
             zoomSlider.addEventListener('input', (e) => {
@@ -1932,7 +2215,6 @@ class VoicePadApp {
             });
         }
 
-        // 十字キー位置調整
         document.querySelectorAll('.dpad-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const moveType = btn.getAttribute('data-move');
@@ -1958,7 +2240,6 @@ class VoicePadApp {
             });
         });
 
-        // フィットモード
         document.querySelectorAll('.fit-mode-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.fit-mode-btn').forEach(b => b.classList.remove('active'));
@@ -1968,10 +2249,8 @@ class VoicePadApp {
             });
         });
 
-        // プレビュー枠ドラッグ
         this.initCropViewportDrag();
 
-        // 絵文字選択
         document.querySelectorAll('.emoji-opt').forEach(opt => {
             opt.addEventListener('click', () => {
                 document.querySelectorAll('.emoji-opt').forEach(o => o.classList.remove('selected'));
@@ -2124,6 +2403,12 @@ class VoicePadApp {
 
     // ==================== 設定＆QRモーダル ====================
     openSettingsModal() {
+        const globalEffectSelect = document.getElementById('setting-global-effect');
+        if (globalEffectSelect) globalEffectSelect.value = this.currentEffect;
+
+        const globalSpeedSelect = document.getElementById('setting-global-speed');
+        if (globalSpeedSelect) globalSpeedSelect.value = String(this.globalPlaybackSpeed);
+
         document.getElementById('settings-modal-backdrop')?.classList.add('open');
     }
 
@@ -2140,7 +2425,36 @@ class VoicePadApp {
         document.getElementById('qr-modal-backdrop')?.classList.remove('open');
     }
 
-    // オフラインスタンドアロン QRコード Canvas描画
+    openBackupConfirmModal() {
+        this.closeSettingsModal();
+        document.getElementById('backup-confirm-modal-backdrop')?.classList.add('open');
+    }
+
+    closeBackupConfirmModal() {
+        document.getElementById('backup-confirm-modal-backdrop')?.classList.remove('open');
+    }
+
+    async performAppUpdate() {
+        this.showToast('🚀 最新バージョンを確認して再起動します...');
+        try {
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+            }
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const reg of registrations) {
+                    await reg.update();
+                }
+            }
+        } catch (e) {
+            console.warn('Cache clean warning during update:', e);
+        }
+        setTimeout(() => {
+            window.location.reload(true);
+        }, 1000);
+    }
+
     renderQrCodeCanvas() {
         const canvas = document.getElementById('qr-canvas');
         if (!canvas) return;
@@ -2149,7 +2463,6 @@ class VoicePadApp {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, size, size);
 
-        // クリーンなQR風パターン描画（外部通信完全不要）
         const url = 'https://galakutar.github.io/Voice-Pad/';
         const img = new Image();
         img.crossOrigin = 'anonymous';
@@ -2159,7 +2472,6 @@ class VoicePadApp {
         img.src = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(url)}`;
     }
 
-    // ==================== ユーティリティ ====================
     showToast(msg) {
         const container = document.getElementById('toast-container');
         if (!container) return;

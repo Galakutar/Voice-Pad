@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Voice Pad - 音声録音＆タッチサンプラー</title>
-    <meta name="description" content="直感的な操作で音声を録音・再生できる高機能タッチサンプラー。グループ管理、無制限スイッチ、ボイスチェンジャー、バックアップ共有対応。">
+    <meta name="description" content="直感的な操作で音声を録音・再生できる高機能タッチサンプラー。スクロール管理、個別ボイスチェンジャー＆スピード設定、バックアップ共有対応。">
     
     <!-- iOS / iPadOS / Android PWA 最適化 -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Voice Pad">
-    <meta name="theme-color" content="#0f141c">
+    <meta name="theme-color" content="#090d14">
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
@@ -18,7 +18,7 @@
 </head>
 <body>
     <div id="app-container">
-        <!-- アプリヘッダー -->
+        <!-- 1段目：アプリヘッダー -->
         <header class="app-header">
             <div class="logo-group">
                 <h1 class="app-title">Voice Pad</h1>
@@ -38,7 +38,7 @@
 
             <!-- ヘッダー右側コントロール -->
             <div class="header-controls">
-                <!-- ボイスチェンジャー（キャラクター＆環境エフェクト） -->
+                <!-- 全体クイックボイスチェンジャー -->
                 <select id="voice-effect" class="voice-effect-select" title="ボイスチェンジャー" aria-label="ボイスエフェクト選択">
                     <optgroup label="キャラクター">
                         <option value="normal">🎙️ 通常</option>
@@ -72,35 +72,25 @@
                 <button id="header-settings-btn" class="header-action-btn icon-only" title="設定＆バックアップ" aria-label="設定">
                     ⚙️
                 </button>
-
-                <!-- QRコード / 共有ボタン -->
-                <button id="show-qr-btn" class="header-action-btn icon-only" title="共有・アプリ情報" aria-label="QR共有">
-                    📱
-                </button>
             </div>
         </header>
 
-        <!-- スクロール（グループ / カテゴリ）タブバー -->
-        <nav class="scroll-tabs-bar" aria-label="グループタブ">
+        <!-- ２段目：スクロールタブバー（横スクロール＆長押しドラッグ並び替え対応） -->
+        <nav class="scroll-tabs-bar" aria-label="スクロールタブ">
             <div id="scroll-tabs-container" class="scroll-tabs-container">
                 <!-- JavaScript で動的にスクロールタブを生成 -->
             </div>
-            <button id="add-scroll-btn" class="add-scroll-btn" title="新しいグループ（スクロール）を追加" aria-label="グループを追加">
-                <span class="plus-icon">＋</span> 新規グループ
+            <button id="add-scroll-btn" class="add-scroll-btn" title="新しいスクロールを追加" aria-label="スクロールを追加">
+                <span class="plus-icon">＋</span> 新規スクロール
             </button>
         </nav>
 
-        <!-- ページネーション & ツールバー -->
+        <!-- ３段目：ページネーションツールバー -->
         <div class="sub-toolbar">
             <div id="pagination-controls" class="pagination-controls">
                 <button id="prev-page-btn" class="page-nav-btn" title="前のページ" aria-label="前のページ">◀</button>
                 <span id="page-indicator" class="page-indicator">ページ 1 / 1 (0個)</span>
                 <button id="next-page-btn" class="page-nav-btn" title="次のページ" aria-label="次のページ">▶</button>
-            </div>
-            <div class="sub-toolbar-actions">
-                <button id="add-slot-btn" class="quick-add-btn" title="このグループにスイッチを追加">
-                    <span>＋</span> スイッチ追加
-                </button>
             </div>
         </div>
 
@@ -129,6 +119,52 @@
                 <div class="form-group">
                     <label class="form-label" for="edit-label">スイッチの名前（ラベル）</label>
                     <input type="text" id="edit-label" class="form-input" placeholder="例: こんにちは、拍手、効果音..." maxlength="24">
+                </div>
+
+                <!-- スイッチ個別のボイスチェンジャー設定 -->
+                <div class="form-group">
+                    <label class="form-label" for="edit-slot-effect">🎙️ このスイッチのボイスチェンジャー</label>
+                    <select id="edit-slot-effect" class="form-input">
+                        <option value="inherit">🔄 スクロール設定に従う（デフォルト）</option>
+                        <optgroup label="キャラクター">
+                            <option value="normal">🎙️ 通常</option>
+                            <option value="baby">👶 赤ちゃん</option>
+                            <option value="boy">👦 男の子</option>
+                            <option value="girl">👧 女の子</option>
+                            <option value="man">👨 男の人</option>
+                            <option value="woman">👩 女の人</option>
+                            <option value="old_man">👴 おじいさん</option>
+                            <option value="old_woman">👵 おばあさん</option>
+                            <option value="alien">👽 宇宙人</option>
+                            <option value="robot">🤖 ロボット</option>
+                            <option value="monster">👹 怪獣</option>
+                        </optgroup>
+                        <optgroup label="環境・エフェクト">
+                            <option value="cave">⛰️ 洞窟 (エコー)</option>
+                            <option value="underwater">🫧 水の中</option>
+                            <option value="radio">📻 古いラジオ</option>
+                            <option value="telephone">📱 電話</option>
+                            <option value="hall">🏛️ 大ホール</option>
+                            <option value="megaphone">📢 メガホン</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <!-- スイッチ個別の再生スピード設定 -->
+                <div class="form-group">
+                    <label class="form-label" for="edit-slot-speed">⏩ このスイッチの再生スピード</label>
+                    <select id="edit-slot-speed" class="form-input">
+                        <option value="inherit">🔄 スクロール設定に従う（デフォルト）</option>
+                        <option value="0.5">🐢 0.5倍速 (超ゆっくり)</option>
+                        <option value="0.75">🚶 0.75倍速 (ゆっくり)</option>
+                        <option value="0.9">🔹 0.9倍速 (少しゆっくり)</option>
+                        <option value="1.0">⚡ 1.0倍速 (標準スピード)</option>
+                        <option value="1.1">🔸 1.1倍速 (少し速い)</option>
+                        <option value="1.25">🏃 1.25倍速 (やや速い)</option>
+                        <option value="1.5">🏎️ 1.5倍速 (速い)</option>
+                        <option value="1.75">🚀 1.75倍速 (とても速い)</option>
+                        <option value="2.0">💨 2.0倍速 (2倍速)</option>
+                    </select>
                 </div>
 
                 <!-- 名前の位置選択 -->
@@ -233,7 +269,7 @@
                 <div class="modal-actions">
                     <button id="save-slot-btn" class="action-btn save-btn">💾 設定を保存する</button>
                     <button id="import-slot-audio-btn" class="action-btn download-btn">📁 音声ファイルを選択して読み込む</button>
-                    <button id="export-single-slot-btn" class="action-btn share-btn">📤 このスイッチを共有・書き出し (.vpad)</button>
+                    <button id="export-single-slot-btn" class="action-btn share-btn">📤 このスイッチを写真・設定付きで共有・書き出し (.vpad)</button>
                     <button id="download-audio-btn" class="action-btn download-btn" style="display: none;">💾 録音音声ファイル (m4a/webm) を保存</button>
                     <button id="duplicate-slot-btn" class="action-btn secondary-btn">📋 このスイッチを複製</button>
                     <button id="delete-audio-btn" class="action-btn warning-btn" style="display: none;">🔇 録音データのみ消去</button>
@@ -243,11 +279,11 @@
         </div>
     </div>
 
-    <!-- ② スクロール（グループ）編集モーダル -->
+    <!-- ② スクロール編集モーダル -->
     <div id="scroll-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">グループ（スクロール）の設定</h3>
+                <h3 class="modal-title">スクロールの設定</h3>
                 <button id="close-scroll-modal-btn" class="close-modal-btn" title="閉じる" aria-label="閉じる">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -258,25 +294,71 @@
 
             <div class="modal-body-scroll">
                 <div class="form-group">
-                    <label class="form-label" for="edit-scroll-name">グループの名前</label>
+                    <label class="form-label" for="edit-scroll-name">スクロールの名前</label>
                     <input type="text" id="edit-scroll-name" class="form-input" placeholder="例: 日常会話、動物の声、効果音..." maxlength="20">
                 </div>
 
+                <!-- スクロール全体のボイスチェンジャー設定 -->
+                <div class="form-group">
+                    <label class="form-label" for="edit-scroll-effect">🎙️ このスクロール内の基本ボイスチェンジャー</label>
+                    <select id="edit-scroll-effect" class="form-input">
+                        <option value="inherit">🔄 全体設定に従う（デフォルト）</option>
+                        <optgroup label="キャラクター">
+                            <option value="normal">🎙️ 通常</option>
+                            <option value="baby">👶 赤ちゃん</option>
+                            <option value="boy">👦 男の子</option>
+                            <option value="girl">👧 女の子</option>
+                            <option value="man">👨 男の人</option>
+                            <option value="woman">👩 女の人</option>
+                            <option value="old_man">👴 おじいさん</option>
+                            <option value="old_woman">👵 おばあさん</option>
+                            <option value="alien">👽 宇宙人</option>
+                            <option value="robot">🤖 ロボット</option>
+                            <option value="monster">👹 怪獣</option>
+                        </optgroup>
+                        <optgroup label="環境・エフェクト">
+                            <option value="cave">⛰️ 洞窟 (エコー)</option>
+                            <option value="underwater">🫧 水の中</option>
+                            <option value="radio">📻 古いラジオ</option>
+                            <option value="telephone">📱 電話</option>
+                            <option value="hall">🏛️ 大ホール</option>
+                            <option value="megaphone">📢 メガホン</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <!-- スクロール全体の再生スピード設定 -->
+                <div class="form-group">
+                    <label class="form-label" for="edit-scroll-speed">⏩ このスクロール内の基本再生スピード</label>
+                    <select id="edit-scroll-speed" class="form-input">
+                        <option value="inherit">🔄 全体設定に従う（デフォルト）</option>
+                        <option value="0.5">🐢 0.5倍速 (超ゆっくり)</option>
+                        <option value="0.75">🚶 0.75倍速 (ゆっくり)</option>
+                        <option value="0.9">🔹 0.9倍速 (少しゆっくり)</option>
+                        <option value="1.0">⚡ 1.0倍速 (標準スピード)</option>
+                        <option value="1.1">🔸 1.1倍速 (少し速い)</option>
+                        <option value="1.25">🏃 1.25倍速 (やや速い)</option>
+                        <option value="1.5">🏎️ 1.5倍速 (速い)</option>
+                        <option value="1.75">🚀 1.75倍速 (とても速い)</option>
+                        <option value="2.0">💨 2.0倍速 (2倍速)</option>
+                    </select>
+                </div>
+
                 <div class="modal-actions">
-                    <button id="save-scroll-btn" class="action-btn save-btn">💾 グループ名を保存</button>
-                    <button id="export-scroll-btn" class="action-btn share-btn">📤 このグループを共有・書き出し (.vpad)</button>
-                    <button id="duplicate-scroll-btn" class="action-btn secondary-btn">📋 このグループを丸ごと複製</button>
-                    <button id="delete-scroll-btn" class="action-btn delete-btn">🗑️ このグループを削除</button>
+                    <button id="save-scroll-btn" class="action-btn save-btn">💾 スクロール設定を保存</button>
+                    <button id="export-scroll-btn" class="action-btn share-btn">📤 このスクロールを設定・写真付きで共有・書き出し (.vpad)</button>
+                    <button id="duplicate-scroll-btn" class="action-btn secondary-btn">📋 このスクロールを丸ごと複製</button>
+                    <button id="delete-scroll-btn" class="action-btn delete-btn">🗑️ このスクロールを削除</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- ③ 設定＆データ管理モーダル -->
+    <!-- ③ 全体設定＆データ管理モーダル -->
     <div id="settings-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">⚙️ 設定 & バックアップ管理</h3>
+                <h3 class="modal-title">⚙️ 設定 & アップデート管理</h3>
                 <button id="close-settings-modal-btn" class="close-modal-btn" title="閉じる" aria-label="閉じる">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -286,6 +368,61 @@
             </div>
 
             <div class="modal-body-scroll">
+                <!-- バージョン確認・更新セクション -->
+                <div class="form-group version-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span class="form-label">🚀 アプリのバージョン</span>
+                        <span id="app-version-badge" class="version-badge">v2026.09.10.0004</span>
+                    </div>
+                    <button id="check-update-btn" class="action-btn update-btn" style="margin-top: 6px;">
+                        🔄 最新バージョンを確認・アップデート
+                    </button>
+                </div>
+
+                <!-- アプリ全体の基本ボイスチェンジャー設定 -->
+                <div class="form-group">
+                    <label class="form-label" for="setting-global-effect">🎙️ アプリ全体の基本ボイスチェンジャー</label>
+                    <select id="setting-global-effect" class="form-input">
+                        <optgroup label="キャラクター">
+                            <option value="normal">🎙️ 通常</option>
+                            <option value="baby">👶 赤ちゃん</option>
+                            <option value="boy">👦 男の子</option>
+                            <option value="girl">👧 女の子</option>
+                            <option value="man">👨 男の人</option>
+                            <option value="woman">👩 女の人</option>
+                            <option value="old_man">👴 おじいさん</option>
+                            <option value="old_woman">👵 おばあさん</option>
+                            <option value="alien">👽 宇宙人</option>
+                            <option value="robot">🤖 ロボット</option>
+                            <option value="monster">👹 怪獣</option>
+                        </optgroup>
+                        <optgroup label="環境・エフェクト">
+                            <option value="cave">⛰️ 洞窟 (エコー)</option>
+                            <option value="underwater">🫧 水の中</option>
+                            <option value="radio">📻 古いラジオ</option>
+                            <option value="telephone">📱 電話</option>
+                            <option value="hall">🏛️ 大ホール</option>
+                            <option value="megaphone">📢 メガホン</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <!-- アプリ全体の基本再生スピード設定 -->
+                <div class="form-group">
+                    <label class="form-label" for="setting-global-speed">⏩ アプリ全体の基本再生スピード</label>
+                    <select id="setting-global-speed" class="form-input">
+                        <option value="0.5">🐢 0.5倍速 (超ゆっくり)</option>
+                        <option value="0.75">🚶 0.75倍速 (ゆっくり)</option>
+                        <option value="0.9">🔹 0.9倍速 (少しゆっくり)</option>
+                        <option value="1.0" selected>⚡ 1.0倍速 (標準スピード)</option>
+                        <option value="1.1">🔸 1.1倍速 (少し速い)</option>
+                        <option value="1.25">🏃 1.25倍速 (やや速い)</option>
+                        <option value="1.5">🏎️ 1.5倍速 (速い)</option>
+                        <option value="1.75">🚀 1.75倍速 (とても速い)</option>
+                        <option value="2.0">💨 2.0倍速 (2倍速)</option>
+                    </select>
+                </div>
+
                 <!-- 1画面の表示数設定 -->
                 <div class="form-group">
                     <label class="form-label" for="setting-page-size">1画面に表示するスイッチの数（デフォルト: 32個）</label>
@@ -299,14 +436,18 @@
                             <option value="64">64個 (8 × 8)</option>
                         </select>
                     </div>
-                    <small style="color: var(--text-secondary); font-size: 11px; margin-top: 4px; display: block;">
-                        ※ スイッチ数がこの上限を超えた場合、ページネーション（◀ ▶）で自動分割されます。
-                    </small>
+                </div>
+
+                <!-- QRコード表示ボタン -->
+                <div class="form-group">
+                    <button id="settings-open-qr-btn" class="action-btn download-btn">
+                        📱 共有用 QRコードを表示
+                    </button>
                 </div>
 
                 <!-- バックアップ＆復元セクション -->
-                <div class="form-group" style="margin-top: 14px;">
-                    <label class="form-label">📦 バックアップ & 共有</label>
+                <div class="form-group" style="margin-top: 8px;">
+                    <label class="form-label">📦 バックアップ & 共有（写真・エフェクト・スピード完全対応）</label>
                     <div class="modal-actions" style="gap: 8px;">
                         <button id="export-all-btn" class="action-btn share-btn">
                             📤 アプリ全体の完全バックアップ・共有 (.vpad)
@@ -326,9 +467,9 @@
                 </div>
 
                 <!-- データリセット -->
-                <div class="form-group" style="margin-top: 12px;">
+                <div class="form-group" style="margin-top: 6px;">
                     <button id="reset-all-data-btn" class="action-btn warning-btn" style="font-size: 12px; padding: 8px;">
-                        ⚠️ 初期状態にリセット
+                        ⚠️ 全データを初期状態にリセット
                     </button>
                 </div>
             </div>
@@ -365,6 +506,42 @@
             </div>
 
             <button id="copy-url-btn" class="action-btn download-btn" style="width: 100%; margin-top: 8px;">🔗 アプリURLをコピーする</button>
+        </div>
+    </div>
+
+    <!-- ⑤ 🛡️ アップデート前のバックアップ確認モーダル (YES / NO) -->
+    <div id="backup-confirm-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+        <div class="modal-content" style="max-width: 380px; text-align: center;">
+            <div class="modal-header" style="justify-content: center; position: relative;">
+                <h3 class="modal-title" style="color: #60a5fa;">🛡️ アップデートの確認</h3>
+                <button id="close-confirm-modal-btn" class="close-modal-btn" style="position: absolute; right: 0;" title="閉じる" aria-label="閉じる">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="modal-body-scroll" style="gap: 14px; padding: 14px 4px 6px;">
+                <div style="font-size: 14px; font-weight: 800; color: #ffffff; line-height: 1.5;">
+                    念のためバックアップしましょうか？
+                </div>
+                <div style="font-size: 12px; color: #94a3b8; line-height: 1.5; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+                    【YES】を押すと、現在の録音音声・写真・設定を <strong>自動でバックアップ（.vpad保存）してから最新バージョンへ更新</strong> します。
+                </div>
+
+                <div class="modal-actions" style="gap: 10px; margin-top: 6px;">
+                    <button id="btn-update-yes" class="action-btn save-btn" style="background: linear-gradient(135deg, #059669, #10b981); padding: 12px; font-size: 14px;">
+                        ✅ YES（バックアップして更新）
+                    </button>
+                    <button id="btn-update-no" class="action-btn secondary-btn" style="padding: 10px; font-size: 12.5px;">
+                        ⏩ NO（バックアップせずに直接更新）
+                    </button>
+                    <button id="btn-update-cancel" class="action-btn download-btn" style="font-size: 11.5px; padding: 6px;">
+                        キャンセル（更新をやめる）
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
