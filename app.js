@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.10.0004';
+const APP_VERSION = '2026.09.10.0005';
 
 // ==================== 1. Web Audio API / AudioContext 覚醒ユーティリティ ====================
 class AudioUnlocker {
@@ -1017,6 +1017,18 @@ class VoicePadApp {
 
         this.initModalEvents();
         this.initEditorEvents();
+
+        // 📱 初回タップ時のマイク＆AudioContext事前ウォームアップ（遅延・頭切れ防止）
+        const handleFirstInteraction = () => {
+            AudioUnlocker.unlock();
+            this.prewarmMicrophone(false);
+            window.removeEventListener('pointerdown', handleFirstInteraction);
+            window.removeEventListener('touchstart', handleFirstInteraction);
+            window.removeEventListener('click', handleFirstInteraction);
+        };
+        window.addEventListener('pointerdown', handleFirstInteraction, { once: true, passive: true });
+        window.addEventListener('touchstart', handleFirstInteraction, { once: true, passive: true });
+        window.addEventListener('click', handleFirstInteraction, { once: true, passive: true });
     }
 
     initSwipeGesture() {
@@ -1311,6 +1323,38 @@ class VoicePadApp {
             this.renderScrollTabs();
             this.renderSlots();
             this.showToast(`🗑️ スイッチ「${slot.label}」を削除しました`);
+        }
+    }
+
+    // ==================== モード切り替え＆マイク事前ウォームアップ ====================
+    async setMode(mode) {
+        this.currentMode = mode;
+        const playBtn = document.getElementById('mode-play-btn');
+        const recBtn = document.getElementById('mode-record-btn');
+        const grid = document.getElementById('pad-grid');
+
+        if (mode === 'play') {
+            playBtn?.classList.add('active');
+            recBtn?.classList.remove('active');
+            grid?.classList.remove('mode-record');
+        } else {
+            recBtn?.classList.add('active');
+            playBtn?.classList.remove('active');
+            grid?.classList.add('mode-record');
+
+            // 🔴 録音モードに切り替えた瞬間にマイクを事前起動（ウォームアップ）
+            this.prewarmMicrophone(true);
+        }
+    }
+
+    async prewarmMicrophone(showFeedback = false) {
+        try {
+            await this.getAudioStream();
+            if (showFeedback) {
+                this.showToast('🎙️ マイク準備完了！ボタンを押してすぐに録音できます');
+            }
+        } catch (e) {
+            console.warn('Microphone prewarm warning:', e);
         }
     }
 
