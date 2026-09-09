@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.10.0007';
+const APP_VERSION = '2026.09.10.0008';
 
 // ==================== 1. Web Audio API / AudioContext 覚醒ユーティリティ ====================
 class AudioUnlocker {
@@ -754,75 +754,85 @@ class VoicePadApp {
     attachTabDragListeners(tab, scrollId) {
         let isLongPress = false;
         let startX = 0, startY = 0;
+        let timer = null;
 
         const onPointerDown = (e) => {
-            if (e.target.classList.contains('scroll-tab-edit-icon')) return;
+            if (e.target.closest('.scroll-tab-edit-icon')) return;
             startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
             startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
             isLongPress = false;
 
-            clearTimeout(this.dragTimer);
-            this.dragTimer = setTimeout(() => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
                 isLongPress = true;
                 this.isDraggingScroll = true;
                 this.dragScrollId = scrollId;
                 tab.classList.add('dragging');
                 if (navigator.vibrate) navigator.vibrate(40);
             }, 260);
-        };
 
-        const onPointerMove = (e) => {
-            const currentX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
-            const currentY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            const onPointerMove = (moveEvt) => {
+                const currentX = moveEvt.clientX || (moveEvt.touches && moveEvt.touches[0].clientX) || 0;
+                const currentY = moveEvt.clientY || (moveEvt.touches && moveEvt.touches[0].clientY) || 0;
 
-            if (!isLongPress) {
-                if (Math.abs(currentX - startX) > 10 || Math.abs(currentY - startY) > 10) {
-                    clearTimeout(this.dragTimer);
+                if (!isLongPress) {
+                    if (Math.abs(currentX - startX) > 10 || Math.abs(currentY - startY) > 10) {
+                        clearTimeout(timer);
+                    }
+                    return;
                 }
-                return;
-            }
 
-            if (e.cancelable) e.preventDefault();
+                if (moveEvt.cancelable) moveEvt.preventDefault();
 
-            const elemBelow = document.elementFromPoint(currentX, currentY);
-            const targetTab = elemBelow ? elemBelow.closest('.scroll-tab-item') : null;
-
-            document.querySelectorAll('.scroll-tab-item').forEach(t => t.classList.remove('drag-over'));
-            if (targetTab && targetTab !== tab) {
-                targetTab.classList.add('drag-over');
-            }
-        };
-
-        const onPointerUp = async (e) => {
-            clearTimeout(this.dragTimer);
-
-            if (this.isDraggingScroll && this.dragScrollId) {
-                const currentX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX) || 0;
-                const currentY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY) || 0;
                 const elemBelow = document.elementFromPoint(currentX, currentY);
                 const targetTab = elemBelow ? elemBelow.closest('.scroll-tab-item') : null;
 
-                if (targetTab && targetTab !== tab) {
-                    const targetScrollId = targetTab.getAttribute('data-scroll-id');
-                    if (targetScrollId) {
-                        await this.reorderScrolls(this.dragScrollId, targetScrollId);
-                    }
-                }
-
-                tab.classList.remove('dragging');
                 document.querySelectorAll('.scroll-tab-item').forEach(t => t.classList.remove('drag-over'));
+                if (targetTab && targetTab !== tab) {
+                    targetTab.classList.add('drag-over');
+                }
+            };
 
-                setTimeout(() => {
+            const onPointerUp = async (upEvt) => {
+                clearTimeout(timer);
+                window.removeEventListener('pointermove', onPointerMove);
+                window.removeEventListener('pointerup', onPointerUp);
+                window.removeEventListener('pointercancel', onPointerUp);
+
+                if (isLongPress && this.dragScrollId) {
+                    const currentX = upEvt.clientX || (upEvt.changedTouches && upEvt.changedTouches[0].clientX) || 0;
+                    const currentY = upEvt.clientY || (upEvt.changedTouches && upEvt.changedTouches[0].clientY) || 0;
+                    const elemBelow = document.elementFromPoint(currentX, currentY);
+                    const targetTab = elemBelow ? elemBelow.closest('.scroll-tab-item') : null;
+
+                    tab.classList.remove('dragging');
+                    document.querySelectorAll('.scroll-tab-item').forEach(t => t.classList.remove('drag-over'));
+
+                    if (targetTab && targetTab !== tab) {
+                        const targetScrollId = targetTab.getAttribute('data-scroll-id');
+                        if (targetScrollId) {
+                            await this.reorderScrolls(this.dragScrollId, targetScrollId);
+                        }
+                    }
+
+                    setTimeout(() => {
+                        this.isDraggingScroll = false;
+                        this.dragScrollId = null;
+                    }, 80);
+                } else {
+                    tab.classList.remove('dragging');
+                    document.querySelectorAll('.scroll-tab-item').forEach(t => t.classList.remove('drag-over'));
                     this.isDraggingScroll = false;
                     this.dragScrollId = null;
-                }, 100);
-            }
+                }
+            };
+
+            window.addEventListener('pointermove', onPointerMove, { passive: false });
+            window.addEventListener('pointerup', onPointerUp);
+            window.addEventListener('pointercancel', onPointerUp);
         };
 
         tab.addEventListener('pointerdown', onPointerDown);
-        window.addEventListener('pointermove', onPointerMove, { passive: false });
-        window.addEventListener('pointerup', onPointerUp);
-        window.addEventListener('pointercancel', onPointerUp);
     }
 
     async reorderScrolls(fromId, toId) {
@@ -839,7 +849,6 @@ class VoicePadApp {
 
         await this.storage.saveAllScrolls(this.scrolls);
         this.renderScrollTabs();
-        this.showToast('↔️ スクロールの順番を入れ替えました');
     }
 
     renderSlots() {
@@ -946,6 +955,7 @@ class VoicePadApp {
     attachPadDragListeners(card, slotId) {
         let isLongPress = false;
         let startX = 0, startY = 0;
+        let timer = null;
 
         const onPointerDown = (e) => {
             if (e.target.closest('.pad-settings-btn')) return;
@@ -953,68 +963,77 @@ class VoicePadApp {
             startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
             isLongPress = false;
 
-            clearTimeout(this.padDragTimer);
-            this.padDragTimer = setTimeout(() => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
                 isLongPress = true;
                 this.isDraggingPad = true;
                 this.dragSlotId = slotId;
                 card.classList.add('dragging');
                 if (navigator.vibrate) navigator.vibrate(40);
             }, 260);
-        };
 
-        const onPointerMove = (e) => {
-            const currentX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
-            const currentY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            const onPointerMove = (moveEvt) => {
+                const currentX = moveEvt.clientX || (moveEvt.touches && moveEvt.touches[0].clientX) || 0;
+                const currentY = moveEvt.clientY || (moveEvt.touches && moveEvt.touches[0].clientY) || 0;
 
-            if (!isLongPress) {
-                if (Math.abs(currentX - startX) > 12 || Math.abs(currentY - startY) > 12) {
-                    clearTimeout(this.padDragTimer);
+                if (!isLongPress) {
+                    if (Math.abs(currentX - startX) > 12 || Math.abs(currentY - startY) > 12) {
+                        clearTimeout(timer);
+                    }
+                    return;
                 }
-                return;
-            }
 
-            if (e.cancelable) e.preventDefault();
+                if (moveEvt.cancelable) moveEvt.preventDefault();
 
-            const elemBelow = document.elementFromPoint(currentX, currentY);
-            const targetCard = elemBelow ? elemBelow.closest('.pad-card') : null;
-
-            document.querySelectorAll('.pad-card').forEach(c => c.classList.remove('drag-over'));
-            if (targetCard && targetCard !== card && !targetCard.classList.contains('pad-card-add-new')) {
-                targetCard.classList.add('drag-over');
-            }
-        };
-
-        const onPointerUp = async (e) => {
-            clearTimeout(this.padDragTimer);
-
-            if (this.isDraggingPad && this.dragSlotId) {
-                const currentX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX) || 0;
-                const currentY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY) || 0;
                 const elemBelow = document.elementFromPoint(currentX, currentY);
                 const targetCard = elemBelow ? elemBelow.closest('.pad-card') : null;
 
-                if (targetCard && targetCard !== card && !targetCard.classList.contains('pad-card-add-new')) {
-                    const targetSlotId = targetCard.getAttribute('data-slot-id');
-                    if (targetSlotId) {
-                        await this.reorderSlots(this.dragSlotId, targetSlotId);
-                    }
-                }
-
-                card.classList.remove('dragging');
                 document.querySelectorAll('.pad-card').forEach(c => c.classList.remove('drag-over'));
+                if (targetCard && targetCard !== card && !targetCard.classList.contains('pad-card-add-new')) {
+                    targetCard.classList.add('drag-over');
+                }
+            };
 
-                setTimeout(() => {
+            const onPointerUp = async (upEvt) => {
+                clearTimeout(timer);
+                window.removeEventListener('pointermove', onPointerMove);
+                window.removeEventListener('pointerup', onPointerUp);
+                window.removeEventListener('pointercancel', onPointerUp);
+
+                if (isLongPress && this.dragSlotId) {
+                    const currentX = upEvt.clientX || (upEvt.changedTouches && upEvt.changedTouches[0].clientX) || 0;
+                    const currentY = upEvt.clientY || (upEvt.changedTouches && upEvt.changedTouches[0].clientY) || 0;
+                    const elemBelow = document.elementFromPoint(currentX, currentY);
+                    const targetCard = elemBelow ? elemBelow.closest('.pad-card') : null;
+
+                    card.classList.remove('dragging');
+                    document.querySelectorAll('.pad-card').forEach(c => c.classList.remove('drag-over'));
+
+                    if (targetCard && targetCard !== card && !targetCard.classList.contains('pad-card-add-new')) {
+                        const targetSlotId = targetCard.getAttribute('data-slot-id');
+                        if (targetSlotId) {
+                            await this.reorderSlots(this.dragSlotId, targetSlotId);
+                        }
+                    }
+
+                    setTimeout(() => {
+                        this.isDraggingPad = false;
+                        this.dragSlotId = null;
+                    }, 80);
+                } else {
+                    card.classList.remove('dragging');
+                    document.querySelectorAll('.pad-card').forEach(c => c.classList.remove('drag-over'));
                     this.isDraggingPad = false;
                     this.dragSlotId = null;
-                }, 100);
-            }
+                }
+            };
+
+            window.addEventListener('pointermove', onPointerMove, { passive: false });
+            window.addEventListener('pointerup', onPointerUp);
+            window.addEventListener('pointercancel', onPointerUp);
         };
 
         card.addEventListener('pointerdown', onPointerDown);
-        window.addEventListener('pointermove', onPointerMove, { passive: false });
-        window.addEventListener('pointerup', onPointerUp);
-        window.addEventListener('pointercancel', onPointerUp);
     }
 
     async reorderSlots(fromId, toId) {
@@ -1033,7 +1052,6 @@ class VoicePadApp {
         }
 
         this.renderSlots();
-        this.showToast('↔️ ボタンの場所を移動しました');
     }
 
     // ==================== イベントリスナー設定 ====================
