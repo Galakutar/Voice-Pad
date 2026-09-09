@@ -344,6 +344,19 @@
                     </select>
                 </div>
 
+                <!-- スクロールの順番変更ボタン -->
+                <div class="form-group" style="margin-top: 4px;">
+                    <label class="form-label">↔️ スクロールの表示順を入れ替え</label>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="move-scroll-left-btn" type="button" class="action-btn download-btn" style="flex: 1; padding: 9px; font-size: 13px;">
+                            ◀ 1つ左（前）へ移動
+                        </button>
+                        <button id="move-scroll-right-btn" type="button" class="action-btn download-btn" style="flex: 1; padding: 9px; font-size: 13px;">
+                            1つ右（次）へ移動 ▶
+                        </button>
+                    </div>
+                </div>
+
                 <div class="modal-actions">
                     <button id="save-scroll-btn" class="action-btn save-btn">💾 スクロール設定を保存</button>
                     <button id="export-scroll-btn" class="action-btn share-btn">📤 このスクロールを設定・写真付きで共有・書き出し (.vpad)</button>
@@ -372,7 +385,7 @@
                 <div class="form-group version-card">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span class="form-label">🚀 アプリのバージョン</span>
-                        <span id="app-version-badge" class="version-badge">v2026.09.10.0008</span>
+                        <span id="app-version-badge" class="version-badge">v2026.09.10.0009</span>
                     </div>
                     <button id="check-update-btn" class="action-btn update-btn" style="margin-top: 6px;">
                         🔄 最新バージョンを確認・アップデート
