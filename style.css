@@ -1,21 +1,34 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Noto+Sans+JP:wght@500;700;900&display=swap');
 
 :root {
-    --bg-dark: #0f141c;
-    --bg-surface: rgba(26, 34, 48, 0.75);
-    --border-color: rgba(255, 255, 255, 0.12);
-    --text-primary: #ffffff;
+    --bg-dark: #090d14;
+    --bg-surface: #121926;
+    --bg-surface-glass: rgba(18, 25, 38, 0.85);
+    --bg-card: #182234;
+    --border-color: rgba(255, 255, 255, 0.1);
+    --border-color-hover: rgba(255, 255, 255, 0.25);
+    --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
+    --text-muted: #64748b;
     
-    /* 8スロットのテーマカラー */
-    --color-slot-1: #ef4444; /* レッド */
-    --color-slot-2: #f97316; /* オレンジ */
-    --color-slot-3: #eab308; /* イエロー */
-    --color-slot-4: #10b981; /* グリーン */
-    --color-slot-5: #06b6d4; /* シアン */
-    --color-slot-6: #3b82f6; /* ブルー */
-    --color-slot-7: #8b5cf6; /* パープル */
-    --color-slot-8: #ec4899; /* ピンク */
+    /* ブランド＆ステータスカラー */
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-purple: #8b5cf6;
+    --accent-pink: #ec4899;
+    --color-rec: #ef4444;
+    --color-success: #10b981;
+    --color-warning: #f59e0b;
+
+    /* スロット別アクセントパレット（自動ローテーション） */
+    --slot-c1: #ef4444;
+    --slot-c2: #f97316;
+    --slot-c3: #f59e0b;
+    --slot-c4: #10b981;
+    --slot-c5: #06b6d4;
+    --slot-c6: #3b82f6;
+    --slot-c7: #8b5cf6;
+    --slot-c8: #ec4899;
 }
 
 * {
@@ -34,34 +47,30 @@ body, html {
     background-color: var(--bg-dark);
     font-family: 'Plus Jakarta Sans', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
     color: var(--text-primary);
+    position: fixed;
 }
 
 #app-container {
     width: 100%;
     height: 100%;
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    /* iPhoneのノッチ・セーフエリアを左右上下で厳密に適用 */
-    padding-top: max(8px, env(safe-area-inset-top, 8px));
-    padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));
-    padding-left: max(12px, env(safe-area-inset-left, 12px));
-    padding-right: max(12px, env(safe-area-inset-right, 12px));
-    gap: 8px;
+    padding-top: max(6px, env(safe-area-inset-top, 6px));
+    padding-bottom: max(6px, env(safe-area-inset-bottom, 6px));
+    padding-left: max(8px, env(safe-area-inset-left, 8px));
+    padding-right: max(8px, env(safe-area-inset-right, 8px));
+    gap: 6px;
 }
 
-/* ヘッダーエリア（大きな外枠を削除し、すっきりフラットに配置） */
+/* ==================== ヘッダー ==================== */
 .app-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0;
+    padding: 2px 4px;
     background: transparent;
-    border: none;
-    box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
     flex-shrink: 0;
     gap: 6px;
     width: 100%;
@@ -76,8 +85,9 @@ body, html {
 .app-title {
     font-size: 15px;
     font-weight: 800;
+    letter-spacing: -0.02em;
     white-space: nowrap;
-    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -85,9 +95,9 @@ body, html {
 /* モード切り替えスイッチ (再生 / 録音) */
 .mode-switch-container {
     display: flex;
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.5);
     border: 1px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: 9999px;
     padding: 2px;
     gap: 2px;
     flex-shrink: 0;
@@ -97,35 +107,35 @@ body, html {
     display: flex;
     align-items: center;
     gap: 4px;
-    padding: 5px 10px;
-    border-radius: 8px;
+    padding: 4px 10px;
+    border-radius: 9999px;
     border: none;
     background: transparent;
-    color: #94a3b8;
-    font-size: 12px;
+    color: var(--text-secondary);
+    font-size: 11.5px;
     font-weight: 700;
     font-family: inherit;
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .mode-toggle-btn.active[data-mode="play"] {
-    background: #3b82f6;
+    background: var(--accent-blue);
     color: #ffffff;
     box-shadow: 0 2px 10px rgba(59, 130, 246, 0.4);
 }
 
 .mode-toggle-btn.active[data-mode="record"] {
-    background: #ef4444;
+    background: var(--color-rec);
     color: #ffffff;
     box-shadow: 0 2px 10px rgba(239, 68, 68, 0.4);
     animation: modePulse 1s infinite alternate;
 }
 
 @keyframes modePulse {
-    0% { transform: scale(0.98); }
-    100% { transform: scale(1.02); }
+    0% { transform: scale(0.97); }
+    100% { transform: scale(1.03); }
 }
 
 /* ヘッダー右側コントロール */
@@ -140,575 +150,706 @@ body, html {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid var(--border-color);
     color: #fff;
-    padding: 5px 6px;
+    padding: 4px 6px;
     border-radius: 8px;
     font-size: 11px;
     font-weight: 700;
     cursor: pointer;
     outline: none;
-    max-width: 95px;
+    max-width: 90px;
 }
 
-.voice-effect-select option {
-    background: #1e293b;
-    color: #ffffff;
-    font-size: 13px;
-    padding: 6px;
-}
-
-.voice-effect-select optgroup {
-    background: #0f172a;
-    color: #93c5fd;
-    font-weight: 800;
-    font-size: 11px;
-}
-
-.qr-share-btn {
-    background: rgba(59, 130, 246, 0.15);
-    border: 1px solid rgba(59, 130, 246, 0.4);
-    color: #93c5fd;
-    padding: 5px 8px;
+.header-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 4px 8px;
     border-radius: 8px;
-    font-size: 11px;
-    font-weight: 800;
+    font-size: 11.5px;
+    font-weight: 700;
+    font-family: inherit;
     cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.header-action-btn.icon-only {
+    padding: 4px 6px;
+    font-size: 13px;
+}
+
+.header-action-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: var(--border-color-hover);
+}
+
+.header-action-btn:active {
+    transform: scale(0.94);
+}
+
+/* ==================== スクロール（グループ）タブバー ==================== */
+.scroll-tabs-bar {
     display: flex;
     align-items: center;
-    gap: 2px;
-    white-space: nowrap;
-    transition: all 0.2s;
+    gap: 6px;
+    width: 100%;
+    flex-shrink: 0;
+    padding: 2px 0;
 }
 
-.qr-share-btn:active {
-    background: rgba(59, 130, 246, 0.35);
-    transform: scale(0.95);
-}
-
-/* 8スロットのメイングリッド（横長時: 4列×2行） */
-.pad-grid {
+.scroll-tabs-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     flex: 1;
+    padding: 2px;
+}
+
+.scroll-tabs-container::-webkit-scrollbar {
+    display: none;
+}
+
+.scroll-tab-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    flex-shrink: 0;
+}
+
+.scroll-tab-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.scroll-tab-item.active {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.85), rgba(139, 92, 246, 0.85));
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #ffffff;
+    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.35);
+}
+
+.scroll-tab-name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scroll-tab-badge {
+    font-size: 10px;
+    background: rgba(0, 0, 0, 0.35);
+    padding: 1px 6px;
+    border-radius: 9999px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.scroll-tab-edit-icon {
+    font-size: 11px;
+    opacity: 0.6;
+    margin-left: 2px;
+    transition: opacity 0.15s ease;
+}
+
+.scroll-tab-item:hover .scroll-tab-edit-icon {
+    opacity: 1;
+}
+
+.add-scroll-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border-radius: 9999px;
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px dashed rgba(59, 130, 246, 0.4);
+    color: #93c5fd;
+    font-size: 11.5px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+}
+
+.add-scroll-btn:hover {
+    background: rgba(59, 130, 246, 0.22);
+    border-color: #60a5fa;
+    color: #ffffff;
+}
+
+/* ==================== サブツールバー ＆ ページネーション ==================== */
+.sub-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    flex-shrink: 0;
+    padding: 1px 2px;
+    gap: 8px;
+}
+
+.pagination-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 2px 6px;
+}
+
+.page-nav-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.page-nav-btn:not(:disabled):hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+}
+
+.page-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.page-indicator {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.quick-add-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #6ee7b7;
+    padding: 3px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.quick-add-btn:hover {
+    background: rgba(16, 185, 129, 0.25);
+    color: #ffffff;
+}
+
+/* ==================== スイッチメイングリッド ==================== */
+.pad-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    grid-template-rows: repeat(2, 1fr);
-    gap: 8px;
+    grid-template-rows: repeat(8, 1fr);
+    gap: 6px;
+    width: 100%;
+    flex: 1;
     min-height: 0;
-    height: 100%;
+    overflow: hidden;
 }
 
-/* パッドカード全体 */
+/* 表示数別のグリッド最適化 */
+.pad-grid.grid-count-8 {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+}
+.pad-grid.grid-count-16 {
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+}
+.pad-grid.grid-count-24 {
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(6, 1fr);
+}
+.pad-grid.grid-count-32 {
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+}
+.pad-grid.grid-count-48 {
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+}
+.pad-grid.grid-count-64 {
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+}
+
+/* 横向き（Landscape）時の最適化 */
+@media (min-aspect-ratio: 1/1) and (max-height: 600px) {
+    .pad-grid.grid-count-32 {
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: repeat(4, 1fr);
+    }
+    .pad-grid.grid-count-24 {
+        grid-template-columns: repeat(6, 1fr);
+        grid-template-rows: repeat(4, 1fr);
+    }
+    .pad-grid.grid-count-16 {
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(4, 1fr);
+    }
+    .pad-grid.grid-count-8 {
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+    }
+}
+
+/* ==================== スイッチカード（パッド） ==================== */
 .pad-card {
     position: relative;
-    background: var(--bg-surface);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 2px solid var(--slot-color);
-    border-radius: 16px;
+    background: var(--bg-card);
+    border: 1.5px solid var(--border-color);
+    border-radius: 10px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    align-items: center;
-    padding: 6px 8px;
+    padding: 3px 5px;
     cursor: pointer;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
-    transition: transform 0.1s, box-shadow 0.2s, border-color 0.2s, background 0.2s;
     overflow: hidden;
-    min-height: 0;
-    box-sizing: border-box;
+    touch-action: manipulation;
+    transition: transform 0.1s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pad-card:hover {
+    border-color: var(--border-color-hover);
 }
 
 .pad-card:active {
     transform: scale(0.96);
 }
 
-/* 写真が設定されているボタン（枠内いっぱいに写真を表示） */
-.pad-card.has-photo {
-    padding: 6px 8px !important;
-    border-width: 2.5px;
+/* 録音中スタイル */
+.pad-card.recording {
+    border-color: var(--color-rec) !important;
+    background: rgba(239, 68, 68, 0.18) !important;
+    animation: recCardPulse 0.8s infinite alternate ease-in-out;
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.5) !important;
 }
 
-/* 写真ラッパー（カード枠内に収め、拡大時のはみ出しを防止） */
-.pad-photo-wrapper {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    z-index: 1;
-    pointer-events: none;
-    border-radius: 14px;
-}
-
-/* 枠内背景写真（拡大・位置調整対応） */
-.pad-photo-full {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    pointer-events: none;
-    transform-origin: center center;
-    transition: transform 0.1s ease-out;
-}
-
-.pad-card:active .pad-photo-full {
-    filter: brightness(1.1);
-}
-
-/* 写真上の暗幕オーバーレイ（文字をくっきり見せるための半透明グラデーション） */
-.pad-photo-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(
-        180deg, 
-        rgba(0, 0, 0, 0.45) 0%, 
-        rgba(0, 0, 0, 0.1) 30%, 
-        rgba(0, 0, 0, 0.2) 65%, 
-        rgba(0, 0, 0, 0.75) 100%
-    );
-    z-index: 2;
-    pointer-events: none;
-}
-
-/* スロットごとのカラー設定（全8スロット） */
-.pad-card[data-slot="1"] { --slot-color: var(--color-slot-1); }
-.pad-card[data-slot="2"] { --slot-color: var(--color-slot-2); }
-.pad-card[data-slot="3"] { --slot-color: var(--color-slot-3); }
-.pad-card[data-slot="4"] { --slot-color: var(--color-slot-4); }
-.pad-card[data-slot="5"] { --slot-color: var(--color-slot-5); }
-.pad-card[data-slot="6"] { --slot-color: var(--color-slot-6); }
-.pad-card[data-slot="7"] { --slot-color: var(--color-slot-7); }
-.pad-card[data-slot="8"] { --slot-color: var(--color-slot-8); }
-
-/* 録音モード時のパッド外観 */
-body.mode-record .pad-card {
-    border-style: dashed;
-    border-color: rgba(239, 68, 68, 0.7);
-    background: rgba(239, 68, 68, 0.06);
-}
-
-body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
-    background: rgba(239, 68, 68, 0.15);
-    border-color: #ef4444;
-}
-
-/* 再生中のグローエフェクト */
-.pad-card.playing {
-    border-color: #ffffff !important;
-    background: rgba(255, 255, 255, 0.12) !important;
-    box-shadow: 0 0 35px var(--slot-color), inset 0 0 20px rgba(255, 255, 255, 0.3);
-    animation: playingPulse 1s infinite alternate ease-in-out;
-}
-
-@keyframes playingPulse {
+@keyframes recCardPulse {
     0% { transform: scale(0.98); }
     100% { transform: scale(1.02); }
 }
 
-/* 録音中のレッドパルスエフェクト */
-.pad-card.recording {
-    border-color: #ef4444 !important;
-    border-style: solid !important;
-    background: rgba(239, 68, 68, 0.3) !important;
-    box-shadow: 0 0 35px #ef4444, inset 0 0 20px #ef4444;
-    animation: recordPulse 0.5s infinite alternate ease-in-out;
+/* 再生中スタイル */
+.pad-card.playing {
+    border-color: #38bdf8 !important;
+    background: rgba(56, 189, 248, 0.22) !important;
+    box-shadow: 0 0 18px rgba(56, 189, 248, 0.6) !important;
 }
 
-@keyframes recordPulse {
-    0% { transform: scale(0.97); }
-    100% { transform: scale(1.01); }
+/* 録音モード時の視覚フィードバック */
+body.mode-record .pad-card:not(.recording) {
+    border-color: rgba(239, 68, 68, 0.35);
 }
 
-/* 1. カード上部エリア（枠の一番上） */
+body.mode-record .pad-card:not(.recording):hover {
+    border-color: var(--color-rec);
+    background: rgba(239, 68, 68, 0.08);
+}
+
+/* 写真レイヤー＆オーバーレイ */
+.pad-photo-wrapper {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    z-index: 1;
+}
+
+.pad-photo-full {
+    width: 100%;
+    height: 100%;
+    transform-origin: center center;
+    transition: transform 0.1s ease;
+}
+
+.pad-photo-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.15) 50%, rgba(0,0,0,0.65) 100%);
+    z-index: 2;
+    pointer-events: none;
+}
+
+/* カード内部パーツ */
 .pad-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     width: 100%;
-    z-index: 4;
-    min-height: 28px;
-    gap: 4px;
-    box-sizing: border-box;
+    z-index: 3;
+    pointer-events: none;
 }
 
-.pad-header .slot-badge {
-    font-size: 11px;
+.slot-badge {
+    font-size: 9px;
     font-weight: 800;
-    color: #fff;
-    background: var(--slot-color);
-    padding: 2px 7px;
-    border-radius: 6px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-    flex-shrink: 0;
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--slot-color, #38bdf8);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 1px 4px;
+    border-radius: 4px;
+    line-height: 1;
 }
 
-.pad-header .pad-settings-btn {
+.pad-settings-btn {
     background: rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    color: #fff;
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.85);
+    border-radius: 4px;
+    padding: 2px 4px;
     cursor: pointer;
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    flex-shrink: 0;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
 }
 
-.pad-header .pad-settings-btn:active {
-    background: rgba(255, 255, 255, 0.4);
-    transform: scale(0.9);
-}
-
-/* 枠の一番上にある名前ラベル */
-.pad-header .pad-label {
-    flex: 1;
-    font-size: clamp(12px, 2.2vh, 15px);
-    font-weight: 800;
+.pad-settings-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
     color: #ffffff;
-    text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
-    padding: 2px 6px;
 }
 
-.pad-card.has-photo .pad-header .pad-label {
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    border-radius: 6px;
-}
-
-/* 2. カード中央ボディエリア（枠の真ん中） */
 .pad-body {
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
+    justify-content: center;
     flex: 1;
-    width: 100%;
-    z-index: 4;
-    min-height: 0;
-    position: relative;
+    z-index: 3;
     pointer-events: none;
-    box-sizing: border-box;
+    min-height: 0;
 }
 
-.pad-body .pad-emoji {
-    font-size: clamp(26px, 5.5vh, 46px);
-    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
-    transition: transform 0.15s;
-    line-height: 1.1;
-    margin-bottom: 2px;
+.pad-emoji {
+    font-size: clamp(14px, 3vh, 24px);
+    line-height: 1;
 }
 
-/* 枠の真ん中にある名前ラベル */
-.pad-body .pad-label {
-    font-size: clamp(13px, 2.4vh, 17px);
-    font-weight: 800;
-    color: #ffffff;
-    text-align: center;
-    max-width: 92%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
-    background: rgba(0, 0, 0, 0.72);
-    padding: 3px 12px;
-    border-radius: 8px;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-}
-
-/* 3. カード下部フッターエリア（枠の一番下） */
 .pad-footer {
     display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: center;
+    justify-content: space-between;
+    align-items: flex-end;
     width: 100%;
-    z-index: 4;
+    z-index: 3;
     pointer-events: none;
-    gap: 2px;
-    box-sizing: border-box;
 }
 
-/* 枠の一番下にある名前ラベル */
-.pad-footer .pad-label {
-    font-size: clamp(12px, 2.2vh, 15px);
-    font-weight: 800;
+.pad-label {
+    font-size: clamp(9px, 1.4vh, 12px);
+    font-weight: 700;
     color: #ffffff;
-    text-align: center;
-    max-width: 96%;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+    max-width: 100%;
 }
 
-.pad-card.has-photo .pad-footer .pad-label {
-    background: rgba(0, 0, 0, 0.65);
-    padding: 2px 10px;
-    border-radius: 6px;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-/* ステータス（秒数） */
 .pad-status {
-    font-size: 11px;
-    color: #cbd5e1;
+    font-size: 8px;
     font-weight: 700;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-    line-height: 1.2;
+    color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.6);
+    padding: 1px 3px;
+    border-radius: 3px;
+    line-height: 1;
+    white-space: nowrap;
 }
 
-.pad-card.has-photo .pad-status {
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    padding: 1px 8px;
-    border-radius: 6px;
-    color: #e2e8f0;
-    font-size: 10px;
+/* 位置別ラベル配置 */
+.pad-card.pos-top .pad-header .pad-label {
+    flex: 1;
+    text-align: center;
+    margin: 0 4px;
+}
+.pad-card.pos-center .pad-body .pad-label {
+    text-align: center;
+    margin-top: 2px;
+}
+.pad-card.pos-bottom .pad-footer .pad-label {
+    flex: 1;
+    text-align: left;
+    margin-right: 4px;
 }
 
-/* 位置選択セグメントボタン */
-.position-selector {
+/* 「＋ 新規スイッチ」カード */
+.pad-card-add-new {
+    border: 1.5px dashed rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.02);
     display: flex;
-    gap: 6px;
-    background: rgba(0, 0, 0, 0.25);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.pad-card-add-new:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+    background: rgba(59, 130, 246, 0.08);
+}
+
+.pad-card-add-new .add-icon {
+    font-size: 20px;
+}
+
+/* ==================== モーダル共通スタイル ==================== */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.modal-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal-content {
+    background: var(--bg-surface);
     border: 1px solid var(--border-color);
-    padding: 3px;
-    border-radius: 10px;
+    border-radius: 16px;
+    width: 100%;
+    max-width: 440px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+    transform: translateY(12px) scale(0.97);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-backdrop.open .modal-content {
+    transform: translateY(0) scale(1);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.modal-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #fff;
+}
+
+.close-modal-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-modal-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.modal-body-scroll {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* フォーム要素 */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.form-input {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: #fff;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.form-input:focus {
+    border-color: var(--accent-blue);
+}
+
+/* 位置セレクター */
+.position-selector {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
 }
 
 .pos-btn {
-    flex: 1;
-    padding: 7px 4px;
-    border-radius: 7px;
-    border: none;
-    background: transparent;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
     color: var(--text-secondary);
+    padding: 6px 4px;
+    border-radius: 6px;
     font-size: 11px;
     font-weight: 700;
     cursor: pointer;
-    white-space: nowrap;
-    transition: all 0.15s;
+    transition: all 0.15s ease;
 }
 
 .pos-btn.active {
-    background: #3b82f6;
-    color: #ffffff;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: #fff;
 }
 
-/* 写真選択＆調整エリア */
+/* 写真調整ボックス */
 .photo-select-container {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(0,0,0,0.25);
     border: 1px solid var(--border-color);
-    padding: 10px;
-    border-radius: 12px;
-    margin-bottom: 6px;
+    border-radius: 10px;
+    padding: 8px;
 }
 
 .photo-top-bar {
     display: flex;
-    gap: 8px;
-    width: 100%;
+    gap: 6px;
 }
 
 .photo-adjust-box {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    align-items: center;
     background: rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 8px;
-    margin-top: 4px;
 }
 
 .photo-adjust-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    width: 100%;
     font-size: 11px;
     font-weight: 700;
-    color: #93c5fd;
+    color: var(--text-secondary);
 }
 
-.photo-adjust-header .crop-hint {
+.crop-hint {
     font-size: 10px;
-    color: #94a3b8;
+    color: var(--accent-cyan);
 }
 
-/* プレビューラッパー（中央配置） */
 .photo-preview-wrapper {
     display: flex;
     justify-content: center;
     align-items: center;
-    width: 100%;
-    padding: 4px 0;
+    padding: 4px;
 }
 
-/* 実際のボタンと完全に同じ形状・比率・スロットカラーのプレビュー枠 */
-.photo-crop-viewport.pad-card-preview {
+.photo-crop-viewport {
     position: relative;
-    width: 220px;
-    height: 140px; /* JavaScriptで画面上のボタンの縦横比に動的調整 */
-    border-radius: 16px;
-    border: 2.5px solid var(--preview-slot-color, #3b82f6);
-    background: #0f141c;
+    width: 200px;
+    height: 90px;
+    background: var(--bg-card);
+    border: 2px solid var(--preview-slot-color, #38bdf8);
+    border-radius: 10px;
     overflow: hidden;
     cursor: grab;
     touch-action: none;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.45);
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    align-items: center;
-    padding: 6px 8px;
-    box-sizing: border-box;
-    user-select: none;
-    transition: width 0.2s, height 0.2s;
+    padding: 4px 6px;
 }
 
-.photo-crop-viewport.pad-card-preview:active {
+.photo-crop-viewport:active {
     cursor: grabbing;
 }
 
 .crop-image-layer {
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
     width: 100%;
     height: 100%;
     overflow: hidden;
-    z-index: 1;
     pointer-events: none;
-    border-radius: 13px;
 }
 
 .crop-image-layer img {
-    position: absolute;
-    top: 0;
-    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
-    pointer-events: none;
     transform-origin: center center;
-    user-select: none;
-    -webkit-user-drag: none;
 }
 
-/* プレビュー枠内の文字・ヘッダー・フッター（実際のボタンと同一配置） */
-.preview-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    z-index: 4;
-    min-height: 24px;
-    gap: 4px;
-    pointer-events: none;
-}
-
-.preview-header .slot-badge {
-    background: var(--preview-slot-color, #3b82f6);
-}
-
-.preview-dummy-btn {
-    width: 24px;
-    height: 24px;
-    border-radius: 7px;
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 10px;
-    color: #fff;
-    opacity: 0.8;
-}
-
-.preview-body {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    flex: 1;
-    width: 100%;
-    z-index: 4;
-    pointer-events: none;
-}
-
-.preview-footer {
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: center;
-    width: 100%;
-    z-index: 4;
-    pointer-events: none;
-    gap: 2px;
-}
-
-.preview-label {
-    display: none;
-}
-
-.pad-card-preview.pos-top #preview-label-top {
-    display: block;
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    border-radius: 6px;
-}
-
-.pad-card-preview.pos-center #preview-label-center {
-    display: block;
-    background: rgba(0, 0, 0, 0.72);
-    padding: 3px 12px;
-    border-radius: 8px;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-}
-
-.pad-card-preview.pos-bottom #preview-label-bottom {
-    display: block;
-    background: rgba(0, 0, 0, 0.65);
-    padding: 2px 10px;
-    border-radius: 6px;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-/* 拡大縮小スライダー列 */
 .adjust-control-row {
     display: flex;
     align-items: center;
@@ -719,34 +860,30 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
 .adjust-label {
     font-size: 11px;
     font-weight: 700;
-    color: #cbd5e1;
+    color: var(--text-secondary);
     white-space: nowrap;
 }
 
 .adjust-slider {
     flex: 1;
-    height: 6px;
-    border-radius: 3px;
-    background: rgba(255, 255, 255, 0.2);
-    accent-color: #3b82f6;
+    accent-color: var(--accent-blue);
     cursor: pointer;
 }
 
 .adjust-val {
     font-size: 11px;
-    font-weight: 800;
-    color: #38bdf8;
-    width: 40px;
+    font-weight: 700;
+    color: var(--text-primary);
+    width: 38px;
     text-align: right;
 }
 
-/* 十字キーとフィットモード */
 .adjust-tools-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 10px;
-    padding-top: 2px;
+    width: 100%;
+    gap: 8px;
 }
 
 .dpad-container {
@@ -762,33 +899,17 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
 }
 
 .dpad-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border-color);
+    color: #fff;
     width: 28px;
     height: 24px;
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.12);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #fff;
-    font-size: 11px;
+    border-radius: 4px;
+    font-size: 10px;
     cursor: pointer;
     display: flex;
-    justify-content: center;
     align-items: center;
-    transition: all 0.1s;
-}
-
-.dpad-btn:active {
-    background: #3b82f6;
-    transform: scale(0.9);
-}
-
-.dpad-btn.dpad-reset {
-    background: rgba(239, 68, 68, 0.2);
-    border-color: rgba(239, 68, 68, 0.4);
-    font-size: 12px;
-}
-
-.dpad-btn.dpad-reset:active {
-    background: #ef4444;
+    justify-content: center;
 }
 
 .fit-mode-container {
@@ -796,157 +917,49 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
     flex-direction: column;
     gap: 4px;
     flex: 1;
-    max-width: 140px;
 }
 
 .fit-mode-btn {
-    padding: 6px 8px;
-    border-radius: 7px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.06);
-    color: #cbd5e1;
-    font-size: 11px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 10.5px;
     font-weight: 700;
     cursor: pointer;
-    text-align: center;
-    transition: all 0.15s;
 }
 
 .fit-mode-btn.active {
-    background: #3b82f6;
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
     color: #fff;
-    border-color: #3b82f6;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
 }
 
-/* 背景波形アニメーション用Canvas */
-.wave-canvas {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    height: 40%;
-    opacity: 0.25;
-    pointer-events: none;
-    z-index: 1;
-}
-
-/* 設定・編集モーダル */
-.modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+/* 絵文字セレクター */
+.emoji-selector {
     display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 100;
-    padding: 14px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s ease;
-}
-
-.modal-backdrop.open {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.modal-content {
-    background: #18202c;
-    border: 1px solid var(--border-color);
-    border-radius: 18px;
-    width: 100%;
-    max-width: 360px;
-    padding: 18px;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    transform: scale(0.92);
-    transition: transform 0.2s;
-    max-height: 90vh;
-    overflow-y: auto;
-}
-
-.modal-backdrop.open .modal-content {
-    transform: scale(1);
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.modal-title {
-    font-size: 15px;
-    font-weight: 800;
-}
-
-.close-modal-btn {
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    color: #fff;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    cursor: pointer;
-}
-
-.form-group {
-    display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 4px;
 }
 
-.form-label {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-secondary);
-}
-
-.form-input {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--border-color);
-    color: #fff;
-    padding: 9px 11px;
-    border-radius: 9px;
-    font-size: 13px;
-    outline: none;
-}
-
-.emoji-selector {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-}
-
 .emoji-opt {
-    font-size: 18px;
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.05);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    width: 34px;
-    height: 34px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    font-size: 16px;
+    padding: 6px 8px;
+    border-radius: 6px;
     cursor: pointer;
+    transition: all 0.15s ease;
 }
 
 .emoji-opt.selected {
-    background: rgba(59, 130, 246, 0.3);
-    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.25);
+    border-color: var(--accent-blue);
+    transform: scale(1.1);
 }
 
+/* ボタングループ */
 .modal-actions {
     display: flex;
     flex-direction: column;
@@ -955,119 +968,117 @@ body.mode-record .pad-card:hover, body.mode-record .pad-card:active {
 }
 
 .action-btn {
-    padding: 9px;
-    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 14px;
+    border-radius: 8px;
+    font-size: 13px;
     font-weight: 700;
-    font-size: 12px;
-    cursor: pointer;
+    font-family: inherit;
     border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.action-btn:active {
+    transform: scale(0.97);
 }
 
 .save-btn {
-    background: #3b82f6;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
     color: #fff;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
 }
 
-.delete-btn {
-    background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
-    border: 1px solid rgba(239, 68, 68, 0.3);
+.share-btn {
+    background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
 }
 
 .download-btn {
     background: rgba(255, 255, 255, 0.08);
-    color: #fff;
     border: 1px solid var(--border-color);
+    color: var(--text-primary);
 }
 
-/* ==========================================
-   📱 縦画面（Portrait: iPhone / iPad）最適化（2列×4行 = 8個）
-   ========================================== */
-@media (orientation: portrait) {
-    .pad-grid {
-        grid-template-columns: repeat(2, 1fr);
-        grid-template-rows: repeat(4, 1fr);
-        gap: 8px;
-    }
-    .app-title {
-        font-size: 13px;
-    }
-    .mode-toggle-btn {
-        padding: 4px 8px;
-        font-size: 11px;
-    }
-    .voice-effect-select {
-        max-width: 82px;
-        padding: 4px;
-        font-size: 10px;
-    }
-    .qr-share-btn {
-        padding: 4px 6px;
-        font-size: 10px;
-    }
-    .pad-card {
-        padding: 4px 6px;
-    }
-    .pad-emoji {
-        font-size: 24px;
-    }
-    .pad-label {
-        font-size: 12px;
-    }
-    .pad-status {
-        font-size: 10px;
-    }
+.secondary-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
 }
 
-/* ==========================================
-   📱 横画面（Landscape: iPhone / iPad / Desktop）最適化（4列×2行 = 8個）
-   インカメラ（ノッチ/ダイナミックアイランド）の干渉を完全回避！
-   ========================================== */
-@media (orientation: landscape) {
-    #app-container {
-        padding-top: max(4px, env(safe-area-inset-top, 4px));
-        padding-bottom: max(4px, env(safe-area-inset-bottom, 4px));
-        /* インカメラがある右端＆左端に十分なマージンを確保 */
-        padding-left: max(16px, env(safe-area-inset-left, 16px));
-        padding-right: max(44px, env(safe-area-inset-right, 44px));
-        gap: 4px;
-    }
-    .app-header {
-        padding: 0;
-        margin-right: 0;
-    }
-    .pad-grid {
-        grid-template-columns: repeat(4, 1fr);
-        grid-template-rows: repeat(2, 1fr);
-        gap: 6px;
-        width: 100%;
-        max-width: 98%;
-    }
-    .pad-card {
-        padding: 3px 6px;
-    }
-    .pad-emoji {
-        font-size: 18px;
-        margin-bottom: 0;
-    }
-    .pad-photo-img {
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
-        margin-bottom: 0;
-    }
-    .pad-label {
-        font-size: 11px;
-    }
-    .pad-status {
-        font-size: 9px;
-    }
-    .slot-badge {
-        font-size: 9px;
-        padding: 0 4px;
-    }
-    .pad-settings-btn {
-        width: 22px;
-        height: 22px;
-    }
+.warning-btn {
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+}
+
+.delete-btn {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+}
+
+/* 情報カード */
+.info-card {
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.info-title {
+    font-size: 12px;
+    font-weight: 800;
+    color: #93c5fd;
+    margin-bottom: 4px;
+}
+
+.info-desc {
+    font-size: 11px;
+    color: #cbd5e1;
+    line-height: 1.5;
+}
+
+/* ==================== トースト通知 ==================== */
+.toast-container {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast-msg {
+    background: rgba(18, 25, 38, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+    backdrop-filter: blur(10px);
+    color: #ffffff;
+    font-size: 12.5px;
+    font-weight: 700;
+    padding: 8px 16px;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1), toastOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) 2.7s forwards;
+    white-space: nowrap;
+}
+
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(-10px) scale(0.9); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toastOut {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(-10px) scale(0.9); }
 }

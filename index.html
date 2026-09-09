@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Voice Pad 8 - 8ボタン音声録音＆サンプラー</title>
-    <meta name="description" content="iPhoneやiPadで簡単に音声を8つのボタンに録音・再生できるタッチサンプラーアプリ。ボイスチェンジャーやループ機能付き。">
+    <title>Voice Pad - 音声録音＆タッチサンプラー</title>
+    <meta name="description" content="直感的な操作で音声を録音・再生できる高機能タッチサンプラー。グループ管理、無制限スイッチ、ボイスチェンジャー、バックアップ共有対応。">
     
-    <!-- iOS / iPadOS Web App 最適化 -->
+    <!-- iOS / iPadOS / Android PWA 最適化 -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Voice Pad 8">
+    <meta name="apple-mobile-web-app-title" content="Voice Pad">
     <meta name="theme-color" content="#0f141c">
+    <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
     <link rel="stylesheet" href="style.css">
@@ -20,16 +21,16 @@
         <!-- アプリヘッダー -->
         <header class="app-header">
             <div class="logo-group">
-                <h1 class="app-title">Voice Pad 8</h1>
+                <h1 class="app-title">Voice Pad</h1>
             </div>
 
             <!-- モード切り替えスイッチ (再生 / 録音) -->
             <div class="mode-switch-container">
-                <button id="mode-play-btn" class="mode-toggle-btn active" data-mode="play">
+                <button id="mode-play-btn" class="mode-toggle-btn active" data-mode="play" aria-label="再生モード">
                     <span class="mode-icon">▶️</span>
                     <span class="mode-label">再生</span>
                 </button>
-                <button id="mode-record-btn" class="mode-toggle-btn" data-mode="record">
+                <button id="mode-record-btn" class="mode-toggle-btn" data-mode="record" aria-label="録音モード">
                     <span class="mode-icon">🔴</span>
                     <span class="mode-label">録音</span>
                 </button>
@@ -38,7 +39,7 @@
             <!-- ヘッダー右側コントロール -->
             <div class="header-controls">
                 <!-- ボイスチェンジャー（キャラクター＆環境エフェクト） -->
-                <select id="voice-effect" class="voice-effect-select" title="ボイスチェンジャー">
+                <select id="voice-effect" class="voice-effect-select" title="ボイスチェンジャー" aria-label="ボイスエフェクト選択">
                     <optgroup label="キャラクター">
                         <option value="normal">🎙️ 通常</option>
                         <option value="baby">👶 赤ちゃん</option>
@@ -62,25 +63,61 @@
                     </optgroup>
                 </select>
 
-                <!-- QRコード表示ボタン -->
-                <button id="show-qr-btn" class="qr-share-btn" title="共有用QRコードを表示">
-                    📱 QR
+                <!-- アプリ内インポートボタン -->
+                <button id="header-import-btn" class="header-action-btn" title="ファイルからインポート (.vpad / 音声)" aria-label="インポート">
+                    📥 <span class="btn-text">インポート</span>
+                </button>
+
+                <!-- 設定・バックアップ管理ボタン -->
+                <button id="header-settings-btn" class="header-action-btn icon-only" title="設定＆バックアップ" aria-label="設定">
+                    ⚙️
+                </button>
+
+                <!-- QRコード / 共有ボタン -->
+                <button id="show-qr-btn" class="header-action-btn icon-only" title="共有・アプリ情報" aria-label="QR共有">
+                    📱
                 </button>
             </div>
         </header>
 
-        <!-- 8スロットメイングリッド -->
+        <!-- スクロール（グループ / カテゴリ）タブバー -->
+        <nav class="scroll-tabs-bar" aria-label="グループタブ">
+            <div id="scroll-tabs-container" class="scroll-tabs-container">
+                <!-- JavaScript で動的にスクロールタブを生成 -->
+            </div>
+            <button id="add-scroll-btn" class="add-scroll-btn" title="新しいグループ（スクロール）を追加" aria-label="グループを追加">
+                <span class="plus-icon">＋</span> 新規グループ
+            </button>
+        </nav>
+
+        <!-- ページネーション & ツールバー -->
+        <div class="sub-toolbar">
+            <div id="pagination-controls" class="pagination-controls">
+                <button id="prev-page-btn" class="page-nav-btn" title="前のページ" aria-label="前のページ">◀</button>
+                <span id="page-indicator" class="page-indicator">ページ 1 / 1 (0個)</span>
+                <button id="next-page-btn" class="page-nav-btn" title="次のページ" aria-label="次のページ">▶</button>
+            </div>
+            <div class="sub-toolbar-actions">
+                <button id="add-slot-btn" class="quick-add-btn" title="このグループにスイッチを追加">
+                    <span>＋</span> スイッチ追加
+                </button>
+            </div>
+        </div>
+
+        <!-- スイッチグリッドメインエリア -->
         <main id="pad-grid" class="pad-grid">
             <!-- JavaScript (app.js) で自動生成されます -->
         </main>
     </div>
 
-    <!-- 設定・名前変更モーダル -->
-    <div id="modal-backdrop" class="modal-backdrop">
+    <!-- ==================== モーダル群 ==================== -->
+
+    <!-- ① スイッチ（ボタン）個別設定モーダル -->
+    <div id="modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-slot-num">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">ボタン <span id="modal-slot-num">1</span> の設定</h3>
-                <button id="close-modal-btn" class="close-modal-btn" title="閉じる">
+                <h3 class="modal-title">スイッチ <span id="modal-slot-num">1</span> の設定</h3>
+                <button id="close-modal-btn" class="close-modal-btn" title="閉じる" aria-label="閉じる">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -88,130 +125,222 @@
                 </button>
             </div>
 
-            <div class="form-group">
-                <label class="form-label" for="edit-label">ボタンの名前（ラベル）</label>
-                <input type="text" id="edit-label" class="form-input" placeholder="例: こんにちは、パパの声..." maxlength="20">
-            </div>
-
-            <!-- 名前（ラベル）の位置選択 -->
-            <div class="form-group">
-                <label class="form-label">名前の位置（枠の中での位置）</label>
-                <div class="position-selector">
-                    <button type="button" class="pos-btn" data-pos="top">⬆️ 枠の一番上</button>
-                    <button type="button" class="pos-btn" data-pos="center">⏺️ 枠の真ん中</button>
-                    <button type="button" class="pos-btn active" data-pos="bottom">⬇️ 枠の一番下</button>
+            <div class="modal-body-scroll">
+                <div class="form-group">
+                    <label class="form-label" for="edit-label">スイッチの名前（ラベル）</label>
+                    <input type="text" id="edit-label" class="form-input" placeholder="例: こんにちは、拍手、効果音..." maxlength="24">
                 </div>
-                <input type="hidden" id="edit-label-pos" value="bottom">
-            </div>
 
-            <div class="form-group">
-                <label class="form-label">アイコン（写真 または 絵文字）</label>
-                
-                <!-- 写真取り込み＆プレビュー・調整エリア -->
-                <div class="photo-select-container">
-                    <div class="photo-top-bar">
-                        <button type="button" id="select-photo-btn" class="action-btn download-btn" style="margin: 0; padding: 7px 12px; font-size: 12px; flex: 1;">
-                            📷 写真を撮る / アルバムから選ぶ
-                        </button>
-                        <button type="button" id="remove-photo-btn" class="action-btn delete-btn" style="display: none; margin: 0; padding: 7px 10px; font-size: 11px;">
-                            🗑️ 写真を削除
-                        </button>
+                <!-- 名前の位置選択 -->
+                <div class="form-group">
+                    <label class="form-label">名前の位置</label>
+                    <div class="position-selector">
+                        <button type="button" class="pos-btn" data-pos="top">⬆️ 枠の上部</button>
+                        <button type="button" class="pos-btn" data-pos="center">⏺️ 枠の中央</button>
+                        <button type="button" class="pos-btn active" data-pos="bottom">⬇️ 枠の下部</button>
                     </div>
+                    <input type="hidden" id="edit-label-pos" value="bottom">
+                </div>
 
-                    <!-- 写真が選択されている時に表示される調整プレビューエリア -->
-                    <div id="photo-adjust-box" class="photo-adjust-box" style="display: none;">
-                        <div class="photo-adjust-header">
-                            <span>🖼️ 写真の大きさ・位置の調整</span>
-                            <span class="crop-hint">（プレビューをドラッグして移動）</span>
+                <!-- アイコン（写真または絵文字） -->
+                <div class="form-group">
+                    <label class="form-label">アイコン（写真 または 絵文字）</label>
+                    
+                    <!-- 写真取り込み＆調整エリア -->
+                    <div class="photo-select-container">
+                        <div class="photo-top-bar">
+                            <button type="button" id="select-photo-btn" class="action-btn download-btn" style="margin: 0; padding: 7px 12px; font-size: 12px; flex: 1;">
+                                📷 写真を撮影 / アルバムから選択
+                            </button>
+                            <button type="button" id="remove-photo-btn" class="action-btn delete-btn" style="display: none; margin: 0; padding: 7px 10px; font-size: 11px;">
+                                🗑️ 写真を解除
+                            </button>
                         </div>
 
-                        <!-- 実際のボタンと全く同じ形状・比率のインタラクティブ調整プレビュー枠 -->
-                        <div class="photo-preview-wrapper">
-                            <div id="photo-crop-viewport" class="photo-crop-viewport pad-card-preview">
-                                <div class="crop-image-layer">
-                                    <img id="photo-crop-img" src="" alt="preview">
-                                </div>
-                                <div class="pad-photo-overlay"></div>
-
-                                <!-- プレビュー上の枠内上部（番号＆上位置ラベル） -->
-                                <div class="preview-header">
-                                    <span id="preview-slot-badge" class="slot-badge">1</span>
-                                    <div id="preview-label-top" class="pad-label preview-label"></div>
-                                    <div class="preview-dummy-btn">⚙️</div>
-                                </div>
-
-                                <!-- プレビュー上の枠内中央（中位置ラベル） -->
-                                <div class="preview-body">
-                                    <div id="preview-label-center" class="pad-label preview-label"></div>
-                                </div>
-
-                                <!-- プレビュー上の枠内下部（下位置ラベル＆秒数） -->
-                                <div class="preview-footer">
-                                    <div id="preview-label-bottom" class="pad-label preview-label"></div>
-                                    <div id="preview-status" class="pad-status">未録音</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 拡大・縮小ズームスライダー -->
-                        <div class="adjust-control-row">
-                            <span class="adjust-label">🔍 大きさ</span>
-                            <input type="range" id="photo-zoom-slider" min="50" max="300" value="100" class="adjust-slider">
-                            <span id="photo-zoom-val" class="adjust-val">100%</span>
-                        </div>
-
-                        <!-- 位置微調整ボタン＆クイックフィット -->
-                        <div class="adjust-tools-row">
-                            <div class="dpad-container">
-                                <button type="button" class="dpad-btn" data-move="up" title="上へ移動">⬆️</button>
-                                <div class="dpad-middle">
-                                    <button type="button" class="dpad-btn" data-move="left" title="左へ移動">⬅️</button>
-                                    <button type="button" class="dpad-btn dpad-reset" data-move="reset" title="中央・等倍に戻す">🔄</button>
-                                    <button type="button" class="dpad-btn" data-move="right" title="右へ移動">➡️</button>
-                                </div>
-                                <button type="button" class="dpad-btn" data-move="down" title="下へ移動">⬇️</button>
+                        <!-- 写真調整プレビュー枠 -->
+                        <div id="photo-adjust-box" class="photo-adjust-box" style="display: none;">
+                            <div class="photo-adjust-header">
+                                <span>🖼️ 写真の位置・拡大調整</span>
+                                <span class="crop-hint">（プレビューをドラッグして移動）</span>
                             </div>
 
-                            <div class="fit-mode-container">
-                                <button type="button" id="btn-fit-cover" class="fit-mode-btn active" data-fit="cover">🔲 枠いっぱい</button>
-                                <button type="button" id="btn-fit-contain" class="fit-mode-btn" data-fit="contain">🔳 全体を表示</button>
+                            <div class="photo-preview-wrapper">
+                                <div id="photo-crop-viewport" class="photo-crop-viewport pad-card-preview">
+                                    <div class="crop-image-layer">
+                                        <img id="photo-crop-img" src="" alt="preview">
+                                    </div>
+                                    <div class="pad-photo-overlay"></div>
+
+                                    <div class="preview-header">
+                                        <span id="preview-slot-badge" class="slot-badge">1</span>
+                                        <div id="preview-label-top" class="pad-label preview-label"></div>
+                                        <div class="preview-dummy-btn">⚙️</div>
+                                    </div>
+
+                                    <div class="preview-body">
+                                        <div id="preview-label-center" class="pad-label preview-label"></div>
+                                    </div>
+
+                                    <div class="preview-footer">
+                                        <div id="preview-label-bottom" class="pad-label preview-label"></div>
+                                        <div id="preview-status" class="pad-status">未録音</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="adjust-control-row">
+                                <span class="adjust-label">🔍 拡大率</span>
+                                <input type="range" id="photo-zoom-slider" min="50" max="300" value="100" class="adjust-slider">
+                                <span id="photo-zoom-val" class="adjust-val">100%</span>
+                            </div>
+
+                            <div class="adjust-tools-row">
+                                <div class="dpad-container">
+                                    <button type="button" class="dpad-btn" data-move="up" title="上へ">⬆️</button>
+                                    <div class="dpad-middle">
+                                        <button type="button" class="dpad-btn" data-move="left" title="左へ">⬅️</button>
+                                        <button type="button" class="dpad-btn dpad-reset" data-move="reset" title="初期位置">🔄</button>
+                                        <button type="button" class="dpad-btn" data-move="right" title="右へ">➡️</button>
+                                    </div>
+                                    <button type="button" class="dpad-btn" data-move="down" title="下へ">⬇️</button>
+                                </div>
+
+                                <div class="fit-mode-container">
+                                    <button type="button" id="btn-fit-cover" class="fit-mode-btn active" data-fit="cover">🔲 枠いっぱい</button>
+                                    <button type="button" id="btn-fit-contain" class="fit-mode-btn" data-fit="contain">🔳 全体表示</button>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    <!-- 絵文字クイックパレット -->
+                    <div class="emoji-selector" style="margin-top: 6px;">
+                        <button type="button" class="emoji-opt">🔊</button>
+                        <button type="button" class="emoji-opt">👋</button>
+                        <button type="button" class="emoji-opt">🎉</button>
+                        <button type="button" class="emoji-opt">🐶</button>
+                        <button type="button" class="emoji-opt">🐱</button>
+                        <button type="button" class="emoji-opt">🎵</button>
+                        <button type="button" class="emoji-opt">⭐</button>
+                        <button type="button" class="emoji-opt">❤️</button>
+                        <button type="button" class="emoji-opt">🔔</button>
+                        <button type="button" class="emoji-opt">🔥</button>
+                    </div>
+                    <input type="hidden" id="edit-emoji" value="🔊">
                 </div>
 
-                <div class="emoji-selector" style="margin-top: 6px;">
-                    <button type="button" class="emoji-opt">🔊</button>
-                    <button type="button" class="emoji-opt">👋</button>
-                    <button type="button" class="emoji-opt">🎉</button>
-                    <button type="button" class="emoji-opt">🐶</button>
-                    <button type="button" class="emoji-opt">🐱</button>
-                    <button type="button" class="emoji-opt">🎵</button>
-                    <button type="button" class="emoji-opt">⭐</button>
-                    <button type="button" class="emoji-opt">❤️</button>
+                <!-- 音声ファイル取り込み・エクスポートアクション -->
+                <div class="modal-actions">
+                    <button id="save-slot-btn" class="action-btn save-btn">💾 設定を保存する</button>
+                    <button id="import-slot-audio-btn" class="action-btn download-btn">📁 音声ファイルを選択して読み込む</button>
+                    <button id="export-single-slot-btn" class="action-btn share-btn">📤 このスイッチを共有・書き出し (.vpad)</button>
+                    <button id="download-audio-btn" class="action-btn download-btn" style="display: none;">💾 録音音声ファイル (m4a/webm) を保存</button>
+                    <button id="duplicate-slot-btn" class="action-btn secondary-btn">📋 このスイッチを複製</button>
+                    <button id="delete-audio-btn" class="action-btn warning-btn" style="display: none;">🔇 録音データのみ消去</button>
+                    <button id="delete-slot-btn" class="action-btn delete-btn">🗑️ スイッチ自体を削除</button>
                 </div>
-                <input type="hidden" id="edit-emoji" value="🔊">
-                <!-- 写真ファイル用インプット（カメラ・アルバム両対応） -->
-                <input type="file" id="photo-file-input" accept="image/*" style="display: none;">
             </div>
-
-            <div class="modal-actions">
-                <button id="save-slot-btn" class="action-btn save-btn">設定を保存する</button>
-                <button id="import-file-btn" class="action-btn download-btn">📁 好きな音声ファイルを読み込む</button>
-                <button id="download-audio-btn" class="action-btn download-btn" style="display: none;">💾 録音音声をダウンロード</button>
-                <button id="delete-audio-btn" class="action-btn delete-btn" style="display: none;">🗑️ 録音データを削除</button>
-            </div>
-
-            <input type="file" id="audio-file-input" accept="audio/*" style="display: none;">
         </div>
     </div>
 
-    <!-- 📱 QRコード表示モーダル -->
-    <div id="qr-modal-backdrop" class="modal-backdrop">
+    <!-- ② スクロール（グループ）編集モーダル -->
+    <div id="scroll-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">グループ（スクロール）の設定</h3>
+                <button id="close-scroll-modal-btn" class="close-modal-btn" title="閉じる" aria-label="閉じる">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="modal-body-scroll">
+                <div class="form-group">
+                    <label class="form-label" for="edit-scroll-name">グループの名前</label>
+                    <input type="text" id="edit-scroll-name" class="form-input" placeholder="例: 日常会話、動物の声、効果音..." maxlength="20">
+                </div>
+
+                <div class="modal-actions">
+                    <button id="save-scroll-btn" class="action-btn save-btn">💾 グループ名を保存</button>
+                    <button id="export-scroll-btn" class="action-btn share-btn">📤 このグループを共有・書き出し (.vpad)</button>
+                    <button id="duplicate-scroll-btn" class="action-btn secondary-btn">📋 このグループを丸ごと複製</button>
+                    <button id="delete-scroll-btn" class="action-btn delete-btn">🗑️ このグループを削除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ③ 設定＆データ管理モーダル -->
+    <div id="settings-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">⚙️ 設定 & バックアップ管理</h3>
+                <button id="close-settings-modal-btn" class="close-modal-btn" title="閉じる" aria-label="閉じる">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="modal-body-scroll">
+                <!-- 1画面の表示数設定 -->
+                <div class="form-group">
+                    <label class="form-label" for="setting-page-size">1画面に表示するスイッチの数（デフォルト: 32個）</label>
+                    <div class="setting-row">
+                        <select id="setting-page-size" class="form-input" style="flex: 1;">
+                            <option value="8">8個 (2 × 4)</option>
+                            <option value="16">16個 (4 × 4)</option>
+                            <option value="24">24個 (4 × 6)</option>
+                            <option value="32" selected>32個 (4 × 8) ★推奨</option>
+                            <option value="48">48個 (6 × 8)</option>
+                            <option value="64">64個 (8 × 8)</option>
+                        </select>
+                    </div>
+                    <small style="color: var(--text-secondary); font-size: 11px; margin-top: 4px; display: block;">
+                        ※ スイッチ数がこの上限を超えた場合、ページネーション（◀ ▶）で自動分割されます。
+                    </small>
+                </div>
+
+                <!-- バックアップ＆復元セクション -->
+                <div class="form-group" style="margin-top: 14px;">
+                    <label class="form-label">📦 バックアップ & 共有</label>
+                    <div class="modal-actions" style="gap: 8px;">
+                        <button id="export-all-btn" class="action-btn share-btn">
+                            📤 アプリ全体の完全バックアップ・共有 (.vpad)
+                        </button>
+                        <button id="import-from-settings-btn" class="action-btn download-btn">
+                            📥 バックアップファイルを復元・インポート
+                        </button>
+                    </div>
+                </div>
+
+                <!-- プライバシー＆ストア適合情報 -->
+                <div class="info-card">
+                    <div class="info-title">🔒 プライバシー & セキュリティ</div>
+                    <div class="info-desc">
+                        本アプリの録音音声や写真データはすべて端末内のIndexedDBに保存され、外部サーバーへ無断送信されることは一切ありません。完全ローカルで安全にご利用いただけます。
+                    </div>
+                </div>
+
+                <!-- データリセット -->
+                <div class="form-group" style="margin-top: 12px;">
+                    <button id="reset-all-data-btn" class="action-btn warning-btn" style="font-size: 12px; padding: 8px;">
+                        ⚠️ 初期状態にリセット
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ④ 📱 QRコード＆PWA共有モーダル -->
+    <div id="qr-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true">
         <div class="modal-content" style="text-align: center; align-items: center; max-height: 95vh;">
             <div class="modal-header" style="width: 100%;">
                 <h3 class="modal-title">📱 共有用 QRコード</h3>
-                <button id="close-qr-modal-btn" class="close-modal-btn" title="閉じる">
+                <button id="close-qr-modal-btn" class="close-modal-btn" title="閉じる" aria-label="閉じる">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -221,23 +350,31 @@
 
             <!-- アドレスバーを消して全画面にする手順 -->
             <div style="background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 12px; padding: 10px; width: 100%; text-align: left; margin-bottom: 12px;">
-                <div style="font-weight: 800; font-size: 13px; color: #93c5fd; margin-bottom: 4px;">✨ Safariのタブ・アドレスバーを消す方法</div>
+                <div style="font-weight: 800; font-size: 13px; color: #93c5fd; margin-bottom: 4px;">✨ Safari / Chromeの全画面アプリ化</div>
                 <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5;">
-                    Safariの <strong>共有ボタン（四角から上矢印）</strong> ➔ <strong>「ホーム画面に追加」</strong> を押すと、上のタブやアドレスバーが完全に消えて <strong>全画面アプリ</strong> になります！
+                    共有メニューから <strong>「ホーム画面に追加」</strong> を選択すると、タブやアドレスバーが消えて快適な <strong>全画面スタンドアロンアプリ</strong> として起動できます！
                 </div>
             </div>
 
-            <div style="background: #ffffff; padding: 10px; border-radius: 12px; display: inline-block;">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=https://galakutar.github.io/Voice-Pad/" alt="QR Code" style="width: 150px; height: 150px; display: block;">
+            <div style="background: #ffffff; padding: 12px; border-radius: 12px; display: inline-block;">
+                <canvas id="qr-canvas" width="180" height="180" style="display: block;"></canvas>
             </div>
 
-            <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); padding: 6px 10px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #38bdf8; word-break: break-all; margin-top: 8px; width: 100%;">
+            <div id="share-url-text" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); padding: 6px 10px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #38bdf8; word-break: break-all; margin-top: 8px; width: 100%;">
                 https://galakutar.github.io/Voice-Pad/
             </div>
 
-            <button id="copy-url-btn" class="action-btn download-btn" style="width: 100%; margin-top: 6px;">🔗 URLをコピーする</button>
+            <button id="copy-url-btn" class="action-btn download-btn" style="width: 100%; margin-top: 8px;">🔗 アプリURLをコピーする</button>
         </div>
     </div>
+
+    <!-- 隠しファイルインプット -->
+    <input type="file" id="global-import-input" accept=".vpad,.json,audio/*" style="display: none;">
+    <input type="file" id="slot-audio-input" accept="audio/*" style="display: none;">
+    <input type="file" id="photo-file-input" accept="image/*" style="display: none;">
+
+    <!-- トースト通知コンテナ -->
+    <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
     <script src="app.js"></script>
