@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.10.0005';
+const APP_VERSION = '2026.09.10.0007';
 
 // ==================== 1. Web Audio API / AudioContext 覚醒ユーティリティ ====================
 class AudioUnlocker {
@@ -580,6 +580,10 @@ class VoicePadApp {
         this.dragTimer = null;
         this.isDraggingScroll = false;
 
+        this.dragSlotId = null;
+        this.padDragTimer = null;
+        this.isDraggingPad = false;
+
         this.init();
     }
 
@@ -757,13 +761,14 @@ class VoicePadApp {
             startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
             isLongPress = false;
 
+            clearTimeout(this.dragTimer);
             this.dragTimer = setTimeout(() => {
                 isLongPress = true;
                 this.isDraggingScroll = true;
                 this.dragScrollId = scrollId;
                 tab.classList.add('dragging');
                 if (navigator.vibrate) navigator.vibrate(40);
-            }, 320);
+            }, 260);
         };
 
         const onPointerMove = (e) => {
@@ -776,6 +781,8 @@ class VoicePadApp {
                 }
                 return;
             }
+
+            if (e.cancelable) e.preventDefault();
 
             const elemBelow = document.elementFromPoint(currentX, currentY);
             const targetTab = elemBelow ? elemBelow.closest('.scroll-tab-item') : null;
@@ -797,7 +804,9 @@ class VoicePadApp {
 
                 if (targetTab && targetTab !== tab) {
                     const targetScrollId = targetTab.getAttribute('data-scroll-id');
-                    await this.reorderScrolls(this.dragScrollId, targetScrollId);
+                    if (targetScrollId) {
+                        await this.reorderScrolls(this.dragScrollId, targetScrollId);
+                    }
                 }
 
                 tab.classList.remove('dragging');
@@ -806,12 +815,12 @@ class VoicePadApp {
                 setTimeout(() => {
                     this.isDraggingScroll = false;
                     this.dragScrollId = null;
-                }, 80);
+                }, 100);
             }
         };
 
         tab.addEventListener('pointerdown', onPointerDown);
-        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointermove', onPointerMove, { passive: false });
         window.addEventListener('pointerup', onPointerUp);
         window.addEventListener('pointercancel', onPointerUp);
     }
@@ -917,6 +926,7 @@ class VoicePadApp {
                 </div>
             `;
 
+            this.attachPadDragListeners(card, slot.id);
             grid.appendChild(card);
         });
 
@@ -932,11 +942,106 @@ class VoicePadApp {
         }
     }
 
+    // ==================== ボタンスイッチ長押しドラッグ＆ドロップ並び替え ====================
+    attachPadDragListeners(card, slotId) {
+        let isLongPress = false;
+        let startX = 0, startY = 0;
+
+        const onPointerDown = (e) => {
+            if (e.target.closest('.pad-settings-btn')) return;
+            startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            isLongPress = false;
+
+            clearTimeout(this.padDragTimer);
+            this.padDragTimer = setTimeout(() => {
+                isLongPress = true;
+                this.isDraggingPad = true;
+                this.dragSlotId = slotId;
+                card.classList.add('dragging');
+                if (navigator.vibrate) navigator.vibrate(40);
+            }, 260);
+        };
+
+        const onPointerMove = (e) => {
+            const currentX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            const currentY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+
+            if (!isLongPress) {
+                if (Math.abs(currentX - startX) > 12 || Math.abs(currentY - startY) > 12) {
+                    clearTimeout(this.padDragTimer);
+                }
+                return;
+            }
+
+            if (e.cancelable) e.preventDefault();
+
+            const elemBelow = document.elementFromPoint(currentX, currentY);
+            const targetCard = elemBelow ? elemBelow.closest('.pad-card') : null;
+
+            document.querySelectorAll('.pad-card').forEach(c => c.classList.remove('drag-over'));
+            if (targetCard && targetCard !== card && !targetCard.classList.contains('pad-card-add-new')) {
+                targetCard.classList.add('drag-over');
+            }
+        };
+
+        const onPointerUp = async (e) => {
+            clearTimeout(this.padDragTimer);
+
+            if (this.isDraggingPad && this.dragSlotId) {
+                const currentX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX) || 0;
+                const currentY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY) || 0;
+                const elemBelow = document.elementFromPoint(currentX, currentY);
+                const targetCard = elemBelow ? elemBelow.closest('.pad-card') : null;
+
+                if (targetCard && targetCard !== card && !targetCard.classList.contains('pad-card-add-new')) {
+                    const targetSlotId = targetCard.getAttribute('data-slot-id');
+                    if (targetSlotId) {
+                        await this.reorderSlots(this.dragSlotId, targetSlotId);
+                    }
+                }
+
+                card.classList.remove('dragging');
+                document.querySelectorAll('.pad-card').forEach(c => c.classList.remove('drag-over'));
+
+                setTimeout(() => {
+                    this.isDraggingPad = false;
+                    this.dragSlotId = null;
+                }, 100);
+            }
+        };
+
+        card.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('pointermove', onPointerMove, { passive: false });
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
+    }
+
+    async reorderSlots(fromId, toId) {
+        const currentScrollSlots = this.getCurrentSlots();
+        const fromIndex = currentScrollSlots.findIndex(s => s.id === fromId);
+        const toIndex = currentScrollSlots.findIndex(s => s.id === toId);
+        if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+
+        const [movedSlot] = currentScrollSlots.splice(fromIndex, 1);
+        currentScrollSlots.splice(toIndex, 0, movedSlot);
+
+        for (let idx = 0; idx < currentScrollSlots.length; idx++) {
+            const s = currentScrollSlots[idx];
+            s.order = idx + 1;
+            await this.storage.saveSlot(s);
+        }
+
+        this.renderSlots();
+        this.showToast('↔️ ボタンの場所を移動しました');
+    }
+
     // ==================== イベントリスナー設定 ====================
     initEvents() {
         const grid = document.getElementById('pad-grid');
         if (grid) {
             grid.addEventListener('click', (e) => {
+                if (this.isDraggingPad) return;
                 AudioUnlocker.unlock();
 
                 const settingsBtn = e.target.closest('.pad-settings-btn');
