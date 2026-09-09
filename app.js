@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.10.0009';
+const APP_VERSION = '2026.09.10.0010';
 
 // ==================== 1. Web Audio API / AudioContext 覚醒ユーティリティ ====================
 class AudioUnlocker {
@@ -874,6 +874,12 @@ class VoicePadApp {
         this.showToast(direction < 0 ? '◀ 1つ左へ移動しました' : '1つ右へ移動しました ▶');
     }
 
+    getTotalPages() {
+        const totalItems = this.getCurrentSlots().length;
+        // 常に「+追加」ボタンを含めて総ページ数を計算（満杯時は自動的に次ページが生まれる）
+        return Math.max(1, Math.ceil((totalItems + 1) / this.pageSize));
+    }
+
     renderSlots() {
         const grid = document.getElementById('pad-grid');
         if (!grid) return;
@@ -883,7 +889,7 @@ class VoicePadApp {
 
         const currentSlots = this.getCurrentSlots();
         const totalItems = currentSlots.length;
-        const totalPages = Math.max(1, Math.ceil(totalItems / this.pageSize));
+        const totalPages = this.getTotalPages();
 
         if (this.currentPage > totalPages) {
             this.currentPage = totalPages;
@@ -962,7 +968,8 @@ class VoicePadApp {
             grid.appendChild(card);
         });
 
-        if (this.currentPage === totalPages && pageSlots.length < this.pageSize) {
+        // 最後のページであれば「＋ 追加」ボタンを描画する（ページが満杯のときは次ページに単独で描画される）
+        if (this.currentPage === totalPages) {
             const addCard = document.createElement('div');
             addCard.className = 'pad-card pad-card-add-new';
             addCard.innerHTML = `
@@ -1131,8 +1138,7 @@ class VoicePadApp {
             }
         });
         document.getElementById('next-page-btn')?.addEventListener('click', () => {
-            const currentSlots = this.getCurrentSlots();
-            const totalPages = Math.ceil(currentSlots.length / this.pageSize);
+            const totalPages = this.getTotalPages();
             if (this.currentPage < totalPages) {
                 this.currentPage++;
                 this.renderSlots();
@@ -1199,8 +1205,7 @@ class VoicePadApp {
                 const diffY = e.changedTouches[0].clientY - startY;
 
                 if (Math.abs(diffX) > 60 && Math.abs(diffY) < 40) {
-                    const currentSlots = this.getCurrentSlots();
-                    const totalPages = Math.ceil(currentSlots.length / this.pageSize);
+                    const totalPages = this.getTotalPages();
                     if (diffX < 0 && this.currentPage < totalPages) {
                         this.currentPage++;
                         this.renderSlots();
@@ -1431,8 +1436,7 @@ class VoicePadApp {
         await this.storage.saveSlot(newSlot);
         this.slots.push(newSlot);
 
-        const totalPages = Math.ceil(this.getCurrentSlots().length / this.pageSize);
-        this.currentPage = totalPages;
+        this.currentPage = this.getTotalPages();
 
         this.renderScrollTabs();
         this.renderSlots();
