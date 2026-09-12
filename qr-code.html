@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Pad 8 - iPad用 QRコード共有</title>
+    <title>Voice Pad - 共有用 QRコード & アプリ招待</title>
     <style>
         body {
-            background-color: #0f141c;
+            background-color: #090d14;
             color: #ffffff;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
             display: flex;
@@ -15,91 +15,208 @@
             align-items: center;
             min-height: 100vh;
             margin: 0;
-            padding: 20px;
+            padding: 16px;
             box-sizing: border-box;
             text-align: center;
         }
         .card {
-            background: #18202c;
+            background: #121926;
             border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 24px;
-            padding: 32px;
+            border-radius: 20px;
+            padding: 24px;
             max-width: 480px;
             width: 100%;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
         }
         h1 {
-            font-size: 22px;
-            margin-bottom: 8px;
-            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            font-size: 20px;
+            margin: 0;
+            background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
         p {
-            font-size: 14px;
+            font-size: 13px;
             color: #94a3b8;
-            margin-bottom: 24px;
-            line-height: 1.5;
+            margin: 0;
+            line-height: 1.4;
         }
         .qr-container {
             background: #ffffff;
-            padding: 16px;
-            border-radius: 16px;
+            padding: 12px;
+            border-radius: 14px;
             display: inline-block;
-            margin-bottom: 20px;
-            box-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+            box-shadow: 0 0 24px rgba(59, 130, 246, 0.3);
         }
         .qr-image {
-            width: 220px;
-            height: 220px;
+            width: 180px;
+            height: 180px;
             display: block;
         }
-        .url-box {
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.12);
+        .actions-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+        }
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            width: 100%;
+        }
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
             padding: 10px 14px;
             border-radius: 10px;
-            font-family: monospace;
             font-size: 13px;
-            color: #38bdf8;
-            word-break: break-all;
-            margin-bottom: 20px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.15s ease, opacity 0.15s ease;
+        }
+        .btn:active {
+            transform: scale(0.97);
+        }
+        .btn-share {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+            font-size: 14px;
+            font-weight: 800;
+        }
+        .btn-line {
+            background: linear-gradient(135deg, #06c755, #00b900);
+            color: #fff;
+        }
+        .btn-mail {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: #fff;
+        }
+        .btn-copy {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #e2e8f0;
         }
         .guide-steps {
             text-align: left;
             background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 12px;
-            padding: 16px;
-            font-size: 13px;
+            padding: 12px 14px;
+            font-size: 12px;
             color: #cbd5e1;
-            line-height: 1.6;
+            line-height: 1.5;
+            width: 100%;
+            box-sizing: border-box;
         }
         .guide-steps ol {
             margin: 0;
-            padding-left: 20px;
+            padding-left: 18px;
+        }
+
+        /* 横向き小画面時のレイアウト最適化 */
+        @media (min-aspect-ratio: 1/1) and (max-height: 520px) {
+            .card {
+                max-width: 600px;
+                padding: 14px 20px;
+                flex-direction: row;
+                align-items: center;
+                gap: 16px;
+            }
+            .qr-col {
+                flex-shrink: 0;
+            }
+            .qr-image {
+                width: 130px;
+                height: 130px;
+            }
+            .info-col {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                flex: 1;
+            }
         }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>📱 iPad / iPhone で開く</h1>
-        <p>iPadの標準カメラをこのQRコードにかざすと、アプリが起動します！</p>
-
-        <div class="qr-container">
-            <!-- 完成したGitHub PagesのQRコード画像 -->
-            <img id="qr-img" class="qr-image" src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://galakutar.github.io/Voice-Pad/" alt="QR Code">
+        <div class="qr-col">
+            <div class="qr-container">
+                <img id="qr-img" class="qr-image" src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://galakutar.github.io/Voice-Pad/" alt="QR Code">
+            </div>
         </div>
 
-        <div class="url-box" id="url-text">https://galakutar.github.io/Voice-Pad/</div>
+        <div class="info-col">
+            <h1>📱 iPad / iPhone で開く</h1>
+            <p>カメラをQRコードにかざすとアプリが起動します！</p>
 
-        <div class="guide-steps">
-            <strong>📸 開き方の手順：</strong>
-            <ol>
-                <li>iPadの <strong>「カメラ」アプリ</strong> を開きます。</li>
-                <li>上のQRコードを画面に映します。</li>
-                <li>画面に表示される <strong>黄色いリンク</strong> をタップすると開きます！</li>
-            </ol>
+            <div class="actions-group">
+                <button id="btn-share" class="btn btn-share">📱 LINEやSNS・メールで招待</button>
+                <div class="btn-grid">
+                    <button id="btn-line" class="btn btn-line">💬 LINEで送る</button>
+                    <button id="btn-mail" class="btn btn-mail">✉️ メールで招待</button>
+                </div>
+                <button id="btn-copy" class="btn btn-copy">🔗 アプリURLをコピーする</button>
+            </div>
+
+            <div class="guide-steps">
+                <strong>📸 開き方の手順：</strong>
+                <ol>
+                    <li>iPadやiPhoneの <strong>「カメラ」</strong> を開いてQRコードにかざします。</li>
+                    <li>画面の <strong>黄色いリンク</strong> をタップすると開きます！</li>
+                    <li>Safariの共有メニューから <strong>「ホーム画面に追加」</strong> すると全画面アプリになります。</li>
+                </ol>
+            </div>
         </div>
     </div>
+
+    <script>
+        const appShareUrl = 'https://galakutar.github.io/Voice-Pad/';
+        const shareText = '音声録音＆タッチサンプラーアプリ「Voice Pad」を使ってみてね！\n' + appShareUrl;
+
+        document.getElementById('btn-share').addEventListener('click', async () => {
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'Voice Pad - 音声録音＆タッチサンプラー',
+                        text: '音声録音＆タッチサンプラーアプリ「Voice Pad」を使ってみてね！',
+                        url: appShareUrl
+                    });
+                } catch (e) {}
+            } else {
+                navigator.clipboard.writeText(appShareUrl);
+                alert('アプリURLをコピーしました！LINEやSNSで共有してください。');
+            }
+        });
+
+        document.getElementById('btn-line').addEventListener('click', () => {
+            window.open(`https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`, '_blank');
+        });
+
+        document.getElementById('btn-mail').addEventListener('click', () => {
+            const subject = '【招待】Voice Pad - 音声録音＆タッチサンプラーアプリ';
+            const body = `Voice Pad（音声録音＆タッチサンプラーWebアプリ）のご案内です。\n\nワンタップで音声録音・再生ができ、写真やボイスチェンジャーも使えるアプリです。\n\n以下のURLからアクセスしてください：\n${appShareUrl}\n\n※SafariやChromeで開き「ホーム画面に追加」すると全画面アプリとして使えます。`;
+            window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        });
+
+        document.getElementById('btn-copy').addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(appShareUrl);
+                alert('アプリURLをコピーしました！');
+            } catch (e) {
+                alert(`URL: ${appShareUrl}`);
+            }
+        });
+    </script>
 </body>
 </html>

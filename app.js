@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.10.0010';
+const APP_VERSION = '2026.09.12.0001';
 
 // ==================== 1. Web Audio API / AudioContext 覚醒ユーティリティ ====================
 class AudioUnlocker {
@@ -2137,6 +2137,9 @@ class VoicePadApp {
             this.showToast(`全体の基本再生スピードを「${this.globalPlaybackSpeed}倍速」に変更しました`);
         });
         document.getElementById('export-all-btn')?.addEventListener('click', () => this.exportAllData());
+        document.getElementById('open-guide-from-settings-btn')?.addEventListener('click', () => {
+            this.openGuideModal();
+        });
         document.getElementById('import-from-settings-btn')?.addEventListener('click', () => {
             this.closeSettingsModal();
             document.getElementById('global-import-input')?.click();
@@ -2148,18 +2151,75 @@ class VoicePadApp {
             }
         });
 
-        // QRモーダル
+        // 📖 使い方ガイドモーダル
+        document.getElementById('close-guide-modal-btn')?.addEventListener('click', () => this.closeGuideModal());
+        document.getElementById('close-guide-modal-bottom-btn')?.addEventListener('click', () => this.closeGuideModal());
+        document.getElementById('guide-modal-backdrop')?.addEventListener('click', (e) => {
+            if (e.target.id === 'guide-modal-backdrop') this.closeGuideModal();
+        });
+
+        // 📱 QRモーダル ＆ 招待・共有アクション
         document.getElementById('close-qr-modal-btn')?.addEventListener('click', () => this.closeQrModal());
         document.getElementById('qr-modal-backdrop')?.addEventListener('click', (e) => {
             if (e.target.id === 'qr-modal-backdrop') this.closeQrModal();
         });
+
+        const appShareUrl = 'https://galakutar.github.io/Voice-Pad/';
+        const shareTitle = 'Voice Pad - 音声録音＆タッチサンプラー';
+        const shareText = '音声録音＆タッチサンプラーアプリ「Voice Pad」を使ってみてね！写真・ボイスチェンジ・スピード調整対応のWebアプリです。\n' + appShareUrl;
+
+        // ① スマホ共有メニュー起動（LINE・メール・SNS対応）
+        document.getElementById('invite-share-btn')?.addEventListener('click', async () => {
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: shareTitle,
+                        text: '音声録音＆タッチサンプラーアプリ「Voice Pad」を使ってみてね！',
+                        url: appShareUrl
+                    });
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        this.showToast('共有がキャンセルまたは失敗しました');
+                    }
+                }
+            } else {
+                // 未対応時はクリップボードコピー
+                try {
+                    await navigator.clipboard.writeText(appShareUrl);
+                    this.showToast('📋 アプリURLをコピーしました！LINEやSNSに貼り付けて招待できます');
+                } catch (e) {
+                    alert(`URL: ${appShareUrl}`);
+                }
+            }
+        });
+
+        // ② LINEで送る
+        document.getElementById('invite-line-btn')?.addEventListener('click', () => {
+            const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`;
+            window.open(lineUrl, '_blank');
+        });
+
+        // ③ メールで招待
+        document.getElementById('invite-mail-btn')?.addEventListener('click', () => {
+            const mailSubject = '【招待】Voice Pad - 音声録音＆タッチサンプラーアプリ';
+            const mailBody = `Voice Pad（音声録音＆タッチサンプラーWebアプリ）のご案内です。\n\nワンタップで音声録音・再生ができ、写真やボイスチェンジャーも使えるアプリです。\n\n以下のURLからアクセスしてください：\n${appShareUrl}\n\n※SafariやChromeで開き「ホーム画面に追加」すると全画面アプリとして使えます。`;
+            const mailtoUrl = `mailto:?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`;
+            window.location.href = mailtoUrl;
+        });
+
+        // ④ X (Twitter) でシェア
+        document.getElementById('invite-x-btn')?.addEventListener('click', () => {
+            const xUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
+            window.open(xUrl, '_blank');
+        });
+
+        // ⑤ アプリURLコピー
         document.getElementById('copy-url-btn')?.addEventListener('click', async () => {
-            const urlText = 'https://galakutar.github.io/Voice-Pad/';
             try {
-                await navigator.clipboard.writeText(urlText);
+                await navigator.clipboard.writeText(appShareUrl);
                 this.showToast('📋 アプリURLをコピーしました！');
             } catch (e) {
-                alert(`URL: ${urlText}`);
+                alert(`URL: ${appShareUrl}`);
             }
         });
 
@@ -2601,7 +2661,15 @@ class VoicePadApp {
         }
     }
 
-    // ==================== 設定＆QRモーダル ====================
+    // ==================== 設定＆QR＆ガイドモーダル ====================
+    openGuideModal() {
+        document.getElementById('guide-modal-backdrop')?.classList.add('open');
+    }
+
+    closeGuideModal() {
+        document.getElementById('guide-modal-backdrop')?.classList.remove('open');
+    }
+
     openSettingsModal() {
         const globalEffectSelect = document.getElementById('setting-global-effect');
         if (globalEffectSelect) globalEffectSelect.value = this.currentEffect;
