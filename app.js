@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.12.0001';
+const APP_VERSION = '2026.09.12.0002';
 
 // ==================== 1. Web Audio API / AudioContext 覚醒ユーティリティ ====================
 class AudioUnlocker {

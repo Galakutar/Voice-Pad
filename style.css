@@ -54,7 +54,7 @@ body, html {
     width: 100%;
     height: 100%;
     max-height: 100dvh;
-    max-width: 1400px;
+    max-width: 1800px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
@@ -387,7 +387,7 @@ body, html {
     -webkit-overflow-scrolling: touch;
 }
 
-/* 表示数別のグリッド最適化 */
+/* ==================== 表示数別のグリッド最適化（縦向き・デフォルト） ==================== */
 .pad-grid.grid-count-1 {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr;
@@ -429,8 +429,8 @@ body, html {
     grid-template-rows: repeat(8, 1fr);
 }
 
-/* 横向き（Landscape）時の最適化 */
-@media (min-aspect-ratio: 1/1) {
+/* ==================== PC・横向き（Landscape）時の最適化（全画面対応） ==================== */
+@media (min-aspect-ratio: 1/1), (min-width: 768px) {
     .pad-grid.grid-count-1 {
         grid-template-columns: 1fr;
         grid-template-rows: 1fr;
@@ -447,110 +447,172 @@ body, html {
         grid-template-columns: repeat(2, 1fr);
         grid-template-rows: repeat(2, 1fr);
     }
-}
-
-@media (min-aspect-ratio: 1/1) and (max-height: 600px) {
-    .pad-grid.grid-count-32 {
-        grid-template-columns: repeat(8, 1fr);
-        grid-template-rows: repeat(4, 1fr);
-    }
-    .pad-grid.grid-count-24 {
-        grid-template-columns: repeat(6, 1fr);
-        grid-template-rows: repeat(4, 1fr);
-    }
-    .pad-grid.grid-count-16 {
-        grid-template-columns: repeat(4, 1fr);
-        grid-template-rows: repeat(4, 1fr);
-    }
     .pad-grid.grid-count-8 {
         grid-template-columns: repeat(4, 1fr);
         grid-template-rows: repeat(2, 1fr);
     }
+    .pad-grid.grid-count-16 {
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+    }
+    .pad-grid.grid-count-24 {
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+    }
+    .pad-grid.grid-count-32 {
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: repeat(4, 1fr);
+    }
+    .pad-grid.grid-count-48 {
+        grid-template-columns: repeat(12, 1fr);
+        grid-template-rows: repeat(4, 1fr);
+    }
+    .pad-grid.grid-count-64 {
+        grid-template-columns: repeat(16, 1fr);
+        grid-template-rows: repeat(4, 1fr);
+    }
 }
 
-/* 1個〜4個の時の大画面巨大ボタンスタイル最適化 */
+/* ==================== ボタン数に応じたダイナミック大画面スケーリング ==================== */
+/* 1個表示（超巨大ボタン） */
 .pad-grid.grid-count-1 .pad-card {
-    padding: 16px;
-    border-radius: 20px;
-    border-width: 3px;
+    padding: clamp(16px, 3vw, 32px);
+    border-radius: clamp(16px, 2.5vw, 28px);
+    border-width: 3.5px;
 }
 .pad-grid.grid-count-1 .pad-emoji {
-    font-size: clamp(48px, 18vh, 120px);
+    font-size: clamp(64px, 24vh, 180px);
 }
 .pad-grid.grid-count-1 .pad-label {
-    font-size: clamp(20px, 5vh, 36px);
+    font-size: clamp(22px, 5.5vh, 48px);
     font-weight: 800;
 }
 .pad-grid.grid-count-1 .slot-badge {
-    font-size: 16px;
-    padding: 4px 10px;
+    font-size: clamp(15px, 2.5vh, 22px);
+    padding: 4px 12px;
     border-radius: 8px;
 }
+.pad-grid.grid-count-1 .pad-settings-btn {
+    font-size: clamp(16px, 2.8vh, 24px);
+    padding: 6px 12px;
+}
 .pad-grid.grid-count-1 .slot-status {
-    font-size: 16px;
+    font-size: clamp(14px, 2.2vh, 20px);
+    padding: 3px 8px;
 }
 
+/* 2個表示（特大ボタン） */
 .pad-grid.grid-count-2 .pad-card {
-    padding: 12px;
-    border-radius: 16px;
-    border-width: 2.5px;
+    padding: clamp(12px, 2.2vw, 24px);
+    border-radius: clamp(14px, 2vw, 22px);
+    border-width: 3px;
 }
 .pad-grid.grid-count-2 .pad-emoji {
-    font-size: clamp(36px, 12vh, 80px);
+    font-size: clamp(48px, 17vh, 130px);
 }
 .pad-grid.grid-count-2 .pad-label {
-    font-size: clamp(16px, 3.5vh, 28px);
+    font-size: clamp(18px, 4vh, 36px);
     font-weight: 800;
 }
 .pad-grid.grid-count-2 .slot-badge {
-    font-size: 14px;
-    padding: 3px 8px;
+    font-size: clamp(13px, 2vh, 18px);
+    padding: 3px 10px;
     border-radius: 6px;
 }
+.pad-grid.grid-count-2 .pad-settings-btn {
+    font-size: clamp(14px, 2.2vh, 20px);
+    padding: 5px 10px;
+}
 .pad-grid.grid-count-2 .slot-status {
-    font-size: 14px;
+    font-size: clamp(12px, 1.8vh, 16px);
 }
 
+/* 3個表示（大ボタン） */
 .pad-grid.grid-count-3 .pad-card {
-    padding: 10px;
-    border-radius: 14px;
-    border-width: 2px;
+    padding: clamp(10px, 1.8vw, 20px);
+    border-radius: clamp(12px, 1.6vw, 18px);
+    border-width: 2.5px;
 }
 .pad-grid.grid-count-3 .pad-emoji {
-    font-size: clamp(28px, 9vh, 64px);
+    font-size: clamp(40px, 13vh, 96px);
 }
 .pad-grid.grid-count-3 .pad-label {
-    font-size: clamp(14px, 2.8vh, 24px);
+    font-size: clamp(16px, 3.2vh, 28px);
     font-weight: 800;
 }
 .pad-grid.grid-count-3 .slot-badge {
-    font-size: 13px;
-    padding: 2px 7px;
+    font-size: clamp(12px, 1.8vh, 16px);
+    padding: 3px 8px;
     border-radius: 6px;
 }
+.pad-grid.grid-count-3 .pad-settings-btn {
+    font-size: clamp(13px, 2vh, 18px);
+    padding: 4px 8px;
+}
 .pad-grid.grid-count-3 .slot-status {
-    font-size: 13px;
+    font-size: clamp(11px, 1.6vh, 15px);
 }
 
+/* 4個表示（中大ボタン） */
 .pad-grid.grid-count-4 .pad-card {
-    padding: 8px;
-    border-radius: 12px;
+    padding: clamp(8px, 1.4vw, 16px);
+    border-radius: clamp(10px, 1.3vw, 16px);
     border-width: 2px;
 }
 .pad-grid.grid-count-4 .pad-emoji {
-    font-size: clamp(24px, 8vh, 56px);
+    font-size: clamp(32px, 10vh, 80px);
 }
 .pad-grid.grid-count-4 .pad-label {
-    font-size: clamp(13px, 2.4vh, 20px);
+    font-size: clamp(14px, 2.6vh, 24px);
     font-weight: 800;
 }
 .pad-grid.grid-count-4 .slot-badge {
-    font-size: 12px;
-    padding: 2px 6px;
+    font-size: clamp(11px, 1.5vh, 14px);
+    padding: 2px 7px;
     border-radius: 5px;
 }
+.pad-grid.grid-count-4 .pad-settings-btn {
+    font-size: clamp(12px, 1.7vh, 16px);
+}
 .pad-grid.grid-count-4 .slot-status {
-    font-size: 12px;
+    font-size: clamp(10px, 1.4vh, 13px);
+}
+
+/* 8個表示（ゆったりボタン） */
+.pad-grid.grid-count-8 .pad-card {
+    padding: clamp(6px, 1vw, 12px);
+    border-radius: 12px;
+}
+.pad-grid.grid-count-8 .pad-emoji {
+    font-size: clamp(26px, 7vh, 56px);
+}
+.pad-grid.grid-count-8 .pad-label {
+    font-size: clamp(12px, 2.2vh, 20px);
+    font-weight: 700;
+}
+.pad-grid.grid-count-8 .slot-badge {
+    font-size: clamp(10px, 1.3vh, 13px);
+}
+.pad-grid.grid-count-8 .slot-status {
+    font-size: clamp(9.5px, 1.2vh, 12px);
+}
+
+/* 16個表示 */
+.pad-grid.grid-count-16 .pad-emoji {
+    font-size: clamp(18px, 4.5vh, 40px);
+}
+.pad-grid.grid-count-16 .pad-label {
+    font-size: clamp(10.5px, 1.8vh, 16px);
+}
+
+/* 24個・32個表示 */
+.pad-grid.grid-count-24 .pad-emoji,
+.pad-grid.grid-count-32 .pad-emoji {
+    font-size: clamp(15px, 3.2vh, 30px);
+}
+.pad-grid.grid-count-24 .pad-label,
+.pad-grid.grid-count-32 .pad-label {
+    font-size: clamp(9.5px, 1.5vh, 13px);
 }
 
 /* ==================== スイッチカード（パッド） ==================== */
