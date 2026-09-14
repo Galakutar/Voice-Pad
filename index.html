@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260912_2">
+    <link rel="stylesheet" href="style.css?v=20260915_1">
 </head>
 <body>
     <div id="app-container">
@@ -167,6 +167,63 @@
                     </select>
                 </div>
 
+                <!-- AI音声合成 (TTS) セクション -->
+                <div class="form-group tts-section-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label class="form-label" style="margin-bottom:0;">🤖 AI音声合成（テキストから音声を自動作成）</label>
+                        <span class="badge-tag">AI TTS</span>
+                    </div>
+                    <div class="tts-input-row">
+                        <input type="text" id="tts-input-text" class="form-input" placeholder="例: おはようございます、お茶ください、ありがとう..." maxlength="100">
+                        <button type="button" id="btn-tts-preview" class="action-btn download-btn" style="margin:0; padding:8px 12px; font-size:12px;" title="試聴する">▶️ 試聴</button>
+                    </div>
+                    <div class="tts-options-grid">
+                        <div class="tts-opt-item">
+                            <label class="opt-label">声の種類</label>
+                            <select id="tts-voice-select" class="form-input tts-select"></select>
+                        </div>
+                        <div class="tts-opt-item">
+                            <label class="opt-label">話速: <span id="tts-rate-val">1.0x</span></label>
+                            <input type="range" id="tts-rate-slider" min="0.5" max="1.8" step="0.1" value="1.0" class="adjust-slider">
+                        </div>
+                        <div class="tts-opt-item">
+                            <label class="opt-label">音程: <span id="tts-pitch-val">1.0</span></label>
+                            <input type="range" id="tts-pitch-slider" min="0.5" max="1.8" step="0.1" value="1.0" class="adjust-slider">
+                        </div>
+                    </div>
+                    <button type="button" id="btn-tts-apply" class="action-btn highlight-btn" style="margin-top: 6px; width: 100%;">
+                        ✨ このAI音声をボタンに登録する
+                    </button>
+                </div>
+
+                <!-- 音声波形エディター＆トリミングセクション（録音・音声がある時に表示） -->
+                <div id="waveform-editor-card" class="form-group waveform-editor-card" style="display: none;">
+                    <div class="waveform-header">
+                        <label class="form-label" style="margin-bottom:0;">✂️ 音声波形エディター ＆ 無音カット</label>
+                        <span id="waveform-duration-badge" class="waveform-badge">0.0s</span>
+                    </div>
+                    <div class="waveform-canvas-container">
+                        <canvas id="waveform-canvas" class="waveform-canvas" width="600" height="80"></canvas>
+                        <div id="waveform-playhead" class="waveform-playhead"></div>
+                    </div>
+                    <div class="waveform-trim-controls">
+                        <div class="trim-slider-group">
+                            <span class="trim-label">✂️ 開始位置: <span id="trim-start-val">0.00s</span></span>
+                            <input type="range" id="trim-start-slider" min="0" max="100" step="0.5" value="0" class="adjust-slider">
+                        </div>
+                        <div class="trim-slider-group">
+                            <span class="trim-label">✂️ 終了位置: <span id="trim-end-val">0.00s</span></span>
+                            <input type="range" id="trim-end-slider" min="0" max="100" step="0.5" value="100" class="adjust-slider">
+                        </div>
+                    </div>
+                    <div class="waveform-action-tools">
+                        <button type="button" id="btn-waveform-preview" class="action-btn secondary-btn">▶️ 編集後を試聴</button>
+                        <button type="button" id="btn-waveform-normalize" class="action-btn download-btn" title="音量を均一・最大化">📈 音量ノーマライズ</button>
+                        <button type="button" id="btn-waveform-fade" class="action-btn download-btn" title="前後0.05秒にフェード処理">🌊 フェード適用</button>
+                        <button type="button" id="btn-waveform-save" class="action-btn save-btn">✂️ トリムを適用保存</button>
+                    </div>
+                </div>
+
                 <!-- 名前の位置選択 -->
                 <div class="form-group">
                     <label class="form-label">名前の位置</label>
@@ -269,7 +326,7 @@
                 <div class="modal-actions">
                     <button id="save-slot-btn" class="action-btn save-btn">💾 設定を保存する</button>
                     <button id="import-slot-audio-btn" class="action-btn download-btn">📁 音声ファイルを選択して読み込む</button>
-                    <button id="export-single-slot-btn" class="action-btn share-btn">📤 このスイッチを写真・設定付きで共有・書き出し (.vpad)</button>
+                    <button id="export-single-slot-btn" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb);">📤 📲 AirDrop / 端末間でこのボタンを送る (.vpad-button)</button>
                     <button id="download-audio-btn" class="action-btn download-btn" style="display: none;">💾 録音音声ファイル (m4a/webm) を保存</button>
                     <button id="duplicate-slot-btn" class="action-btn secondary-btn">📋 このスイッチを複製</button>
                     <button id="delete-audio-btn" class="action-btn warning-btn" style="display: none;">🔇 録音データのみ消去</button>
@@ -359,7 +416,7 @@
 
                 <div class="modal-actions">
                     <button id="save-scroll-btn" class="action-btn save-btn">💾 スクロール設定を保存</button>
-                    <button id="export-scroll-btn" class="action-btn share-btn">📤 このスクロールを設定・写真付きで共有・書き出し (.vpad)</button>
+                    <button id="export-scroll-btn" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb);">📤 📲 AirDrop / 端末間でこのスクロールを送る (.vpad-page)</button>
                     <button id="duplicate-scroll-btn" class="action-btn secondary-btn">📋 このスクロールを丸ごと複製</button>
                     <button id="delete-scroll-btn" class="action-btn delete-btn">🗑️ このスクロールを削除</button>
                 </div>
@@ -388,11 +445,66 @@
                     </button>
                 </div>
 
+                <!-- 🎨 テーマ・デザイン切り替え -->
+                <div class="form-group">
+                    <label class="form-label" for="setting-theme-select">🎨 デザイン・カラーテーマ切り替え</label>
+                    <select id="setting-theme-select" class="form-input">
+                        <option value="theme-dark" selected>🌌 Cyber Dark (サイバーダーク - 標準)</option>
+                        <option value="theme-neon">⚡ Neon Glow (ネオングロー)</option>
+                        <option value="theme-pastel">🌸 Pastel Light (パステルライト - 高齢者・子ども向け)</option>
+                        <option value="theme-highcontrast">👁️ High Contrast AAC (視覚支援ハイコントラスト)</option>
+                        <option value="theme-mint">🌿 Forest Mint (フォレストミント)</option>
+                    </select>
+                </div>
+
+                <!-- 🎹 外部入力 ＆ AACスイッチスキャン設定 -->
+                <div class="form-group aac-settings-card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label class="form-label" style="margin-bottom:0;">🎹 外部入力 ＆ AACスイッチスキャン支援</label>
+                        <span class="badge-tag">AAC / MIDI</span>
+                    </div>
+
+                    <!-- スイッチスキャントグル -->
+                    <div class="setting-toggle-row">
+                        <div>
+                            <div class="setting-toggle-title">🎯 オンスクリーンスイッチスキャン</div>
+                            <div class="setting-toggle-desc">枠線が順番に自動移動し、スイッチやスペースキーで発音</div>
+                        </div>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="setting-aac-scan-toggle">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+
+                    <div id="aac-scan-options" style="display: none; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-color);">
+                        <div class="setting-row" style="margin-bottom: 6px; justify-content:space-between;">
+                            <span class="opt-label">⏱️ スキャン速度: <strong id="aac-scan-speed-val" style="color:var(--accent-primary);">1.5秒</strong></span>
+                            <input type="range" id="setting-aac-scan-speed" min="0.5" max="3.0" step="0.25" value="1.5" class="adjust-slider" style="flex:1; max-width:180px;">
+                        </div>
+                        <div class="setting-row" style="margin-bottom: 6px; justify-content:space-between;">
+                            <span class="opt-label">スキャン方式:</span>
+                            <select id="setting-aac-scan-mode" class="form-input" style="flex:1; max-width:200px;">
+                                <option value="auto">⏱️ 自動移動（オートスキャン）</option>
+                                <option value="step">🦶 スイッチで1つずつ移動</option>
+                            </select>
+                        </div>
+                        <div class="help-hint" style="font-size:11px; color:var(--text-muted);">
+                            💡 操作方法：スペースキー / Enter / 画面タップ / 外部AACスイッチで発音
+                        </div>
+                    </div>
+
+                    <!-- キーボード＆MIDIステータス表示 -->
+                    <div class="midi-status-row">
+                        <span>⌨️ キーボード演奏: <strong style="color:var(--accent-primary);">1〜9 / Q〜P / A〜L 有効</strong></span>
+                        <span id="midi-status-badge" class="badge-tag">🎹 MIDI未検出</span>
+                    </div>
+                </div>
+
                 <!-- バージョン確認・更新セクション -->
                 <div class="form-group version-card">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span class="form-label">🚀 アプリのバージョン</span>
-                        <span id="app-version-badge" class="version-badge">v2026.09.12.0002</span>
+                        <span id="app-version-badge" class="version-badge">v2026.09.15.0001</span>
                     </div>
                     <button id="check-update-btn" class="action-btn update-btn" style="margin-top: 6px;">
                         🔄 最新バージョンを確認・アップデート
@@ -473,8 +585,8 @@
                 <div class="form-group" style="margin-top: 8px;">
                     <label class="form-label">📦 バックアップ & 共有（写真・エフェクト・スピード完全対応）</label>
                     <div class="modal-actions" style="gap: 8px;">
-                        <button id="export-all-btn" class="action-btn share-btn">
-                            📤 アプリ全体の完全バックアップ・共有 (.vpad)
+                        <button id="export-all-btn" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb);">
+                            📤 📲 AirDrop / アプリ全体の完全バックアップ (.vpad)
                         </button>
                         <button id="import-from-settings-btn" class="action-btn download-btn">
                             📥 バックアップファイルを復元・インポート
@@ -711,8 +823,57 @@
         </div>
     </div>
 
+    <!-- ⑥ 📲 受信データ（AirDrop/ファイル）プレビュー＆追加モーダル -->
+    <div id="incoming-share-modal" class="modal-backdrop" role="dialog" aria-modal="true">
+        <div class="modal-content" style="max-width: 440px;">
+            <div class="modal-header">
+                <h3 id="incoming-modal-title" class="modal-title">📲 データを受信しました</h3>
+                <button id="close-incoming-modal-btn" class="close-modal-btn" title="閉じる" aria-label="閉じる">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="modal-body-scroll" style="gap: 12px;">
+                <!-- プレビューカード -->
+                <div id="incoming-preview-card" class="incoming-preview-card">
+                    <!-- JavaScriptで動的生成（ボタンプレビュー、試聴ボタン等） -->
+                </div>
+
+                <!-- 追加先スクロール選択 -->
+                <div id="incoming-scroll-target-group" class="form-group">
+                    <label class="form-label" for="incoming-target-scroll">📥 追加先のスクロール（シート）</label>
+                    <select id="incoming-target-scroll" class="form-input"></select>
+                </div>
+
+                <div class="modal-actions" style="gap: 8px;">
+                    <button id="btn-incoming-add-current" class="action-btn save-btn" style="background: linear-gradient(135deg, #059669, #10b981);">
+                        ✅ このスクロールに追加する
+                    </button>
+                    <button id="btn-incoming-add-new-scroll" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb);">
+                        ➕ 新しいスクロールを作成して追加
+                    </button>
+                    <button id="btn-incoming-cancel" class="action-btn download-btn">
+                        ✕ キャンセル
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 全画面ドラッグ＆ドロップ受け入れオーバーレイ -->
+    <div id="global-dropzone" class="global-dropzone" style="display: none;">
+        <div class="dropzone-content">
+            <div class="dropzone-icon">📥</div>
+            <div class="dropzone-title">ここにファイルをドロップ</div>
+            <div class="dropzone-desc">.vpad-button / .vpad-page / .vpad / 音声ファイルをインポート</div>
+        </div>
+    </div>
+
     <!-- 隠しファイルインプット -->
-    <input type="file" id="global-import-input" accept=".vpad,.json,audio/*" style="display: none;">
+    <input type="file" id="global-import-input" accept=".vpad,.vpad-button,.vpad-page,.vpadbtn,.vpadpage,.json,audio/*" style="display: none;">
     <input type="file" id="slot-audio-input" accept="audio/*" style="display: none;">
     <input type="file" id="photo-file-input" accept="image/*" style="display: none;">
 
@@ -720,6 +881,6 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260912_2"></script>
+    <script src="app.js?v=20260915_1"></script>
 </body>
 </html>

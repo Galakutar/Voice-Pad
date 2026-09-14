@@ -11,5 +11,14 @@
       "sizes": "192x192 512x512",
       "type": "image/svg+xml"
     }
+  ],
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "name": "Voice Pad Data",
+      "accept": {
+        "application/json": [".vpad", ".vpad-button", ".vpad-page", ".vpadbtn", ".vpadpage", ".json"]
+      }
+    }
   ]
 }

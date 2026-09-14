@@ -106,10 +106,6 @@ body, html {
     gap: 2px;
     flex-shrink: 0;
 }
-    padding: 2px;
-    gap: 2px;
-    flex-shrink: 0;
-}
 
 .mode-toggle-btn {
     display: flex;
@@ -1507,5 +1503,545 @@ body.mode-record .pad-card:not(.recording):hover {
         padding: 4px 6px;
         font-size: 13px;
     }
+}
+
+/* ==================== 🎨 テーマカラー定義 (THEMES) ==================== */
+/* 1. ⚡ Neon Glow (ネオングロー) */
+body.theme-neon {
+    --bg-dark: #050811;
+    --bg-surface: #0a1124;
+    --bg-surface-glass: rgba(10, 17, 36, 0.9);
+    --bg-card: #0f1a36;
+    --border-color: rgba(6, 182, 212, 0.28);
+    --border-color-hover: rgba(6, 182, 212, 0.6);
+    --text-primary: #e0f2fe;
+    --text-secondary: #7dd3fc;
+    --text-muted: #38bdf8;
+    --accent-blue: #06b6d4;
+    --accent-cyan: #22d3ee;
+    --accent-purple: #c084fc;
+    --accent-pink: #f472b6;
+    --color-success: #10b981;
+    --slot-c1: #f43f5e;
+    --slot-c2: #fb923c;
+    --slot-c3: #facc15;
+    --slot-c4: #4ade80;
+    --slot-c5: #22d3ee;
+    --slot-c6: #60a5fa;
+    --slot-c7: #c084fc;
+    --slot-c8: #f472b6;
+}
+body.theme-neon .pad-card {
+    box-shadow: 0 0 12px rgba(6, 182, 212, 0.15), inset 0 0 12px rgba(6, 182, 212, 0.05);
+}
+body.theme-neon .pad-card:hover, body.theme-neon .pad-card:active {
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.4), inset 0 0 15px rgba(6, 182, 212, 0.15);
+}
+
+/* 2. 🌸 Pastel Light (パステルライト - 子ども・シニア向け) */
+body.theme-pastel {
+    --bg-dark: #f1f5f9;
+    --bg-surface: #ffffff;
+    --bg-surface-glass: rgba(255, 255, 255, 0.92);
+    --bg-card: #ffffff;
+    --border-color: rgba(148, 163, 184, 0.35);
+    --border-color-hover: rgba(100, 116, 139, 0.5);
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --accent-blue: #2563eb;
+    --accent-cyan: #0284c7;
+    --accent-purple: #7c3aed;
+    --accent-pink: #db2777;
+    --color-rec: #dc2626;
+    --color-success: #059669;
+    --slot-c1: #fb7185;
+    --slot-c2: #fb923c;
+    --slot-c3: #f59e0b;
+    --slot-c4: #34d399;
+    --slot-c5: #38bdf8;
+    --slot-c6: #60a5fa;
+    --slot-c7: #a78bfa;
+    --slot-c8: #f472b6;
+}
+body.theme-pastel .pad-card {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+body.theme-pastel .scroll-tab-btn {
+    background: #e2e8f0;
+    color: #334155;
+}
+body.theme-pastel .scroll-tab-btn.active {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+/* 3. 👁️ High Contrast AAC (視覚支援ハイコントラスト) */
+body.theme-highcontrast {
+    --bg-dark: #000000;
+    --bg-surface: #0a0a0a;
+    --bg-surface-glass: rgba(0, 0, 0, 0.98);
+    --bg-card: #111111;
+    --border-color: #ffffff;
+    --border-color-hover: #ffff00;
+    --text-primary: #ffffff;
+    --text-secondary: #ffff00;
+    --text-muted: #00ffff;
+    --accent-blue: #ffff00;
+    --accent-cyan: #00ffff;
+    --accent-purple: #ff00ff;
+    --accent-pink: #ff007f;
+    --color-rec: #ff0000;
+    --color-success: #00ff00;
+    --slot-c1: #ffff00;
+    --slot-c2: #00ffff;
+    --slot-c3: #00ff00;
+    --slot-c4: #ff00ff;
+    --slot-c5: #ffffff;
+    --slot-c6: #ffff00;
+    --slot-c7: #00ffff;
+    --slot-c8: #00ff00;
+}
+body.theme-highcontrast .pad-card {
+    border-width: 2.5px !important;
+    border-color: #ffffff !important;
+}
+body.theme-highcontrast .pad-label {
+    font-weight: 900 !important;
+    color: #ffffff !important;
+    background: rgba(0, 0, 0, 0.9) !important;
+}
+
+/* 4. 🌿 Forest Mint (フォレストミント) */
+body.theme-mint {
+    --bg-dark: #061811;
+    --bg-surface: #0d281e;
+    --bg-surface-glass: rgba(13, 40, 30, 0.92);
+    --bg-card: #143528;
+    --border-color: rgba(52, 211, 153, 0.25);
+    --border-color-hover: rgba(52, 211, 153, 0.5);
+    --text-primary: #ecfdf5;
+    --text-secondary: #a7f3d0;
+    --text-muted: #6ee7b7;
+    --accent-blue: #10b981;
+    --accent-cyan: #34d399;
+    --accent-purple: #059669;
+    --accent-pink: #f472b6;
+    --color-success: #10b981;
+    --slot-c1: #10b981;
+    --slot-c2: #34d399;
+    --slot-c3: #6ee7b7;
+    --slot-c4: #a7f3d0;
+    --slot-c5: #2dd4bf;
+    --slot-c6: #14b8a6;
+    --slot-c7: #0d9488;
+    --slot-c8: #059669;
+}
+
+/* ==================== 🤖 AI音声合成 (TTS) スタイル ==================== */
+.tts-section-card {
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.badge-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 9999px;
+    letter-spacing: 0.04em;
+}
+
+.tts-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.tts-options-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    gap: 8px;
+    align-items: center;
+}
+
+@media (max-width: 480px) {
+    .tts-options-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.tts-opt-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.tts-opt-item .opt-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.tts-select {
+    padding: 6px 8px;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.highlight-btn {
+    background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+    color: #ffffff;
+    font-weight: 800;
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+}
+
+.highlight-btn:active {
+    transform: scale(0.98);
+}
+
+/* ==================== ✂️ 音声波形エディター ＆ トリムスタイル ==================== */
+.waveform-editor-card {
+    background: rgba(24, 34, 52, 0.9);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.waveform-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.waveform-badge {
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 8px;
+    background: rgba(56, 189, 248, 0.2);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    border-radius: 9999px;
+}
+
+.waveform-canvas-container {
+    position: relative;
+    width: 100%;
+    height: 80px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.waveform-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.waveform-playhead {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 2px;
+    height: 100%;
+    background: #f43f5e;
+    box-shadow: 0 0 6px #f43f5e;
+    pointer-events: none;
+    transform: translateX(0);
+    display: none;
+}
+
+.waveform-trim-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.trim-slider-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.trim-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.waveform-action-tools {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+@media (max-width: 480px) {
+    .waveform-action-tools {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ==================== 🎹 AAC スイッチスキャン ＆ MIDI ==================== */
+.aac-settings-card {
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.setting-toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.setting-toggle-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.setting-toggle-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.switch-toggle {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.switch-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.switch-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(255, 255, 255, 0.2);
+    transition: .3s cubic-bezier(0.16, 1, 0.3, 1);
+    border-radius: 24px;
+}
+
+.switch-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s cubic-bezier(0.16, 1, 0.3, 1);
+    border-radius: 50%;
+}
+
+.switch-toggle input:checked + .switch-slider {
+    background-color: var(--accent-blue);
+}
+
+.switch-toggle input:checked + .switch-slider:before {
+    transform: translateX(20px);
+}
+
+.midi-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding-top: 4px;
+}
+
+/* AAC スキャン時のボタンフォーカス枠 */
+.pad-card.aac-scan-focused {
+    outline: 4px solid #f59e0b !important;
+    outline-offset: 3px !important;
+    transform: scale(1.04) !important;
+    box-shadow: 0 0 24px rgba(245, 158, 11, 0.7), inset 0 0 15px rgba(245, 158, 11, 0.3) !important;
+    z-index: 100 !important;
+    animation: aacScanPulse 0.8s infinite alternate ease-in-out !important;
+}
+
+@keyframes aacScanPulse {
+    0% { outline-color: #f59e0b; box-shadow: 0 0 16px rgba(245, 158, 11, 0.5); }
+    100% { outline-color: #ef4444; box-shadow: 0 0 28px rgba(239, 68, 68, 0.85); }
+}
+
+/* ==================== 🌊 タップリップル ＆ 再生中音波パルス ==================== */
+.pad-ripple {
+    position: absolute;
+    border-radius: 50%;
+    transform: scale(0);
+    animation: padRippleAnim 0.6s cubic-bezier(0.1, 0.8, 0.2, 1) forwards;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 70%);
+    pointer-events: none;
+}
+
+@keyframes padRippleAnim {
+    to {
+        transform: scale(3.5);
+        opacity: 0;
+    }
+}
+
+/* 再生中パルス */
+.pad-card.is-playing::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    border: 2px solid rgba(56, 189, 248, 0.8);
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.6);
+    animation: playingWavePulse 1s infinite cubic-bezier(0.25, 1, 0.5, 1);
+    pointer-events: none;
+}
+
+@keyframes playingWavePulse {
+    0% { transform: scale(1); opacity: 0.9; }
+    100% { transform: scale(1.08); opacity: 0; }
+}
+
+/* ==================== 📲 受信データ（AirDrop）プレビュー ==================== */
+.incoming-preview-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.incoming-preview-slot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+}
+
+.incoming-slot-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.incoming-slot-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.incoming-slot-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.incoming-slot-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.incoming-slot-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* ==================== 📥 全画面ドラッグ＆ドロップ ==================== */
+.global-dropzone {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(8px);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.global-dropzone.active {
+    pointer-events: all;
+}
+
+.dropzone-content {
+    border: 3px dashed var(--accent-blue);
+    border-radius: 24px;
+    padding: 40px 30px;
+    text-align: center;
+    background: rgba(30, 41, 59, 0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+    transform: scale(0.96);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.global-dropzone.active .dropzone-content {
+    transform: scale(1);
+}
+
+.dropzone-icon {
+    font-size: 54px;
+    animation: dropzoneBounce 1s infinite alternate cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dropzoneBounce {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-10px); }
+}
+
+.dropzone-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.dropzone-desc {
+    font-size: 12px;
+    color: #94a3b8;
 }
 
