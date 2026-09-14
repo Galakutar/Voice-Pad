@@ -1093,12 +1093,13 @@ class VoicePadApp {
             const colorIdx = ((displayIndex - 1) % 8) + 1;
             card.style.setProperty('--slot-color', `var(--slot-c${colorIdx})`);
 
-            const hasAudio = slot.audioBlob !== null;
+            const hasAudio = (slot.audioBlob !== null) || (!!slot.ttsText);
             let statusText = '未録音';
             if (hasAudio) {
                 const speed = this.getEffectivePlaybackSpeed(slot);
                 const speedLabel = speed !== 1.0 ? ` (${speed}x)` : '';
-                statusText = `${slot.duration.toFixed(1)}s${speedLabel}`;
+                const tag = (slot.ttsText && !slot.audioBlob) ? '🤖 ' : '';
+                statusText = `${tag}${(slot.duration || 1.0).toFixed(1)}s${speedLabel}`;
             }
 
             const labelHtml = `<div class="pad-label">${this.escapeHtml(slot.label)}</div>`;
@@ -1831,7 +1832,7 @@ class VoicePadApp {
         const ctx = AudioUnlocker.getContext();
 
         const slot = this.slots.find(s => s.id === slotId);
-        if (!slot || !slot.audioBlob) {
+        if (!slot || (!slot.audioBlob && !slot.ttsText)) {
             this.setMode('record');
             this.startRecording(slotId);
             return;
@@ -1846,6 +1847,13 @@ class VoicePadApp {
         const effectiveEffect = this.getEffectiveVoiceEffect(slot);
         const effectiveSpeed = this.getEffectivePlaybackSpeed(slot);
 
+        // ① AI音声合成 (TTS) スロットの場合
+        if (slot.ttsText && !slot.audioBlob) {
+            this.playTtsSlot(slot, effectiveEffect, effectiveSpeed);
+            return;
+        }
+
+        // ② 録音・取り込み音声の場合
         try {
             const arrayBuffer = await slot.audioBlob.arrayBuffer();
             const originalBuffer = await ctx.decodeAudioData(arrayBuffer);
@@ -1882,6 +1890,197 @@ class VoicePadApp {
         }
     }
 
+    playTtsSlot(slot, effect = 'normal', speed = 1.0) {
+        if (!('speechSynthesis' in window)) {
+            alert('お使いのブラウザは音声合成に対応していません。');
+            return;
+        }
+
+        this.stopSlot(slot.id);
+        window.speechSynthesis.cancel();
+
+        const card = document.getElementById(`pad-${slot.id}`);
+        if (card) {
+            card.classList.add('playing');
+            card.classList.add('is-playing');
+        }
+
+        const utter = new SpeechSynthesisUtterance(slot.ttsText);
+
+        // 音声の特定
+        const allVoices = window.speechSynthesis.getVoices();
+        if (allVoices.length > 0) this.ttsVoices = allVoices;
+
+        let selectedVoice = null;
+        if (slot.ttsVoice) {
+            selectedVoice = this.ttsVoices.find(v => v.name === slot.ttsVoice || v.voiceURI === slot.ttsVoice);
+        }
+        if (!selectedVoice) {
+            selectedVoice = this.ttsVoices.find(v => v.lang.startsWith('ja')) || this.ttsVoices[0];
+        }
+
+        if (selectedVoice) {
+            utter.voice = selectedVoice;
+            utter.lang = selectedVoice.lang || 'ja-JP';
+        } else {
+            utter.lang = 'ja-JP';
+        }
+
+        // キャラクター＆ボイスチェンジャーフィルターのピッチ・話速計算
+        const baseRate = slot.ttsRate || 1.0;
+        const basePitch = slot.ttsPitch || 1.0;
+
+        let calculatedPitch = basePitch;
+        let calculatedRate = baseRate * speed;
+
+        switch (effect) {
+            case 'baby':
+                calculatedPitch = Math.min(2.0, basePitch * 1.55);
+                calculatedRate = baseRate * 1.15 * speed;
+                break;
+            case 'boy':
+                calculatedPitch = Math.min(2.0, basePitch * 1.25);
+                calculatedRate = baseRate * 1.05 * speed;
+                break;
+            case 'girl':
+                calculatedPitch = Math.min(2.0, basePitch * 1.4);
+                calculatedRate = baseRate * 1.05 * speed;
+                break;
+            case 'man':
+                calculatedPitch = Math.max(0.2, basePitch * 0.78);
+                calculatedRate = baseRate * 0.95 * speed;
+                break;
+            case 'woman':
+                calculatedPitch = Math.min(2.0, basePitch * 1.2);
+                calculatedRate = baseRate * 1.0 * speed;
+                break;
+            case 'old_man':
+                calculatedPitch = Math.max(0.2, basePitch * 0.68);
+                calculatedRate = baseRate * 0.78 * speed;
+                break;
+            case 'old_woman':
+                calculatedPitch = Math.min(2.0, basePitch * 1.25);
+                calculatedRate = baseRate * 0.82 * speed;
+                break;
+            case 'alien':
+                calculatedPitch = Math.min(2.0, basePitch * 1.6);
+                calculatedRate = baseRate * 1.25 * speed;
+                break;
+            case 'robot':
+                calculatedPitch = 0.7;
+                calculatedRate = baseRate * 0.88 * speed;
+                break;
+            case 'monster':
+                calculatedPitch = Math.max(0.1, basePitch * 0.45);
+                calculatedRate = baseRate * 0.72 * speed;
+                break;
+            case 'cave':
+            case 'hall':
+                calculatedPitch = basePitch;
+                calculatedRate = baseRate * 0.92 * speed;
+                break;
+            case 'underwater':
+                calculatedPitch = Math.max(0.2, basePitch * 0.85);
+                calculatedRate = baseRate * 0.85 * speed;
+                break;
+            case 'telephone':
+                calculatedPitch = Math.min(2.0, basePitch * 1.05);
+                calculatedRate = baseRate * 1.0 * speed;
+                break;
+            case 'radio':
+                calculatedPitch = basePitch;
+                calculatedRate = baseRate * 1.02 * speed;
+                break;
+            case 'megaphone':
+                calculatedPitch = Math.min(2.0, basePitch * 1.15);
+                calculatedRate = baseRate * 1.08 * speed;
+                break;
+            default:
+                calculatedPitch = basePitch;
+                calculatedRate = baseRate * speed;
+                break;
+        }
+
+        utter.pitch = Math.max(0.1, Math.min(2.0, calculatedPitch));
+        utter.rate = Math.max(0.1, Math.min(3.0, calculatedRate));
+
+        const ttsController = {
+            stop: () => {
+                window.speechSynthesis.cancel();
+            }
+        };
+        this.activeSources.set(slot.id, ttsController);
+
+        utter.onend = () => {
+            this.stopSlot(slot.id);
+        };
+        utter.onerror = () => {
+            this.stopSlot(slot.id);
+        };
+
+        // 空間・環境エフェクト（洞窟、電話、ラジオ、ロボット等）をオーディオで並行適用
+        this.playAcousticFilterOverlay(effect);
+
+        setTimeout(() => {
+            if (window.speechSynthesis.paused) {
+                window.speechSynthesis.resume();
+            }
+            window.speechSynthesis.speak(utter);
+        }, 50);
+    }
+
+    playAcousticFilterOverlay(effect) {
+        if (!effect || effect === 'normal') return;
+        const ctx = AudioUnlocker.getContext();
+        if (!ctx) return;
+
+        try {
+            if (effect === 'robot') {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(80, ctx.currentTime);
+                gain.gain.setValueAtTime(0.04, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 1.2);
+            } else if (effect === 'cave' || effect === 'hall') {
+                const bufferSize = ctx.sampleRate * 0.4;
+                const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.15)) * 0.05;
+                }
+                const whiteNoise = ctx.createBufferSource();
+                whiteNoise.buffer = noiseBuffer;
+                const filter = ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 800;
+                whiteNoise.connect(filter);
+                filter.connect(ctx.destination);
+                whiteNoise.start();
+            } else if (effect === 'radio') {
+                const bufferSize = Math.floor(ctx.sampleRate * 0.5);
+                const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = (Math.random() - 0.5) * 0.035;
+                }
+                const noise = ctx.createBufferSource();
+                noise.buffer = noiseBuffer;
+                const filter = ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.value = 1800;
+                filter.Q.value = 3.0;
+                noise.connect(filter);
+                filter.connect(ctx.destination);
+                noise.start();
+            }
+        } catch (e) {}
+    }
+
     fallbackPlay(slot, slotId, speed = 1.0) {
         try {
             const audioUrl = URL.createObjectURL(slot.audioBlob);
@@ -1910,9 +2109,12 @@ class VoicePadApp {
             const source = this.activeSources.get(slotId);
             try {
                 source.stop();
-                source.disconnect();
+                if (source.disconnect) source.disconnect();
             } catch (e) {}
             this.activeSources.delete(slotId);
+        }
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
         }
         const card = document.getElementById(`pad-${slotId}`);
         if (card) {
@@ -2537,7 +2739,7 @@ class VoicePadApp {
             if (badge) badge.innerText = displayIndex;
             const statusEl = document.getElementById('preview-status');
             if (statusEl) {
-                statusEl.innerText = slot.audioBlob ? `${slot.duration.toFixed(1)}s` : '未録音';
+                statusEl.innerText = (slot.audioBlob || slot.ttsText) ? `${(slot.duration || 1.0).toFixed(1)}s` : '未録音';
             }
         }
 
@@ -2557,6 +2759,7 @@ class VoicePadApp {
         this.updateModalPhotoPreview();
 
         // 🤖 AI TTS設定の同期
+        this.populateTtsVoices();
         const ttsInput = document.getElementById('tts-input-text');
         if (ttsInput) ttsInput.value = slot.ttsText || '';
         const ttsVoiceSelect = document.getElementById('tts-voice-select');
@@ -2574,14 +2777,14 @@ class VoicePadApp {
             if (pitchVal) pitchVal.innerText = `${ttsPitchSlider.value}`;
         }
 
-        // ✂️ 波形エディターの同期＆描画
+        // ✂️ 波形エディターの同期＆描画（録音データがある時のみ）
         this.initWaveformForSlot(slot);
 
         const deleteAudioBtn = document.getElementById('delete-audio-btn');
         const downloadAudioBtn = document.getElementById('download-audio-btn');
-        if (slot.audioBlob) {
+        if (slot.audioBlob || slot.ttsText) {
             if (deleteAudioBtn) deleteAudioBtn.style.display = 'block';
-            if (downloadAudioBtn) downloadAudioBtn.style.display = 'block';
+            if (downloadAudioBtn) downloadAudioBtn.style.display = slot.audioBlob ? 'block' : 'none';
         } else {
             if (deleteAudioBtn) deleteAudioBtn.style.display = 'none';
             if (downloadAudioBtn) downloadAudioBtn.style.display = 'none';
@@ -2637,14 +2840,16 @@ class VoicePadApp {
         const slot = this.slots.find(s => s.id === this.editingSlotId);
         if (!slot) return;
 
-        if (confirm('このスイッチの録音音声を消去しますか？')) {
+        if (confirm('このスイッチの音声データ（録音またはAI音声）を消去しますか？')) {
             this.stopSlot(slot.id);
             slot.audioBlob = null;
+            slot.ttsText = null;
+            slot.ttsVoice = null;
             slot.duration = 0;
             await this.storage.saveSlot(slot);
             this.renderSlots();
             this.closeEditModal();
-            this.showToast('🔇 録音音声を消去しました');
+            this.showToast('🔇 音声を消去しました');
         }
     }
 
@@ -3095,19 +3300,39 @@ class VoicePadApp {
         window.speechSynthesis.cancel();
 
         const utter = new SpeechSynthesisUtterance(text);
+        
+        const allVoices = window.speechSynthesis.getVoices();
+        if (allVoices.length > 0) this.ttsVoices = allVoices;
+
         const voiceName = document.getElementById('tts-voice-select')?.value;
+        let selectedVoice = null;
         if (voiceName) {
-            const selectedVoice = this.ttsVoices.find(v => v.name === voiceName);
-            if (selectedVoice) utter.voice = selectedVoice;
+            selectedVoice = this.ttsVoices.find(v => v.name === voiceName || v.voiceURI === voiceName);
+        }
+        if (!selectedVoice) {
+            selectedVoice = this.ttsVoices.find(v => v.lang.startsWith('ja')) || this.ttsVoices[0];
+        }
+
+        if (selectedVoice) {
+            utter.voice = selectedVoice;
+            utter.lang = selectedVoice.lang || 'ja-JP';
+        } else {
+            utter.lang = 'ja-JP';
         }
 
         const rate = parseFloat(document.getElementById('tts-rate-slider')?.value || '1.0');
         const pitch = parseFloat(document.getElementById('tts-pitch-slider')?.value || '1.0');
 
-        utter.rate = rate;
-        utter.pitch = pitch;
+        utter.rate = Math.max(0.1, Math.min(3.0, rate));
+        utter.pitch = Math.max(0.1, Math.min(2.0, pitch));
 
-        window.speechSynthesis.speak(utter);
+        setTimeout(() => {
+            if (window.speechSynthesis.paused) {
+                window.speechSynthesis.resume();
+            }
+            window.speechSynthesis.speak(utter);
+        }, 50);
+
         this.showToast(`🗣️ 「${text.slice(0, 20)}」を試聴中...`);
     }
 
@@ -3130,6 +3355,8 @@ class VoicePadApp {
         slot.ttsVoice = voiceName;
         slot.ttsRate = rate;
         slot.ttsPitch = pitch;
+        slot.audioBlob = null; // AI音声合成として登録するため、合成トーン（ノイズ）Blobは生成せずクリア
+        slot.duration = Math.max(1.0, (text.length * 0.25) / rate);
 
         // ボタンのラベルが空または初期値ならテキストを反映
         const labelInput = document.getElementById('edit-label');
@@ -3138,46 +3365,14 @@ class VoicePadApp {
             slot.label = text.slice(0, 14);
         }
 
-        // オフライン・波形編集対応の合成音声 AudioBuffer を生成
-        await AudioUnlocker.unlock();
-        const ctx = AudioUnlocker.getContext();
-        const durationSec = Math.max(1.2, Math.min(10.0, (text.length * 0.26) / rate));
-        const sampleRate = ctx.sampleRate || 44100;
-        const numSamples = Math.floor(sampleRate * durationSec);
-        const synthBuffer = ctx.createBuffer(1, numSamples, sampleRate);
-        const channelData = synthBuffer.getChannelData(0);
-
-        // 自然な母音・子音フォルマント模倣による波形トーン生成
-        const baseFreq = 160 * pitch;
-        for (let i = 0; i < numSamples; i++) {
-            const t = i / sampleRate;
-            const env = Math.sin((Math.PI * i) / numSamples); // 全体エンベロープ
-            const vowelMod = Math.sin(2 * Math.PI * 4.5 * t); // 音節モジュレーション
-            const s1 = Math.sin(2 * Math.PI * baseFreq * t);
-            const s2 = 0.5 * Math.sin(2 * Math.PI * baseFreq * 2.1 * t);
-            const s3 = 0.25 * Math.sin(2 * Math.PI * baseFreq * 3.4 * t);
-            const noise = (Math.random() - 0.5) * 0.08 * (1 - vowelMod);
-            channelData[i] = (s1 + s2 + s3 + noise) * env * (0.65 + 0.35 * vowelMod) * 0.85;
-        }
-
-        AudioUtils.normalizeAudioBuffer(synthBuffer);
-        AudioUtils.applyFade(synthBuffer, 0.04, 0.04);
-
-        const wavBlob = AudioUtils.audioBufferToWav(synthBuffer);
-        slot.audioBlob = wavBlob;
-        slot.duration = durationSec;
-
         await this.storage.saveSlot(slot);
         this.renderSlots();
-
-        // 波形エディターへ即時ロード
-        this.initWaveformForSlot(slot);
 
         // プレビューボタン・消去ボタンの表示更新
         const deleteAudioBtn = document.getElementById('delete-audio-btn');
         const downloadAudioBtn = document.getElementById('download-audio-btn');
         if (deleteAudioBtn) deleteAudioBtn.style.display = 'block';
-        if (downloadAudioBtn) downloadAudioBtn.style.display = 'block';
+        if (downloadAudioBtn) downloadAudioBtn.style.display = 'none';
 
         this.previewTts();
         this.showToast(`✨ AI音声を「${slot.label}」に登録しました！`);
