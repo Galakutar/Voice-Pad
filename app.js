@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.16.0001';
+const APP_VERSION = '2026.09.16.0002';
 
 // ==================== 0. 音声エンコード＆波形編集ユーティリティ ====================
 class AudioUtils {
@@ -1145,29 +1145,89 @@ class VoicePadApp {
         this.scrolls.forEach((scroll, index) => {
             const count = this.slots.filter(s => s.scrollId === scroll.id).length;
             const tab = document.createElement('div');
-            tab.className = `scroll-tab-item${scroll.id === this.currentScrollId ? ' active' : ''}`;
+            const isLocked = !!scroll.isLocked;
+            tab.className = `scroll-tab-item${scroll.id === this.currentScrollId ? ' active' : ''}${isLocked ? ' is-locked' : ''}`;
             tab.setAttribute('data-scroll-id', scroll.id);
             tab.setAttribute('data-index', index);
 
             tab.innerHTML = `
                 <span class="scroll-tab-name">${this.escapeHtml(scroll.name)}</span>
                 <span class="scroll-tab-badge">${count}</span>
-                <span class="scroll-tab-edit-icon" title="スクロール設定">⚙️</span>
+                <span class="scroll-tab-edit-icon ${isLocked ? 'is-locked' : ''}" title="${isLocked ? 'スクロールロック中 (長押しで解除)' : 'スクロール設定 (長押しでロック)'}">${isLocked ? '🔒' : '⚙️'}</span>
             `;
 
             tab.addEventListener('click', (e) => {
                 if (this.isDraggingScroll) return;
-                if (e.target.classList.contains('scroll-tab-edit-icon')) {
-                    e.stopPropagation();
-                    this.openScrollModal(scroll.id);
-                } else {
-                    this.switchScroll(scroll.id);
+                if (e.target.closest('.scroll-tab-edit-icon')) {
+                    // Handled by attachScrollTabLockListeners
+                    return;
                 }
+                this.switchScroll(scroll.id);
             });
+
+            const editIcon = tab.querySelector('.scroll-tab-edit-icon');
+            if (editIcon) {
+                this.attachScrollTabLockListeners(editIcon, scroll);
+            }
 
             this.attachTabDragListeners(tab, scroll.id);
             container.appendChild(tab);
         });
+    }
+
+    attachScrollTabLockListeners(editIcon, scroll) {
+        let timer = null;
+        let isLongPress = false;
+        let startX = 0, startY = 0;
+
+        const startPress = (e) => {
+            isLongPress = false;
+            startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            editIcon.classList.add('is-pressing');
+
+            timer = setTimeout(async () => {
+                isLongPress = true;
+                editIcon.classList.remove('is-pressing');
+                scroll.isLocked = !scroll.isLocked;
+                await this.storage.saveScroll(scroll);
+                if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+                this.showToast(scroll.isLocked ? `🔒 スクロール「${scroll.name}」をロックしました` : `🔓 スクロール「${scroll.name}」のロックを解除しました`);
+                this.renderScrollTabs();
+            }, 900);
+        };
+
+        const cancelPress = () => {
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+            editIcon.classList.remove('is-pressing');
+        };
+
+        const movePress = (e) => {
+            const curX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            const curY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            if (Math.abs(curX - startX) > 10 || Math.abs(curY - startY) > 10) {
+                cancelPress();
+            }
+        };
+
+        editIcon.addEventListener('pointerdown', startPress);
+        editIcon.addEventListener('pointermove', movePress);
+        editIcon.addEventListener('pointerup', (e) => {
+            cancelPress();
+            if (!isLongPress) {
+                e.stopPropagation();
+                if (scroll.isLocked) {
+                    this.showToast(`🔒 スクロールがロックされています。解除するには⚙️/🔒を長押ししてください`);
+                } else {
+                    this.openScrollModal(scroll.id);
+                }
+            }
+        });
+        editIcon.addEventListener('pointercancel', cancelPress);
+        editIcon.addEventListener('contextmenu', (e) => e.preventDefault());
     }
 
     attachTabDragListeners(tab, scrollId) {
@@ -1333,8 +1393,9 @@ class VoicePadApp {
             const hasPhoto = !!slot.imageUrl;
             const pos = slot.labelPosition || 'bottom';
             const displayIndex = startIndex + idx + 1;
+            const isLocked = !!slot.isLocked;
 
-            card.className = `pad-card pos-${pos}${hasPhoto ? ' has-photo' : ''}`;
+            card.className = `pad-card pos-${pos}${hasPhoto ? ' has-photo' : ''}${isLocked ? ' is-locked' : ''}`;
             card.setAttribute('data-slot-id', slot.id);
             card.id = `pad-${slot.id}`;
 
@@ -1368,9 +1429,17 @@ class VoicePadApp {
                 <div class="pad-header">
                     <span class="slot-badge">${displayIndex}</span>
                     ${pos === 'top' ? labelHtml : ''}
-                    <button class="pad-settings-btn" title="スイッチ設定" data-slot-id="${slot.id}" aria-label="スイッチ設定">
-                        ⚙️
-                    </button>
+                    <div class="pad-actions-group">
+                        <button type="button" class="pad-action-btn btn-voice" title="声質設定" data-slot-id="${slot.id}" aria-label="声質設定">
+                            🗣️
+                        </button>
+                        <button type="button" class="pad-action-btn btn-env" title="環境・エコー設定" data-slot-id="${slot.id}" aria-label="環境設定">
+                            ⛰️
+                        </button>
+                        <button type="button" class="pad-action-btn btn-lock ${isLocked ? 'is-locked' : ''}" title="${isLocked ? 'ロック中 (長押しで解除)' : 'スイッチ設定 (長押しでロック)'}" data-slot-id="${slot.id}" aria-label="${isLocked ? 'ロック解除' : 'スイッチ設定'}">
+                            ${isLocked ? '🔒' : '⚙️'}
+                        </button>
+                    </div>
                 </div>
 
                 <div class="pad-body">
@@ -1383,6 +1452,35 @@ class VoicePadApp {
                     <div class="pad-status">${statusText}</div>
                 </div>
             `;
+
+            const btnVoice = card.querySelector('.btn-voice');
+            if (btnVoice) {
+                btnVoice.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (slot.isLocked) {
+                        this.showToast(`🔒 ロックされています。解除するには⚙️/🔒を長押ししてください`);
+                    } else {
+                        this.openSlotVoiceModal(slot.id);
+                    }
+                });
+            }
+
+            const btnEnv = card.querySelector('.btn-env');
+            if (btnEnv) {
+                btnEnv.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (slot.isLocked) {
+                        this.showToast(`🔒 ロックされています。解除するには⚙️/🔒を長押ししてください`);
+                    } else {
+                        this.openSlotEnvModal(slot.id);
+                    }
+                });
+            }
+
+            const btnLock = card.querySelector('.btn-lock');
+            if (btnLock) {
+                this.attachButtonLockListeners(btnLock, slot);
+            }
 
             this.attachPadDragListeners(card, slot.id);
             this.attachPadRippleListener(card);
@@ -1408,9 +1506,64 @@ class VoicePadApp {
         }
     }
 
+    attachButtonLockListeners(btnLock, slot) {
+        let timer = null;
+        let isLongPress = false;
+        let startX = 0, startY = 0;
+
+        const startPress = (e) => {
+            isLongPress = false;
+            startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            btnLock.classList.add('is-pressing');
+
+            timer = setTimeout(async () => {
+                isLongPress = true;
+                btnLock.classList.remove('is-pressing');
+                slot.isLocked = !slot.isLocked;
+                await this.storage.saveSlot(slot);
+                if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+                this.showToast(slot.isLocked ? `🔒 ボタン「${slot.label}」をロックしました` : `🔓 ボタン「${slot.label}」のロックを解除しました`);
+                this.renderSlots();
+            }, 850);
+        };
+
+        const cancelPress = () => {
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+            btnLock.classList.remove('is-pressing');
+        };
+
+        const movePress = (e) => {
+            const curX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            const curY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            if (Math.abs(curX - startX) > 10 || Math.abs(curY - startY) > 10) {
+                cancelPress();
+            }
+        };
+
+        btnLock.addEventListener('pointerdown', startPress);
+        btnLock.addEventListener('pointermove', movePress);
+        btnLock.addEventListener('pointerup', (e) => {
+            cancelPress();
+            if (!isLongPress) {
+                e.stopPropagation();
+                if (slot.isLocked) {
+                    this.showToast(`🔒 ロックされています。解除するには長押し（約1秒）してください`);
+                } else {
+                    this.openEditModal(slot.id);
+                }
+            }
+        });
+        btnLock.addEventListener('pointercancel', cancelPress);
+        btnLock.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+
     attachPadRippleListener(card) {
         card.addEventListener('pointerdown', (e) => {
-            if (e.target.closest('.pad-settings-btn')) return;
+            if (e.target.closest('.pad-settings-btn') || e.target.closest('.pad-actions-group')) return;
             const rect = card.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
@@ -1434,7 +1587,7 @@ class VoicePadApp {
         let hoverTargetSlotId = null;
 
         const onPointerDown = (e) => {
-            if (e.target.closest('.pad-settings-btn')) return;
+            if (e.target.closest('.pad-settings-btn') || e.target.closest('.pad-actions-group')) return;
             startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
             startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
             isLongPress = false;
@@ -1539,6 +1692,7 @@ class VoicePadApp {
         if (grid) {
             grid.addEventListener('click', (e) => {
                 if (this.isDraggingPad) return;
+                if (e.target.closest('.pad-actions-group')) return;
                 AudioUnlocker.unlock();
 
                 const settingsBtn = e.target.closest('.pad-settings-btn');
@@ -1561,6 +1715,11 @@ class VoicePadApp {
                 }
             });
         }
+
+        // 最上段タイトルロゴボタンスイッチ -> アプリ招待・QRコード画面を開く
+        document.getElementById('header-logo-btn')?.addEventListener('click', () => {
+            this.openQrModal();
+        });
 
         document.getElementById('mode-play-btn')?.addEventListener('click', () => this.setMode('play'));
         document.getElementById('mode-record-btn')?.addEventListener('click', () => this.setMode('record'));
@@ -2696,111 +2855,6 @@ class VoicePadApp {
             }
         } catch (err) {
             console.error('Import error:', err);
-            alert('ファイルの読み込みに失敗しました。正しいVoice Padバックアップファイルを選択してください。');=> sc.id === s.id);
-                            if (!existing) {
-                                await this.storage.saveScroll(s);
-                                this.scrolls.push(s);
-                            }
-                        }
-                    }
-
-                    if (Array.isArray(data.slots)) {
-                        for (const s of data.slots) {
-                            const blob = this.base64ToBlob(s.audioBase64);
-                            const slotObj = {
-                                ...s,
-                                audioBlob: blob,
-                                voiceEffect: s.voiceEffect || 'inherit',
-                                playbackSpeed: s.playbackSpeed || 'inherit'
-                            };
-                            delete slotObj.audioBase64;
-                            await this.storage.saveSlot(slotObj);
-
-                            const existingIdx = this.slots.findIndex(sl => sl.id === slotObj.id);
-                            if (existingIdx !== -1) {
-                                this.slots[existingIdx] = slotObj;
-                            } else {
-                                this.slots.push(slotObj);
-                            }
-                        }
-                    }
-
-                    this.renderScrollTabs();
-                    this.renderSlots();
-                    this.showToast('🎉 写真・エフェクト・スピードを含む全データを復元しました！');
-                }
-            } else if (data.type === 'voicepad_scroll') {
-                const newScrollId = 'scroll_' + Date.now();
-                const newScroll = {
-                    id: newScrollId,
-                    name: data.scroll?.name || 'インポートスクロール',
-                    voiceEffect: data.scroll?.voiceEffect || 'inherit',
-                    playbackSpeed: data.scroll?.playbackSpeed || 'inherit',
-                    order: this.scrolls.length,
-                    createdAt: Date.now()
-                };
-                await this.storage.saveScroll(newScroll);
-                this.scrolls.push(newScroll);
-
-                if (Array.isArray(data.slots)) {
-                    for (const s of data.slots) {
-                        const blob = this.base64ToBlob(s.audioBase64);
-                        const slotObj = {
-                            id: 'slot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-                            scrollId: newScrollId,
-                            label: s.label || 'ボタン',
-                            labelPosition: s.labelPosition || 'bottom',
-                            emoji: s.emoji || '🔊',
-                            imageUrl: s.imageUrl || null,
-                            imageScale: s.imageScale !== undefined ? s.imageScale : 1.0,
-                            imageOffsetX: s.imageOffsetX !== undefined ? s.imageOffsetX : 0,
-                            imageOffsetY: s.imageOffsetY !== undefined ? s.imageOffsetY : 0,
-                            imageFit: s.imageFit || 'cover',
-                            audioBlob: blob,
-                            duration: s.duration || 0,
-                            voiceEffect: s.voiceEffect || 'inherit',
-                            playbackSpeed: s.playbackSpeed || 'inherit',
-                            order: s.order || 1
-                        };
-                        await this.storage.saveSlot(slotObj);
-                        this.slots.push(slotObj);
-                    }
-                }
-
-                await this.switchScroll(newScrollId);
-                this.showToast(`✨ スクロール「${newScroll.name}」を復元・インポートしました！`);
-            } else if (data.type === 'voicepad_slot' || data.slot) {
-                const s = data.slot || data;
-                const blob = this.base64ToBlob(s.audioBase64);
-                const currentSlots = this.getCurrentSlots();
-                const newSlot = {
-                    id: 'slot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-                    scrollId: this.currentScrollId,
-                    label: s.label || 'インポートボタン',
-                    labelPosition: s.labelPosition || 'bottom',
-                    emoji: s.emoji || '🔊',
-                    imageUrl: s.imageUrl || null,
-                    imageScale: s.imageScale !== undefined ? s.imageScale : 1.0,
-                    imageOffsetX: s.imageOffsetX !== undefined ? s.imageOffsetX : 0,
-                    imageOffsetY: s.imageOffsetY !== undefined ? s.imageOffsetY : 0,
-                    imageFit: s.imageFit || 'cover',
-                    audioBlob: blob,
-                    duration: s.duration || 0,
-                    voiceEffect: s.voiceEffect || 'inherit',
-                    playbackSpeed: s.playbackSpeed || 'inherit',
-                    order: currentSlots.length + 1
-                };
-
-                await this.storage.saveSlot(newSlot);
-                this.slots.push(newSlot);
-                this.renderSlots();
-                this.renderScrollTabs();
-                this.showToast(`✨ 写真・設定付きスイッチ「${newSlot.label}」をインポートしました！`);
-            } else {
-                alert('対応していないファイル形式です。(.vpad / .json / 音声ファイル)');
-            }
-        } catch (err) {
-            console.error('Import error:', err);
             alert('ファイルの読み込みに失敗しました。正しいVoice Padバックアップファイルを選択してください。');
         }
     }
@@ -2833,6 +2887,22 @@ class VoicePadApp {
                 e.target.value = '';
             }
         });
+
+        // 🗣️ スイッチ専用クイック【声質】モーダル
+        document.getElementById('close-slot-voice-modal-btn')?.addEventListener('click', () => this.closeSlotVoiceModal());
+        document.getElementById('slot-voice-modal-backdrop')?.addEventListener('click', (e) => {
+            if (e.target.id === 'slot-voice-modal-backdrop') this.closeSlotVoiceModal();
+        });
+        document.getElementById('save-slot-voice-btn')?.addEventListener('click', () => this.saveSlotVoiceModal());
+        document.getElementById('btn-quick-voice-preview')?.addEventListener('click', () => this.previewQuickVoiceEffect());
+
+        // ⛰️ スイッチ専用クイック【環境】モーダル
+        document.getElementById('close-slot-env-modal-btn')?.addEventListener('click', () => this.closeSlotEnvModal());
+        document.getElementById('slot-env-modal-backdrop')?.addEventListener('click', (e) => {
+            if (e.target.id === 'slot-env-modal-backdrop') this.closeSlotEnvModal();
+        });
+        document.getElementById('save-slot-env-btn')?.addEventListener('click', () => this.saveSlotEnvModal());
+        document.getElementById('btn-quick-env-preview')?.addEventListener('click', () => this.previewQuickEnvEffect());
 
         // スクロールモーダル
         document.getElementById('close-scroll-modal-btn')?.addEventListener('click', () => this.closeScrollModal());
@@ -3567,6 +3637,99 @@ class VoicePadApp {
         globalSliders.forEach(id => {
             document.getElementById(id)?.addEventListener('change', () => this.saveGlobalFxSettings());
         });
+
+        // 🗣️ クイック声質モーダル: スライダー入力イベント
+        const qvPitch = document.getElementById('quick-voice-pitch-slider');
+        const qvPitchVal = document.getElementById('quick-voice-pitch-val');
+        if (qvPitch && qvPitchVal) {
+            qvPitch.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                qvPitchVal.innerText = val > 0 ? `+${val} 半音` : val < 0 ? `${val} 半音` : '±0 半音';
+            });
+        }
+        const qvFormant = document.getElementById('quick-voice-formant-slider');
+        const qvFormantVal = document.getElementById('quick-voice-formant-val');
+        if (qvFormant && qvFormantVal) {
+            qvFormant.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                const desc = val <= 0.8 ? '巨漢/太声' : val >= 1.25 ? '妖精/子ども' : '標準';
+                qvFormantVal.innerText = `${val.toFixed(2)}x (${desc})`;
+            });
+        }
+        const qvRough = document.getElementById('quick-voice-rough-slider');
+        const qvRoughVal = document.getElementById('quick-voice-rough-val');
+        if (qvRough && qvRoughVal) {
+            qvRough.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                const desc = val === 0 ? 'クリア' : val <= 40 ? 'ハスキー' : '歪み/かすれ';
+                qvRoughVal.innerText = `${val}% (${desc})`;
+            });
+        }
+
+        // 🗣️ クイック声質プリセット（タッチするとスライダーがプリセット値に移動し微調整可能）
+        document.querySelectorAll('#quick-voice-preset-chips .fx-chip-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const presetName = btn.getAttribute('data-preset');
+                const preset = VoiceEngine.presetToParams(presetName).voice;
+                if (qvPitch) { qvPitch.value = preset.pitchSemitones; qvPitch.dispatchEvent(new Event('input')); }
+                if (qvFormant) { qvFormant.value = preset.formantRatio; qvFormant.dispatchEvent(new Event('input')); }
+                if (qvRough) { qvRough.value = preset.roughness; qvRough.dispatchEvent(new Event('input')); }
+
+                document.querySelectorAll('#quick-voice-preset-chips .fx-chip-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                // モードを「個別設定」に自動切り替え
+                const modeSelect = document.getElementById('slot-quick-voice-mode');
+                if (modeSelect) modeSelect.value = 'custom';
+            });
+        });
+
+        // ⛰️ クイック環境モーダル: スライダー入力イベント
+        const qeReverb = document.getElementById('quick-env-reverb-slider');
+        const qeReverbVal = document.getElementById('quick-env-reverb-val');
+        if (qeReverb && qeReverbVal) {
+            qeReverb.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                const desc = val === 0 ? '反響なし' : val <= 50 ? 'お風呂' : '大聖堂/洞窟';
+                qeReverbVal.innerText = `${val}% (${desc})`;
+            });
+        }
+        const qeFilter = document.getElementById('quick-env-filter-slider');
+        const qeFilterVal = document.getElementById('quick-env-filter-val');
+        if (qeFilter && qeFilterVal) {
+            qeFilter.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                const desc = val === 0 ? '原音' : val <= 50 ? 'ラジオ/こもり' : 'メガホン/電話';
+                qeFilterVal.innerText = `${val}% (${desc})`;
+            });
+        }
+        const qeMod = document.getElementById('quick-env-mod-slider');
+        const qeModVal = document.getElementById('quick-env-mod-val');
+        if (qeMod && qeModVal) {
+            qeMod.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                const desc = val === 0 ? 'オフ' : val <= 50 ? '宇宙人/うねり' : '金属ロボット';
+                qeModVal.innerText = `${val}% (${desc})`;
+            });
+        }
+
+        // ⛰️ クイック環境プリセット（タッチするとスライダーがプリセット値に移動し微調整可能）
+        document.querySelectorAll('#quick-env-preset-chips .fx-chip-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const presetName = btn.getAttribute('data-preset');
+                const preset = VoiceEngine.presetToParams(presetName).env;
+                if (qeReverb) { qeReverb.value = preset.reverb; qeReverb.dispatchEvent(new Event('input')); }
+                if (qeFilter) { qeFilter.value = preset.filter; qeFilter.dispatchEvent(new Event('input')); }
+                if (qeMod) { qeMod.value = preset.modulation; qeMod.dispatchEvent(new Event('input')); }
+
+                document.querySelectorAll('#quick-env-preset-chips .fx-chip-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                // モードを「個別設定」に自動切り替え
+                const modeSelect = document.getElementById('slot-quick-env-mode');
+                if (modeSelect) modeSelect.value = 'custom';
+            });
+        });
     }
 
     bindFxSliders(prefix) {
@@ -3770,6 +3933,262 @@ class VoicePadApp {
             } catch (e) {}
             this.fxPreviewSource = null;
         }
+    }
+
+    // ==================== 🗣️ スイッチ専用クイック【声質】モーダル制御 ====================
+    openSlotVoiceModal(slotId) {
+        this.editingVoiceSlotId = slotId;
+        const slot = this.slots.find(s => s.id === slotId);
+        if (!slot) return;
+
+        const currentSlots = this.getCurrentSlots();
+        const displayIndex = currentSlots.findIndex(s => s.id === slotId) + 1;
+        const modalNumEl = document.getElementById('voice-modal-slot-num');
+        if (modalNumEl) modalNumEl.innerText = displayIndex > 0 ? displayIndex : '';
+
+        const modeSelect = document.getElementById('slot-quick-voice-mode');
+        const isCustom = (slot.voiceEffectMode === 'custom' && !!slot.voiceParams);
+        if (modeSelect) modeSelect.value = isCustom ? 'custom' : 'inherit';
+
+        const effectiveVoice = this.getEffectiveVoiceParams(slot);
+        const targetVoice = (isCustom && slot.voiceParams) ? slot.voiceParams : effectiveVoice;
+
+        const pitchSlider = document.getElementById('quick-voice-pitch-slider');
+        const formantSlider = document.getElementById('quick-voice-formant-slider');
+        const roughSlider = document.getElementById('quick-voice-rough-slider');
+
+        if (pitchSlider) { pitchSlider.value = targetVoice.pitchSemitones || 0; pitchSlider.dispatchEvent(new Event('input')); }
+        if (formantSlider) { formantSlider.value = targetVoice.formantRatio !== undefined ? targetVoice.formantRatio : 1.0; formantSlider.dispatchEvent(new Event('input')); }
+        if (roughSlider) { roughSlider.value = targetVoice.roughness || 0; roughSlider.dispatchEvent(new Event('input')); }
+
+        // プリセットチップスの選択リセット
+        document.querySelectorAll('#quick-voice-preset-chips .fx-chip-btn').forEach(b => b.classList.remove('active'));
+
+        document.getElementById('slot-voice-modal-backdrop')?.classList.add('open');
+    }
+
+    closeSlotVoiceModal() {
+        this.stopFxPreview();
+        document.getElementById('slot-voice-modal-backdrop')?.classList.remove('open');
+        this.editingVoiceSlotId = null;
+    }
+
+    async saveSlotVoiceModal() {
+        if (!this.editingVoiceSlotId) return;
+        const slot = this.slots.find(s => s.id === this.editingVoiceSlotId);
+        if (!slot) return;
+
+        const modeSelect = document.getElementById('slot-quick-voice-mode');
+        const mode = modeSelect ? modeSelect.value : 'inherit';
+
+        if (mode === 'custom') {
+            const pitchSlider = document.getElementById('quick-voice-pitch-slider');
+            const formantSlider = document.getElementById('quick-voice-formant-slider');
+            const roughSlider = document.getElementById('quick-voice-rough-slider');
+
+            slot.voiceEffectMode = 'custom';
+            slot.voiceParams = {
+                pitchSemitones: pitchSlider ? parseInt(pitchSlider.value, 10) : 0,
+                formantRatio: formantSlider ? parseFloat(formantSlider.value) : 1.0,
+                roughness: roughSlider ? parseInt(roughSlider.value, 10) : 0
+            };
+            slot.voiceEffect = 'custom';
+        } else {
+            slot.voiceParams = null;
+            if (slot.envParams) {
+                slot.voiceEffectMode = 'custom';
+            } else {
+                slot.voiceEffectMode = 'inherit';
+                slot.voiceEffect = 'inherit';
+            }
+        }
+
+        await this.storage.saveSlot(slot);
+        this.renderSlots();
+        this.closeSlotVoiceModal();
+        this.showToast(`🗣️ スイッチ「${slot.label}」の声質設定を保存しました`);
+    }
+
+    async previewQuickVoiceEffect() {
+        if (!this.editingVoiceSlotId) return;
+        const slot = this.slots.find(s => s.id === this.editingVoiceSlotId);
+        await AudioUnlocker.unlock();
+        const ctx = AudioUnlocker.getContext();
+        if (!ctx) return;
+
+        this.stopFxPreview();
+
+        const pitchSlider = document.getElementById('quick-voice-pitch-slider');
+        const formantSlider = document.getElementById('quick-voice-formant-slider');
+        const roughSlider = document.getElementById('quick-voice-rough-slider');
+
+        const voiceParams = {
+            pitchSemitones: pitchSlider ? parseInt(pitchSlider.value, 10) : 0,
+            formantRatio: formantSlider ? parseFloat(formantSlider.value) : 1.0,
+            roughness: roughSlider ? parseInt(roughSlider.value, 10) : 0
+        };
+        const envParams = this.getEffectiveEnvParams(slot);
+        const speed = this.getEffectivePlaybackSpeed(slot);
+
+        if (slot && slot.audioBlob) {
+            try {
+                const arr = await slot.audioBlob.arrayBuffer();
+                const originalBuffer = await ctx.decodeAudioData(arr.slice(0));
+                const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed);
+
+                const src = ctx.createBufferSource();
+                src.buffer = processed;
+                src.playbackRate.value = speed;
+                src.connect(ctx.destination);
+                src.start(0);
+                this.fxPreviewSource = src;
+                this.showToast('▶️ 設定した声質で試聴中...');
+                src.onended = () => { this.fxPreviewSource = null; };
+            } catch (err) {
+                console.error('Preview error:', err);
+            }
+        } else {
+            this.playTestVoicePreview(ctx, voiceParams, envParams, speed);
+        }
+    }
+
+    // ==================== ⛰️ スイッチ専用クイック【環境】モーダル制御 ====================
+    openSlotEnvModal(slotId) {
+        this.editingEnvSlotId = slotId;
+        const slot = this.slots.find(s => s.id === slotId);
+        if (!slot) return;
+
+        const currentSlots = this.getCurrentSlots();
+        const displayIndex = currentSlots.findIndex(s => s.id === slotId) + 1;
+        const modalNumEl = document.getElementById('env-modal-slot-num');
+        if (modalNumEl) modalNumEl.innerText = displayIndex > 0 ? displayIndex : '';
+
+        const modeSelect = document.getElementById('slot-quick-env-mode');
+        const isCustom = (slot.voiceEffectMode === 'custom' && !!slot.envParams);
+        if (modeSelect) modeSelect.value = isCustom ? 'custom' : 'inherit';
+
+        const effectiveEnv = this.getEffectiveEnvParams(slot);
+        const targetEnv = (isCustom && slot.envParams) ? slot.envParams : effectiveEnv;
+
+        const reverbSlider = document.getElementById('quick-env-reverb-slider');
+        const filterSlider = document.getElementById('quick-env-filter-slider');
+        const modSlider = document.getElementById('quick-env-mod-slider');
+
+        if (reverbSlider) { reverbSlider.value = targetEnv.reverb || 0; reverbSlider.dispatchEvent(new Event('input')); }
+        if (filterSlider) { filterSlider.value = targetEnv.filter || 0; filterSlider.dispatchEvent(new Event('input')); }
+        if (modSlider) { modSlider.value = targetEnv.modulation || 0; modSlider.dispatchEvent(new Event('input')); }
+
+        // プリセットチップスの選択リセット
+        document.querySelectorAll('#quick-env-preset-chips .fx-chip-btn').forEach(b => b.classList.remove('active'));
+
+        document.getElementById('slot-env-modal-backdrop')?.classList.add('open');
+    }
+
+    closeSlotEnvModal() {
+        this.stopFxPreview();
+        document.getElementById('slot-env-modal-backdrop')?.classList.remove('open');
+        this.editingEnvSlotId = null;
+    }
+
+    async saveSlotEnvModal() {
+        if (!this.editingEnvSlotId) return;
+        const slot = this.slots.find(s => s.id === this.editingEnvSlotId);
+        if (!slot) return;
+
+        const modeSelect = document.getElementById('slot-quick-env-mode');
+        const mode = modeSelect ? modeSelect.value : 'inherit';
+
+        if (mode === 'custom') {
+            const reverbSlider = document.getElementById('quick-env-reverb-slider');
+            const filterSlider = document.getElementById('quick-env-filter-slider');
+            const modSlider = document.getElementById('quick-env-mod-slider');
+
+            slot.voiceEffectMode = 'custom';
+            slot.envParams = {
+                reverb: reverbSlider ? parseInt(reverbSlider.value, 10) : 0,
+                filter: filterSlider ? parseInt(filterSlider.value, 10) : 0,
+                modulation: modSlider ? parseInt(modSlider.value, 10) : 0
+            };
+            slot.voiceEffect = 'custom';
+        } else {
+            slot.envParams = null;
+            if (slot.voiceParams) {
+                slot.voiceEffectMode = 'custom';
+            } else {
+                slot.voiceEffectMode = 'inherit';
+                slot.voiceEffect = 'inherit';
+            }
+        }
+
+        await this.storage.saveSlot(slot);
+        this.renderSlots();
+        this.closeSlotEnvModal();
+        this.showToast(`⛰️ スイッチ「${slot.label}」の環境設定を保存しました`);
+    }
+
+    async previewQuickEnvEffect() {
+        if (!this.editingEnvSlotId) return;
+        const slot = this.slots.find(s => s.id === this.editingEnvSlotId);
+        await AudioUnlocker.unlock();
+        const ctx = AudioUnlocker.getContext();
+        if (!ctx) return;
+
+        this.stopFxPreview();
+
+        const reverbSlider = document.getElementById('quick-env-reverb-slider');
+        const filterSlider = document.getElementById('quick-env-filter-slider');
+        const modSlider = document.getElementById('quick-env-mod-slider');
+
+        const envParams = {
+            reverb: reverbSlider ? parseInt(reverbSlider.value, 10) : 0,
+            filter: filterSlider ? parseInt(filterSlider.value, 10) : 0,
+            modulation: modSlider ? parseInt(modSlider.value, 10) : 0
+        };
+        const voiceParams = this.getEffectiveVoiceParams(slot);
+        const speed = this.getEffectivePlaybackSpeed(slot);
+
+        if (slot && slot.audioBlob) {
+            try {
+                const arr = await slot.audioBlob.arrayBuffer();
+                const originalBuffer = await ctx.decodeAudioData(arr.slice(0));
+                const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed);
+
+                const src = ctx.createBufferSource();
+                src.buffer = processed;
+                src.playbackRate.value = speed;
+                src.connect(ctx.destination);
+                src.start(0);
+                this.fxPreviewSource = src;
+                this.showToast('▶️ 設定した環境エフェクトで試聴中...');
+                src.onended = () => { this.fxPreviewSource = null; };
+            } catch (err) {
+                console.error('Preview error:', err);
+            }
+        } else {
+            this.playTestVoicePreview(ctx, voiceParams, envParams, speed);
+        }
+    }
+
+    playTestVoicePreview(ctx, voiceParams, envParams, speed = 1.0) {
+        const dur = 0.85;
+        const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        const freq = 340;
+        for (let i = 0; i < data.length; i++) {
+            const t = i / ctx.sampleRate;
+            const env = Math.sin((t / dur) * Math.PI);
+            const harm = Math.sin(2 * Math.PI * freq * t) + 0.5 * Math.sin(4 * Math.PI * freq * t) + 0.25 * Math.sin(6 * Math.PI * freq * t);
+            data[i] = harm * env * 0.35;
+        }
+        const processed = VoiceEngine.processFull(buffer, ctx, voiceParams, envParams, speed);
+        const src = ctx.createBufferSource();
+        src.buffer = processed;
+        src.playbackRate.value = speed;
+        src.connect(ctx.destination);
+        src.start(0);
+        this.fxPreviewSource = src;
+        this.showToast('▶️ サンプル音でエフェクトを試聴中...');
+        src.onended = () => { this.fxPreviewSource = null; };
     }
 
     // ==================== 🤖 AI音声合成 (TTS) エンジン ====================

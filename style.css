@@ -73,11 +73,12 @@ body, html {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 2px 2px;
+    padding: 6px 4px;
     background: transparent;
     flex-shrink: 0;
-    gap: 4px;
+    gap: 8px;
     width: 100%;
+    min-height: 52px;
 }
 
 .logo-group {
@@ -86,8 +87,37 @@ body, html {
     flex-shrink: 0;
 }
 
+/* 最上段 Voice Pad ブランドスイッチ */
+.logo-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 6px 14px;
+    min-height: 42px;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    font-family: inherit;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.logo-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(96, 165, 250, 0.5);
+    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
+    transform: translateY(-1px);
+}
+
+.logo-btn:active {
+    transform: scale(0.96);
+}
+
 .app-title {
-    font-size: clamp(13px, 3.5vw, 16px);
+    font-size: clamp(15px, 4vw, 18px);
     font-weight: 800;
     letter-spacing: -0.02em;
     white-space: nowrap;
@@ -96,44 +126,62 @@ body, html {
     -webkit-text-fill-color: transparent;
 }
 
-/* モード切り替えスイッチ (再生 / 録音) */
+.logo-badge {
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(96, 165, 250, 0.2);
+    color: #93c5fd;
+    padding: 2px 6px;
+    border-radius: 9999px;
+    border: 1px solid rgba(96, 165, 250, 0.3);
+}
+
+/* モード切り替えスイッチ (再生 / 録音) - 縦2倍拡大 */
 .mode-switch-container {
     display: flex;
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid var(--border-color);
+    background: rgba(0, 0, 0, 0.6);
+    border: 1.5px solid var(--border-color);
     border-radius: 9999px;
-    padding: 2px;
-    gap: 2px;
+    padding: 3px;
+    gap: 4px;
     flex-shrink: 0;
+    min-height: 44px;
 }
 
 .mode-toggle-btn {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 12px;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 18px;
+    min-height: 38px;
     border-radius: 9999px;
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: 800;
     font-family: inherit;
     cursor: pointer;
     white-space: nowrap;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.mode-toggle-btn .mode-icon {
+    font-size: 16px;
+    line-height: 1;
+}
+
 .mode-toggle-btn.active[data-mode="play"] {
-    background: var(--accent-blue);
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
     color: #ffffff;
-    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.4);
+    box-shadow: 0 3px 14px rgba(59, 130, 246, 0.5);
 }
 
 .mode-toggle-btn.active[data-mode="record"] {
-    background: var(--color-rec);
+    background: linear-gradient(135deg, #dc2626, #ef4444);
     color: #ffffff;
-    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.4);
+    box-shadow: 0 3px 14px rgba(239, 68, 68, 0.5);
     animation: modePulse 1s infinite alternate;
 }
 
@@ -142,39 +190,27 @@ body, html {
     100% { transform: scale(1.03); }
 }
 
-/* ヘッダー右側コントロール */
+/* ヘッダー右側コントロール - 縦2倍拡大 */
 .header-controls {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     flex-shrink: 0;
-}
-
-.voice-effect-select {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid var(--border-color);
-    color: #fff;
-    padding: 5px 8px;
-    border-radius: 8px;
-    font-size: 11.5px;
-    font-weight: 700;
-    cursor: pointer;
-    outline: none;
-    max-width: 105px;
 }
 
 .header-action-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 6px;
     background: rgba(255, 255, 255, 0.08);
-    border: 1px solid var(--border-color);
+    border: 1.5px solid var(--border-color);
     color: var(--text-primary);
-    padding: 5px 10px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 700;
+    padding: 8px 14px;
+    min-height: 42px;
+    border-radius: 12px;
+    font-size: 13.5px;
+    font-weight: 800;
     font-family: inherit;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -182,39 +218,42 @@ body, html {
 }
 
 .header-action-btn.icon-only {
-    padding: 5px 8px;
-    font-size: 14px;
+    padding: 8px 12px;
+    font-size: 18px;
+    min-height: 42px;
 }
 
 .header-action-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.16);
     border-color: var(--border-color-hover);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
 .header-action-btn:active {
     transform: scale(0.94);
 }
 
-/* ==================== ２段目：スクロールタブバー ==================== */
+/* ==================== ２段目：スクロールタブバー（縦2倍拡大） ==================== */
 .scroll-tabs-bar {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     width: 100%;
     flex-shrink: 0;
-    padding: 2px 0;
+    padding: 6px 0;
+    min-height: 52px;
 }
 
 .scroll-tabs-container {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     overflow-x: auto;
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     flex: 1;
-    padding: 3px 2px;
+    padding: 4px 2px;
 }
 
 .scroll-tabs-container::-webkit-scrollbar {
@@ -224,14 +263,15 @@ body, html {
 .scroll-tab-item {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 12px;
+    gap: 8px;
+    padding: 8px 16px;
+    min-height: 44px;
     border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1.5px solid var(--border-color);
     color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 13.5px;
+    font-weight: 800;
     cursor: pointer;
     white-space: nowrap;
     transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
@@ -243,15 +283,25 @@ body, html {
 }
 
 .scroll-tab-item:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.12);
     color: var(--text-primary);
 }
 
 .scroll-tab-item.active {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.85), rgba(139, 92, 246, 0.85));
-    border-color: rgba(255, 255, 255, 0.3);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(139, 92, 246, 0.9));
+    border-color: rgba(255, 255, 255, 0.35);
     color: #ffffff;
-    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.35);
+    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+}
+
+/* スクロールロック状態 */
+.scroll-tab-item.is-locked {
+    border-color: rgba(245, 158, 11, 0.5) !important;
+}
+
+.scroll-tab-item.is-locked.active {
+    background: linear-gradient(135deg, rgba(217, 119, 6, 0.9), rgba(180, 83, 9, 0.9)) !important;
+    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4) !important;
 }
 
 /* スクロールタブ長押しドラッグ中アニメーション */
@@ -272,23 +322,26 @@ body, html {
 }
 
 .scroll-tab-name {
-    max-width: 120px;
+    max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 13.5px;
+    font-weight: 800;
 }
 
 .scroll-tab-badge {
-    font-size: 10px;
-    background: rgba(0, 0, 0, 0.35);
-    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 2px 8px;
     border-radius: 9999px;
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(255, 255, 255, 0.9);
 }
 
 .scroll-tab-edit-icon {
-    font-size: 11px;
-    opacity: 0.6;
+    font-size: 13px;
+    opacity: 0.7;
     margin-left: 2px;
     transition: opacity 0.15s ease;
 }
@@ -297,17 +350,19 @@ body, html {
     opacity: 1;
 }
 
+/* ＋ 新規スクロールボタン - 縦2倍拡大 */
 .add-scroll-btn {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 5px 12px;
+    gap: 6px;
+    padding: 8px 16px;
+    min-height: 44px;
     border-radius: 9999px;
-    background: rgba(59, 130, 246, 0.12);
-    border: 1px dashed rgba(59, 130, 246, 0.4);
+    background: rgba(59, 130, 246, 0.14);
+    border: 1.5px dashed rgba(59, 130, 246, 0.5);
     color: #93c5fd;
-    font-size: 11.5px;
-    font-weight: 700;
+    font-size: 13.5px;
+    font-weight: 800;
     font-family: inherit;
     cursor: pointer;
     white-space: nowrap;
@@ -316,9 +371,10 @@ body, html {
 }
 
 .add-scroll-btn:hover {
-    background: rgba(59, 130, 246, 0.22);
+    background: rgba(59, 130, 246, 0.25);
     border-color: #60a5fa;
     color: #ffffff;
+    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.3);
 }
 
 /* ==================== ３段目：ページネーション ==================== */
@@ -719,17 +775,89 @@ body.mode-record .pad-card:not(.recording):hover {
     width: 100%;
     z-index: 3;
     pointer-events: none;
+    gap: 4px;
 }
 
 .slot-badge {
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 800;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.65);
     color: var(--slot-color, #38bdf8);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    padding: 1px 4px;
-    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    padding: 2px 5px;
+    border-radius: 5px;
     line-height: 1;
+    flex-shrink: 0;
+}
+
+/* スロットカード上のアクションボタングループ（設定/ロック・声質・環境） */
+.pad-actions-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    pointer-events: auto;
+}
+
+.pad-action-btn {
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: rgba(255, 255, 255, 0.88);
+    border-radius: 6px;
+    padding: 3px 5px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    line-height: 1;
+    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+}
+
+.pad-action-btn:hover {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #ffffff;
+    transform: translateY(-1px);
+}
+
+.pad-action-btn:active {
+    transform: scale(0.92);
+}
+
+/* 長押し中アニメーション */
+.pad-action-btn.is-pressing {
+    background: rgba(245, 158, 11, 0.4) !important;
+    border-color: #f59e0b !important;
+    transform: scale(1.15) !important;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+}
+
+/* ロック中スタイル */
+.pad-action-btn.btn-lock.is-locked {
+    background: rgba(245, 158, 11, 0.25) !important;
+    border-color: rgba(245, 158, 11, 0.6) !important;
+    color: #fbbf24 !important;
+}
+
+.pad-action-btn.has-custom {
+    border-color: rgba(56, 189, 248, 0.6);
+    background: rgba(56, 189, 248, 0.18);
+    color: #38bdf8;
+}
+
+/* ロックされたカードの視覚表示 */
+.pad-card.is-locked {
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
+.pad-card.is-locked .pad-action-btn:not(.btn-lock) {
+    opacity: 0.5;
 }
 
 .pad-settings-btn {
@@ -2152,16 +2280,44 @@ body.theme-mint {
     border-radius: 6px;
 }
 
-.fx-slider-track {
+.fx-slider-track, .adjust-slider {
     width: 100%;
-    margin: 2px 0;
+    height: 8px;
+    margin: 6px 0;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+    outline: none;
+    cursor: pointer;
+    touch-action: pan-y;
+}
+
+.fx-slider-track::-webkit-slider-thumb, .adjust-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #38bdf8, #2563eb);
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.fx-slider-track::-webkit-slider-thumb:active, .adjust-slider::-webkit-slider-thumb:active {
+    transform: scale(1.25);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.8);
 }
 
 .fx-slider-hints {
     display: flex;
     justify-content: space-between;
-    font-size: 9.5px;
+    font-size: 10px;
+    font-weight: 600;
     color: var(--text-muted);
+    padding: 0 2px;
 }
 
 /* プリセットチップス */
@@ -2170,36 +2326,37 @@ body.theme-mint {
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
-    margin-top: 2px;
+    margin-top: 4px;
 }
 
 .fx-preset-label {
-    font-size: 10.5px;
+    font-size: 11px;
     color: var(--text-muted);
-    font-weight: 700;
+    font-weight: 800;
     flex-shrink: 0;
 }
 
 .fx-preset-chips {
     display: flex;
-    gap: 5px;
+    gap: 6px;
     overflow-x: auto;
-    padding-bottom: 2px;
+    padding-bottom: 4px;
     -webkit-overflow-scrolling: touch;
     flex: 1;
 }
 
 .fx-chip-btn {
-    padding: 4px 9px;
-    border-radius: 14px;
+    padding: 6px 12px;
+    border-radius: 9999px;
     background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     color: #e2e8f0;
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 11.5px;
+    font-weight: 800;
     white-space: nowrap;
     cursor: pointer;
     transition: all 0.15s ease;
+    touch-action: manipulation;
 }
 
 .fx-chip-btn:hover {
@@ -2207,11 +2364,38 @@ body.theme-mint {
     transform: translateY(-1px);
 }
 
+.fx-chip-btn:active {
+    transform: scale(0.95);
+}
+
 .fx-chip-btn.active {
-    background: var(--accent-blue);
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
     color: #ffffff;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 2px 10px rgba(59, 130, 246, 0.5);
+}
+
+/* アプリ招待モーダル専用ヘッダー＆サブメッセージ */
+.invite-header-box {
+    text-align: center;
+    margin-bottom: 12px;
+}
+
+.invite-modal-title {
+    font-size: 18px;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: -0.01em;
+}
+
+.invite-sub-msg {
+    font-size: 13px;
+    font-weight: 800;
+    margin-top: 4px;
+    background: linear-gradient(135deg, #38bdf8 0%, #a855f7 50%, #f43f5e 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: 0.02em;
 }
 
 /* TTS ポーズ・イントネーション補助ツール */
