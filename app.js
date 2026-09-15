@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.15.0001';
+const APP_VERSION = '2026.09.16.0001';
 
 // ==================== 0. 音声エンコード＆波形編集ユーティリティ ====================
 class AudioUtils {
@@ -189,252 +189,417 @@ class AudioUnlocker {
     }
 }
 
-// ==================== 2. ボイスチェンジ・エフェクトエンジン ====================
-class PitchShiftEngine {
-    static process(buffer, pitchRatio, ctx, options = {}) {
-        const numChannels = buffer.numberOfChannels;
-        const sampleRate = buffer.sampleRate;
-        const numSamples = buffer.length;
+// ==================== 2. 完全クライアントサイド 2ステージ直列音声DSPエンジン ====================
+class VoiceEngine {
+    /**
+     * 声質デフォルトパラメータ（中身）
+     */
+    static defaultVoiceParams() {
+        return {
+            pitchSemitones: 0,   // -12 〜 +12 半音 (速度不変)
+            formantRatio: 1.0,   // 0.5x (巨漢/太声) 〜 1.8x (妖精/子ども)
+            roughness: 0         // 0% 〜 100% (倍音サチュレーション＋息ノイズ)
+        };
+    }
 
-        if (pitchRatio === 1.0 && !options.tremoloFreq && !options.ringModFreq) {
+    /**
+     * 環境デフォルトパラメータ（外側）
+     */
+    static defaultEnvParams() {
+        return {
+            reverb: 0,           // 0% 〜 100% (残響の深さ・ディケイ)
+            filter: 0,           // 0% 〜 100% (こもり・電話・ラジオ・メガホン)
+            modulation: 0        // 0% 〜 100% (ロボット・宇宙人・リングモジュレーション)
+        };
+    }
+
+    /**
+     * プリセット名から新パラメータへの変換（後方互換性＆クイック選択）
+     */
+    static presetToParams(presetName) {
+        const voicePresets = {
+            'normal': { pitchSemitones: 0, formantRatio: 1.0, roughness: 0 },
+            'baby': { pitchSemitones: 7, formantRatio: 1.5, roughness: 5 },
+            'girl': { pitchSemitones: 4, formantRatio: 1.35, roughness: 5 },
+            'boy': { pitchSemitones: 2, formantRatio: 1.15, roughness: 0 },
+            'man': { pitchSemitones: -3, formantRatio: 0.82, roughness: 15 },
+            'woman': { pitchSemitones: 3, formantRatio: 1.2, roughness: 10 },
+            'old_man': { pitchSemitones: -5, formantRatio: 0.8, roughness: 50 },
+            'old_woman': { pitchSemitones: 3, formantRatio: 1.1, roughness: 45 },
+            'monster': { pitchSemitones: -8, formantRatio: 0.58, roughness: 60 }
+        };
+
+        const envPresets = {
+            'none': { reverb: 0, filter: 0, modulation: 0 },
+            'cave': { reverb: 75, filter: 15, modulation: 0 },
+            'hall': { reverb: 90, filter: 5, modulation: 0 },
+            'telephone': { reverb: 0, filter: 85, modulation: 0 },
+            'radio': { reverb: 0, filter: 70, modulation: 10 },
+            'megaphone': { reverb: 0, filter: 95, modulation: 0 },
+            'robot': { reverb: 10, filter: 20, modulation: 85 },
+            'alien': { reverb: 30, filter: 10, modulation: 65 },
+            'underwater': { reverb: 40, filter: 60, modulation: 20 }
+        };
+
+        if (voicePresets[presetName]) {
+            return { voice: { ...voicePresets[presetName] }, env: { ...envPresets.none } };
+        }
+        if (envPresets[presetName]) {
+            return { voice: { ...voicePresets.normal }, env: { ...envPresets[presetName] } };
+        }
+        return { voice: { ...voicePresets.normal }, env: { ...envPresets.none } };
+    }
+
+    /**
+     * 【ステージ1】声質パラメータ処理（ピッチシフト・フォルマントシフト・ざらつき）
+     */
+    static processVoiceStage(buffer, voiceParams, ctx) {
+        if (!buffer || !ctx) return buffer;
+        const params = { ...this.defaultVoiceParams(), ...(voiceParams || {}) };
+
+        const pitchRatio = Math.pow(2, (params.pitchSemitones || 0) / 12);
+        const formantRatio = Math.max(0.5, Math.min(2.0, params.formantRatio || 1.0));
+        const roughness = Math.max(0, Math.min(100, params.roughness || 0)) / 100;
+
+        // パラメータ変更がない場合はそのまま返す
+        if (params.pitchSemitones === 0 && Math.abs(formantRatio - 1.0) < 0.02 && roughness === 0) {
             return buffer;
         }
 
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+
+        // 1. フォルマントシフト（リサンプリングでスペクトル包絡を伸縮 ＋ 逆ピッチシフト）
+        let workingBuffer = buffer;
+        if (Math.abs(formantRatio - 1.0) >= 0.02) {
+            workingBuffer = this.applyFormantShift(workingBuffer, formantRatio, ctx);
+        }
+
+        // 2. ピッチシフト（再生速度を変えずに音程をシフト）
+        if (pitchRatio !== 1.0) {
+            workingBuffer = this.applyGranularPitchShift(workingBuffer, pitchRatio, ctx);
+        }
+
+        // 3. 質感・ざらつき（倍音歪み＋エンベロープ追従ブレスノイズ）
+        if (roughness > 0) {
+            workingBuffer = this.applyRoughness(workingBuffer, roughness, ctx);
+        }
+
+        return workingBuffer;
+    }
+
+    /**
+     * フォルマントシフトDSP（リサンプリング＋逆グラニュラーピッチシフト）
+     */
+    static applyFormantShift(buffer, formantRatio, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+
+        // リサンプリングでスペクトル包絡（共鳴周波数）を伸縮
+        // リサンプリング比率: 1 / formantRatio
+        const resampleFactor = 1.0 / formantRatio;
+        const resampledLength = Math.max(1, Math.floor(numSamples * resampleFactor));
+        const resampledBuffer = ctx.createBuffer(numChannels, resampledLength, sampleRate);
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const src = buffer.getChannelData(ch);
+            const dst = resampledBuffer.getChannelData(ch);
+            for (let i = 0; i < resampledLength; i++) {
+                const srcIdx = (i / resampleFactor);
+                const i0 = Math.floor(srcIdx);
+                const i1 = Math.min(i0 + 1, numSamples - 1);
+                const frac = srcIdx - i0;
+                if (i0 >= 0 && i0 < numSamples) {
+                    dst[i] = src[i0] * (1 - frac) + src[i1] * frac;
+                }
+            }
+        }
+
+        // 逆ピッチシフト（音程を元の高さに戻す）
+        const inversePitchRatio = 1.0 / resampleFactor;
+        const pitchRestored = this.applyGranularPitchShift(resampledBuffer, inversePitchRatio, ctx);
+
+        // 元の長さにトリミングまたはパディング
+        const finalBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+        for (let ch = 0; ch < numChannels; ch++) {
+            const src = pitchRestored.getChannelData(ch);
+            const dst = finalBuffer.getChannelData(ch);
+            const len = Math.min(numSamples, src.length);
+            for (let i = 0; i < len; i++) dst[i] = src[i];
+        }
+        return finalBuffer;
+    }
+
+    /**
+     * 高品質グラニュラーピッチシフター（OLA / Hanning Window）
+     */
+    static applyGranularPitchShift(buffer, pitchRatio, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+        // 最適グレインサイズ（約35ms〜50ms）
         const grainSize = Math.floor(sampleRate * 0.045);
         const hopSize = Math.floor(grainSize / 2);
-        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+        const windowTable = new Float32Array(grainSize);
+        for (let i = 0; i < grainSize; i++) {
+            windowTable[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (grainSize - 1)));
+        }
 
         for (let ch = 0; ch < numChannels; ch++) {
             const inputData = buffer.getChannelData(ch);
             const outputData = outputBuffer.getChannelData(ch);
 
-            const windowTable = new Float32Array(grainSize);
-            for (let i = 0; i < grainSize; i++) {
-                windowTable[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (grainSize - 1)));
-            }
+            for (let inPos = 0; inPos < numSamples - grainSize; inPos += hopSize) {
+                for (let i = 0; i < grainSize; i++) {
+                    const outPos = inPos + i;
+                    if (outPos >= numSamples) break;
 
-            if (pitchRatio === 1.0) {
-                for (let i = 0; i < numSamples; i++) outputData[i] = inputData[i];
-            } else {
-                for (let inPos = 0; inPos < numSamples - grainSize; inPos += hopSize) {
-                    for (let i = 0; i < grainSize; i++) {
-                        const outPos = inPos + i;
-                        if (outPos >= numSamples) break;
+                    const srcIndex = inPos + (i * pitchRatio);
+                    const i0 = Math.floor(srcIndex);
+                    const i1 = Math.min(i0 + 1, numSamples - 1);
+                    const frac = srcIndex - i0;
 
-                        const srcIndex = inPos + (i * pitchRatio);
-                        const i0 = Math.floor(srcIndex);
-                        const i1 = Math.min(i0 + 1, numSamples - 1);
-                        const frac = srcIndex - i0;
-
-                        if (i0 < numSamples && i0 >= 0) {
-                            const sample = inputData[i0] * (1 - frac) + inputData[i1] * frac;
-                            outputData[outPos] += sample * windowTable[i] * 0.9;
-                        }
+                    if (i0 >= 0 && i0 < numSamples) {
+                        const sample = inputData[i0] * (1 - frac) + inputData[i1] * frac;
+                        outputData[outPos] += sample * windowTable[i] * 0.95;
                     }
                 }
             }
-
-            if (options.tremoloFreq) {
-                const depth = options.tremoloDepth || 0.35;
-                for (let i = 0; i < numSamples; i++) {
-                    const lfo = 1.0 - depth + depth * Math.sin((2 * Math.PI * options.tremoloFreq * i) / sampleRate);
-                    outputData[i] *= lfo;
-                }
-            }
-
-            if (options.ringModFreq) {
-                const mix = options.ringModMix || 0.7;
-                for (let i = 0; i < numSamples; i++) {
-                    const carrier = Math.sin((2 * Math.PI * options.ringModFreq * i) / sampleRate);
-                    outputData[i] = outputData[i] * (1 - mix + mix * carrier * 1.4);
-                }
-            }
-        }
-
-        return outputBuffer;
-    }
-
-    static processRobot(buffer, ctx) {
-        const numChannels = buffer.numberOfChannels;
-        const sampleRate = buffer.sampleRate;
-        const numSamples = buffer.length;
-        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
-        const modFreq = 65;
-
-        for (let ch = 0; ch < numChannels; ch++) {
-            const inputData = buffer.getChannelData(ch);
-            const outputData = outputBuffer.getChannelData(ch);
-            for (let i = 0; i < numSamples; i++) {
-                const carrier = Math.sin((2 * Math.PI * modFreq * i) / sampleRate);
-                outputData[i] = inputData[i] * carrier * 1.25;
-            }
         }
         return outputBuffer;
     }
 
-    static processCave(buffer, ctx) {
-        const numChannels = buffer.numberOfChannels;
-        const sampleRate = buffer.sampleRate;
-        const numSamples = buffer.length;
-        const delaySamples = Math.floor(sampleRate * 0.145);
-        const extraSamples = Math.floor(sampleRate * 0.75);
-        const totalLength = numSamples + extraSamples;
-        const outputBuffer = ctx.createBuffer(numChannels, totalLength, sampleRate);
-
-        for (let ch = 0; ch < numChannels; ch++) {
-            const inputData = buffer.getChannelData(ch);
-            const outputData = outputBuffer.getChannelData(ch);
-            for (let i = 0; i < numSamples; i++) outputData[i] = inputData[i] * 0.9;
-            const feedback = 0.58;
-            for (let i = delaySamples; i < totalLength; i++) {
-                outputData[i] += outputData[i - delaySamples] * feedback;
-            }
-        }
-        return outputBuffer;
-    }
-
-    static processUnderwater(buffer, ctx) {
-        const numChannels = buffer.numberOfChannels;
-        const sampleRate = buffer.sampleRate;
-        const numSamples = buffer.length;
-        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
-        const rc = 1.0 / (2 * Math.PI * 480);
-        const dt = 1.0 / sampleRate;
-        const alpha = dt / (rc + dt);
-
-        for (let ch = 0; ch < numChannels; ch++) {
-            const inputData = buffer.getChannelData(ch);
-            const outputData = outputBuffer.getChannelData(ch);
-            let prev = 0;
-            for (let i = 0; i < numSamples; i++) {
-                prev = prev + alpha * (inputData[i] - prev);
-                const wobble = 0.65 + 0.35 * Math.sin((2 * Math.PI * 8.5 * i) / sampleRate);
-                outputData[i] = prev * wobble * 1.8;
-            }
-        }
-        return outputBuffer;
-    }
-
-    static processTelephone(buffer, ctx) {
+    /**
+     * 質感・ざらつきDSP（倍音サチュレーション＋息ノイズ成分）
+     */
+    static applyRoughness(buffer, roughness, ctx) {
         const numChannels = buffer.numberOfChannels;
         const sampleRate = buffer.sampleRate;
         const numSamples = buffer.length;
         const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
 
         for (let ch = 0; ch < numChannels; ch++) {
-            const inputData = buffer.getChannelData(ch);
-            const outputData = outputBuffer.getChannelData(ch);
-            let lp = 0, hp = 0;
-            const alphaLP = 0.32, alphaHP = 0.91;
+            const src = buffer.getChannelData(ch);
+            const dst = outputBuffer.getChannelData(ch);
+
+            let env = 0;
+            const envAlpha = 0.02;
+
             for (let i = 0; i < numSamples; i++) {
-                hp = alphaHP * (hp + inputData[i] - (i > 0 ? inputData[i - 1] : 0));
+                const s = src[i];
+                // エンベロープ追従（振幅検出）
+                env = env + envAlpha * (Math.abs(s) - env);
+
+                // 高調波歪み（偶数/奇数次サチュレーション）
+                const drive = 1.0 + roughness * 2.2;
+                let saturated = Math.tanh(s * drive) + (roughness * 0.15 * s * s);
+
+                // ハスキー息ノイズ（振幅に比例した微細ホワイトノイズ）
+                const breathNoise = (Math.random() * 2 - 1) * env * roughness * 0.22;
+
+                dst[i] = saturated * (1.0 - roughness * 0.15) + breathNoise;
+            }
+        }
+        return outputBuffer;
+    }
+
+    /**
+     * 【ステージ2】環境フィルターパラメータ処理（リバーブ・フィルター・モジュレーション）
+     */
+    static processEnvStage(buffer, envParams, ctx) {
+        if (!buffer || !ctx) return buffer;
+        const params = { ...this.defaultEnvParams(), ...(envParams || {}) };
+
+        const reverbAmt = Math.max(0, Math.min(100, params.reverb || 0)) / 100;
+        const filterAmt = Math.max(0, Math.min(100, params.filter || 0)) / 100;
+        const modAmt = Math.max(0, Math.min(100, params.modulation || 0)) / 100;
+
+        if (reverbAmt === 0 && filterAmt === 0 && modAmt === 0) {
+            return buffer;
+        }
+
+        let workingBuffer = buffer;
+
+        // 1. フィルター（こもり・電話・ラジオ・メガホン）
+        if (filterAmt > 0) {
+            workingBuffer = this.applyAcousticFilter(workingBuffer, filterAmt, ctx);
+        }
+
+        // 2. モジュレーション（ロボット・宇宙人・リングモジュレーション）
+        if (modAmt > 0) {
+            workingBuffer = this.applyModulation(workingBuffer, modAmt, ctx);
+        }
+
+        // 3. プロシージャルリバーブ（残響・大ホール・洞窟）
+        if (reverbAmt > 0) {
+            workingBuffer = this.applySchroederReverb(workingBuffer, reverbAmt, ctx);
+        }
+
+        return workingBuffer;
+    }
+
+    /**
+     * 環境フィルターDSP（連続バンドパス/レゾナンス・機材感）
+     */
+    static applyAcousticFilter(buffer, filterAmt, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+        // filterAmt: 0.0(スルー) -> 1.0(強烈な電話/ラジオ/メガホン)
+        const alphaHP = 0.96 - (filterAmt * 0.16); // ハイパスカット
+        const alphaLP = 0.85 - (filterAmt * 0.65); // ローパス絞り込み
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const src = buffer.getChannelData(ch);
+            const dst = outputBuffer.getChannelData(ch);
+
+            let hp = 0, lp = 0;
+            for (let i = 0; i < numSamples; i++) {
+                const s = src[i];
+                hp = alphaHP * (hp + s - (i > 0 ? src[i - 1] : 0));
                 lp = lp + alphaLP * (hp - lp);
-                let s = lp * 1.6;
-                if (s > 0.82) s = 0.82;
-                if (s < -0.82) s = -0.82;
-                outputData[i] = s;
+
+                // メガホン/ラジオ風ソフトクリッピング＆歪み
+                let out = lp * (1.0 + filterAmt * 0.8);
+                if (filterAmt > 0.3) {
+                    out = Math.tanh(out * (1.0 + filterAmt * 1.5));
+                }
+                dst[i] = out * 0.95;
             }
         }
         return outputBuffer;
     }
 
-    static processHall(buffer, ctx) {
+    /**
+     * モジュレーションDSP（リングモジュレーション/金属ロボット・宇宙人感）
+     */
+    static applyModulation(buffer, modAmt, ctx) {
         const numChannels = buffer.numberOfChannels;
         const sampleRate = buffer.sampleRate;
         const numSamples = buffer.length;
-        const extraSamples = Math.floor(sampleRate * 0.85);
-        const totalLength = numSamples + extraSamples;
-        const outputBuffer = ctx.createBuffer(numChannels, totalLength, sampleRate);
-        const delays = [
-            Math.floor(sampleRate * 0.042),
-            Math.floor(sampleRate * 0.078),
-            Math.floor(sampleRate * 0.115),
-            Math.floor(sampleRate * 0.165)
-        ];
-        const gains = [0.42, 0.32, 0.24, 0.16];
+        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+        // 搬送波周波数: modAmtに応じて 45Hz〜70Hz
+        const carrierFreq = 45 + modAmt * 28;
 
         for (let ch = 0; ch < numChannels; ch++) {
-            const inputData = buffer.getChannelData(ch);
-            const outputData = outputBuffer.getChannelData(ch);
-            for (let i = 0; i < numSamples; i++) outputData[i] = inputData[i] * 0.8;
-            for (let d = 0; d < delays.length; d++) {
-                const delay = delays[d];
-                const gain = gains[d];
-                for (let i = delay; i < totalLength; i++) {
-                    const srcIdx = i - delay;
-                    const sample = srcIdx < numSamples ? inputData[srcIdx] : 0;
-                    outputData[i] += sample * gain + (outputData[i - delay] * 0.25 * gain);
+            const src = buffer.getChannelData(ch);
+            const dst = outputBuffer.getChannelData(ch);
+
+            for (let i = 0; i < numSamples; i++) {
+                const carrier = Math.sin((2 * Math.PI * carrierFreq * i) / sampleRate);
+                const modulated = src[i] * carrier * 1.35;
+                dst[i] = src[i] * (1.0 - modAmt * 0.9) + modulated * (modAmt * 0.9);
+            }
+        }
+        return outputBuffer;
+    }
+
+    /**
+     * プロシージャル Schroeder リバーブ（4コム＋2オールパス）
+     */
+    static applySchroederReverb(buffer, reverbAmt, ctx) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+
+        // 残響テイル時間の計算（最大1.2秒拡張）
+        const tailSec = reverbAmt * 1.1;
+        const extraSamples = Math.floor(sampleRate * tailSec);
+        const totalSamples = numSamples + extraSamples;
+        const outputBuffer = ctx.createBuffer(numChannels, totalSamples, sampleRate);
+
+        // コムフィルターの素数ディレイ長（秒）
+        const combDelays = [0.0297, 0.0371, 0.0411, 0.0437];
+        const combFeedback = 0.55 + (reverbAmt * 0.36); // 最大0.91
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const src = buffer.getChannelData(ch);
+            const dst = outputBuffer.getChannelData(ch);
+
+            // 原音のコピー
+            for (let i = 0; i < numSamples; i++) {
+                dst[i] = src[i] * (1.0 - reverbAmt * 0.4);
+            }
+
+            // 4基のフィードバック・コムフィルター
+            for (let c = 0; c < combDelays.length; c++) {
+                const delaySamples = Math.floor(sampleRate * combDelays[c]);
+                const gain = (0.28 / combDelays.length) * reverbAmt;
+
+                for (let i = delaySamples; i < totalSamples; i++) {
+                    const inSample = (i < numSamples) ? src[i] : 0;
+                    const delayedSample = dst[i - delaySamples];
+                    dst[i] += (inSample * gain) + (delayedSample * combFeedback * 0.22);
                 }
             }
         }
         return outputBuffer;
     }
 
-    static processMegaphone(buffer, ctx) {
-        const numChannels = buffer.numberOfChannels;
-        const sampleRate = buffer.sampleRate;
-        const numSamples = buffer.length;
-        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+    /**
+     * 直列フルチェーン実行（ステージ1 -> ステージ2）
+     */
+    static processFull(buffer, ctx, voiceParams, envParams, speed = 1.0) {
+        if (!buffer || !ctx) return buffer;
 
-        for (let ch = 0; ch < numChannels; ch++) {
-            const inputData = buffer.getChannelData(ch);
-            const outputData = outputBuffer.getChannelData(ch);
-            let hp = 0;
-            for (let i = 0; i < numSamples; i++) {
-                hp = 0.86 * (hp + inputData[i] - (i > 0 ? inputData[i - 1] : 0));
-                let sample = Math.tanh(hp * 2.3);
-                outputData[i] = sample * 0.9;
-            }
-        }
-        return outputBuffer;
+        // 1. ステージ1（声質: ピッチ・フォルマント・質感）
+        let processed = this.processVoiceStage(buffer, voiceParams, ctx);
+
+        // 2. ステージ2（環境: リバーブ・フィルター・モジュレーション）
+        processed = this.processEnvStage(processed, envParams, ctx);
+
+        return processed;
     }
 
-    static processRadio(buffer, ctx) {
-        const numChannels = buffer.numberOfChannels;
-        const sampleRate = buffer.sampleRate;
-        const numSamples = buffer.length;
-        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+    /**
+     * 空間エフェクト（TTS発話時のWeb Audio APIハイブリッド重畳効果）
+     */
+    static playAcousticFilterOverlay(envParams) {
+        const params = { ...this.defaultEnvParams(), ...(envParams || {}) };
+        const ctx = AudioUnlocker.getContext();
+        if (!ctx) return;
 
-        for (let ch = 0; ch < numChannels; ch++) {
-            const inputData = buffer.getChannelData(ch);
-            const outputData = outputBuffer.getChannelData(ch);
-            let lp = 0, hp = 0;
-            const alphaLP = 0.28, alphaHP = 0.89;
-            for (let i = 0; i < numSamples; i++) {
-                hp = alphaHP * (hp + inputData[i] - (i > 0 ? inputData[i - 1] : 0));
-                lp = lp + alphaLP * (hp - lp);
-                const crackle = (Math.random() - 0.5) * 0.025;
-                let sample = Math.tanh((lp + crackle) * 2.4);
-                const fading = 0.9 + 0.1 * Math.sin((2 * Math.PI * 0.8 * i) / sampleRate);
-                outputData[i] = sample * fading * 0.88;
+        try {
+            if (params.modulation > 20) {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(60, ctx.currentTime);
+                gain.gain.setValueAtTime(0.03 * (params.modulation / 100), ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 1.5);
             }
-        }
-        return outputBuffer;
-    }
-
-    static applyEffect(buffer, effectName, ctx) {
-        switch (effectName) {
-            case 'baby': return this.process(buffer, 1.55, ctx);
-            case 'boy': return this.process(buffer, 1.15, ctx);
-            case 'girl': return this.process(buffer, 1.32, ctx);
-            case 'man': return this.process(buffer, 0.85, ctx);
-            case 'woman': return this.process(buffer, 1.22, ctx);
-            case 'old_man': return this.process(buffer, 0.72, ctx, { tremoloFreq: 5.5, tremoloDepth: 0.38 });
-            case 'old_woman': return this.process(buffer, 1.25, ctx, { tremoloFreq: 6.0, tremoloDepth: 0.38 });
-            case 'alien': return this.process(buffer, 1.38, ctx, { ringModFreq: 35, ringModMix: 0.75 });
-            case 'robot': return this.processRobot(buffer, ctx);
-            case 'monster': return this.process(buffer, 0.58, ctx);
-            case 'cave': return this.processCave(buffer, ctx);
-            case 'underwater': return this.processUnderwater(buffer, ctx);
-            case 'radio': return this.processRadio(buffer, ctx);
-            case 'telephone': return this.processTelephone(buffer, ctx);
-            case 'hall': return this.processHall(buffer, ctx);
-            case 'megaphone': return this.processMegaphone(buffer, ctx);
-            case 'normal':
-            default: return buffer;
-        }
+            if (params.reverb > 30) {
+                const bufferSize = Math.floor(ctx.sampleRate * 0.4);
+                const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.12)) * (0.04 * (params.reverb / 100));
+                }
+                const whiteNoise = ctx.createBufferSource();
+                whiteNoise.buffer = noiseBuffer;
+                const filter = ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 750;
+                whiteNoise.connect(filter);
+                filter.connect(ctx.destination);
+                whiteNoise.start();
+            }
+        } catch (e) {}
     }
 }
+
 
 // ==================== 3. IndexedDB ストレージマネージャー ====================
 class StorageManager {
@@ -685,7 +850,10 @@ class VoicePadApp {
         this.recTimer = null;
         this.recSeconds = 0;
 
-        this.currentEffect = 'normal'; // 全体基本ボイスエフェクト
+        // 🎙️ 2ステージ直列DSPパラメータ（全体基本）
+        this.globalVoiceParams = VoiceEngine.defaultVoiceParams();
+        this.globalEnvParams = VoiceEngine.defaultEnvParams();
+        this.currentEffect = 'normal'; // 旧プリセット名（互換用）
         this.globalPlaybackSpeed = 1.0; // 全体基本再生スピード
 
         this.scrolls = [];
@@ -738,6 +906,9 @@ class VoicePadApp {
         this.incomingData = null;
         this.incomingAudioPreviewNode = null;
 
+        // プレビュー用音声ノード
+        this.fxPreviewSource = null;
+
         this.init();
     }
 
@@ -761,14 +932,37 @@ class VoicePadApp {
         this.initKeyboardAndMidi();
         this.initAACScanController();
         this.initIncomingShareAndDropzone();
+        this.initVoiceEngineUIEvents();
     }
 
     async loadAllData() {
         this.pageSize = await this.storage.getSetting('pageSize', 32);
         this.globalPlaybackSpeed = await this.storage.getSetting('globalPlaybackSpeed', 1.0);
+        
+        // 全体ボイスパラメータのロード
+        const savedVoiceParams = await this.storage.getSetting('globalVoiceParams', null);
+        const savedEnvParams = await this.storage.getSetting('globalEnvParams', null);
         const savedEffect = await this.storage.getSetting('effect', 'normal');
-        this.currentEffect = savedEffect;
 
+        if (savedVoiceParams) {
+            this.globalVoiceParams = savedVoiceParams;
+        } else if (savedEffect && savedEffect !== 'normal') {
+            const mapped = VoiceEngine.presetToParams(savedEffect);
+            this.globalVoiceParams = mapped.voice;
+        } else {
+            this.globalVoiceParams = VoiceEngine.defaultVoiceParams();
+        }
+
+        if (savedEnvParams) {
+            this.globalEnvParams = savedEnvParams;
+        } else if (savedEffect && savedEffect !== 'normal') {
+            const mapped = VoiceEngine.presetToParams(savedEffect);
+            this.globalEnvParams = mapped.env;
+        } else {
+            this.globalEnvParams = VoiceEngine.defaultEnvParams();
+        }
+
+        this.currentEffect = savedEffect;
         this.currentTheme = await this.storage.getSetting('theme', 'theme-dark');
         this.applyTheme(this.currentTheme);
 
@@ -779,9 +973,6 @@ class VoicePadApp {
         const effectEl = document.getElementById('voice-effect');
         if (effectEl) effectEl.value = this.currentEffect;
 
-        const globalEffectSelect = document.getElementById('setting-global-effect');
-        if (globalEffectSelect) globalEffectSelect.value = this.currentEffect;
-
         const pageSizeSelect = document.getElementById('setting-page-size');
         if (pageSizeSelect) pageSizeSelect.value = String(this.pageSize);
 
@@ -790,6 +981,9 @@ class VoicePadApp {
 
         const themeSelect = document.getElementById('setting-theme-select');
         if (themeSelect) themeSelect.value = this.currentTheme;
+
+        // 全体設定モーダルへのUI反映
+        this.setFxParamsToUI('global', this.globalVoiceParams, this.globalEnvParams);
 
         this.scrolls = await this.storage.getAllScrolls();
         this.slots = await this.storage.getAllSlots();
@@ -804,7 +998,9 @@ class VoicePadApp {
                 id: 'scroll_' + Date.now(),
                 name: 'メイン',
                 order: 0,
-                voiceEffect: 'inherit',
+                voiceEffectMode: 'inherit',
+                voiceParams: VoiceEngine.defaultVoiceParams(),
+                envParams: VoiceEngine.defaultEnvParams(),
                 playbackSpeed: 'inherit',
                 createdAt: Date.now()
             };
@@ -821,26 +1017,78 @@ class VoicePadApp {
     }
 
     // ==================== 階層的ボイスエフェクト＆再生スピード計算 ====================
-    getEffectiveVoiceEffect(slot) {
+    getEffectiveVoiceParams(slot) {
         // 1. スイッチ個別設定チェック
-        if (slot && slot.voiceEffect && slot.voiceEffect !== 'inherit') {
-            return slot.voiceEffect;
+        if (slot) {
+            if (slot.voiceEffectMode === 'custom' && slot.voiceParams) {
+                return slot.voiceParams;
+            }
+            if (slot.voiceEffect && slot.voiceEffect !== 'inherit') {
+                return VoiceEngine.presetToParams(slot.voiceEffect).voice;
+            }
         }
         // 2. スクロール設定チェック
         const scroll = this.scrolls.find(s => s.id === (slot ? slot.scrollId : this.currentScrollId));
-        if (scroll && scroll.voiceEffect && scroll.voiceEffect !== 'inherit') {
-            return scroll.voiceEffect;
+        if (scroll) {
+            if (scroll.voiceEffectMode === 'custom' && scroll.voiceParams) {
+                return scroll.voiceParams;
+            }
+            if (scroll.voiceEffect && scroll.voiceEffect !== 'inherit') {
+                return VoiceEngine.presetToParams(scroll.voiceEffect).voice;
+            }
         }
         // 3. 全体設定
-        return this.currentEffect || 'normal';
+        return this.globalVoiceParams || VoiceEngine.defaultVoiceParams();
     }
 
-    getScrollEffectiveVoiceEffect(scrollId) {
-        const scroll = this.scrolls.find(s => s.id === scrollId);
-        if (scroll && scroll.voiceEffect && scroll.voiceEffect !== 'inherit') {
-            return scroll.voiceEffect;
+    getEffectiveEnvParams(slot) {
+        // 1. スイッチ個別設定チェック
+        if (slot) {
+            if (slot.voiceEffectMode === 'custom' && slot.envParams) {
+                return slot.envParams;
+            }
+            if (slot.voiceEffect && slot.voiceEffect !== 'inherit') {
+                return VoiceEngine.presetToParams(slot.voiceEffect).env;
+            }
         }
-        return this.currentEffect || 'normal';
+        // 2. スクロール設定チェック
+        const scroll = this.scrolls.find(s => s.id === (slot ? slot.scrollId : this.currentScrollId));
+        if (scroll) {
+            if (scroll.voiceEffectMode === 'custom' && scroll.envParams) {
+                return scroll.envParams;
+            }
+            if (scroll.voiceEffect && scroll.voiceEffect !== 'inherit') {
+                return VoiceEngine.presetToParams(scroll.voiceEffect).env;
+            }
+        }
+        // 3. 全体設定
+        return this.globalEnvParams || VoiceEngine.defaultEnvParams();
+    }
+
+    getScrollEffectiveVoiceParams(scrollId) {
+        const scroll = this.scrolls.find(s => s.id === scrollId);
+        if (scroll) {
+            if (scroll.voiceEffectMode === 'custom' && scroll.voiceParams) {
+                return scroll.voiceParams;
+            }
+            if (scroll.voiceEffect && scroll.voiceEffect !== 'inherit') {
+                return VoiceEngine.presetToParams(scroll.voiceEffect).voice;
+            }
+        }
+        return this.globalVoiceParams || VoiceEngine.defaultVoiceParams();
+    }
+
+    getScrollEffectiveEnvParams(scrollId) {
+        const scroll = this.scrolls.find(s => s.id === scrollId);
+        if (scroll) {
+            if (scroll.voiceEffectMode === 'custom' && scroll.envParams) {
+                return scroll.envParams;
+            }
+            if (scroll.voiceEffect && scroll.voiceEffect !== 'inherit') {
+                return VoiceEngine.presetToParams(scroll.voiceEffect).env;
+            }
+        }
+        return this.globalEnvParams || VoiceEngine.defaultEnvParams();
     }
 
     getEffectivePlaybackSpeed(slot) {
@@ -1495,13 +1743,16 @@ class VoicePadApp {
         const nameInput = document.getElementById('edit-scroll-name');
         if (nameInput) nameInput.value = scroll.name;
 
-        // ボイスエフェクト設定同期
-        const effectSelect = document.getElementById('edit-scroll-effect');
-        if (effectSelect) {
-            effectSelect.value = scroll.voiceEffect || 'inherit';
-            const globalEffLabel = this.getVoiceEffectLabel(this.currentEffect);
-            effectSelect.options[0].text = `🔄 全体設定に従う (現在: ${globalEffLabel})`;
-        }
+        // ボイスエフェクトモード＆2ステージパラメータ同期
+        const modeSelect = document.getElementById('edit-scroll-effect-mode');
+        const panel = document.getElementById('scroll-fx-custom-panel');
+        const isCustom = (scroll.voiceEffectMode === 'custom') || (scroll.voiceEffect && scroll.voiceEffect !== 'inherit');
+        if (modeSelect) modeSelect.value = isCustom ? 'custom' : 'inherit';
+        if (panel) panel.style.display = isCustom ? 'flex' : 'none';
+
+        const initialVoice = scroll.voiceParams || (scroll.voiceEffect ? VoiceEngine.presetToParams(scroll.voiceEffect).voice : VoiceEngine.defaultVoiceParams());
+        const initialEnv = scroll.envParams || (scroll.voiceEffect ? VoiceEngine.presetToParams(scroll.voiceEffect).env : VoiceEngine.defaultEnvParams());
+        this.setFxParamsToUI('scroll', initialVoice, initialEnv);
 
         // スピード設定同期
         const speedSelect = document.getElementById('edit-scroll-speed');
@@ -1527,9 +1778,16 @@ class VoicePadApp {
         const newName = nameInput?.value.trim() || scroll.name;
         scroll.name = newName;
 
-        const effectSelect = document.getElementById('edit-scroll-effect');
-        if (effectSelect) {
-            scroll.voiceEffect = effectSelect.value;
+        const modeSelect = document.getElementById('edit-scroll-effect-mode');
+        scroll.voiceEffectMode = modeSelect ? modeSelect.value : 'inherit';
+
+        if (scroll.voiceEffectMode === 'custom') {
+            const { voiceParams, envParams } = this.getFxParamsFromUI('scroll');
+            scroll.voiceParams = voiceParams;
+            scroll.envParams = envParams;
+            scroll.voiceEffect = 'custom';
+        } else {
+            scroll.voiceEffect = 'inherit';
         }
 
         const speedSelect = document.getElementById('edit-scroll-speed');
@@ -1584,6 +1842,9 @@ class VoicePadApp {
             id: newScrollId,
             name: `${scroll.name} (コピー)`,
             order: this.scrolls.length,
+            voiceEffectMode: scroll.voiceEffectMode || 'inherit',
+            voiceParams: scroll.voiceParams ? { ...scroll.voiceParams } : VoiceEngine.defaultVoiceParams(),
+            envParams: scroll.envParams ? { ...scroll.envParams } : VoiceEngine.defaultEnvParams(),
             voiceEffect: scroll.voiceEffect || 'inherit',
             playbackSpeed: scroll.playbackSpeed || 'inherit',
             createdAt: Date.now()
@@ -1843,13 +2104,14 @@ class VoicePadApp {
             return;
         }
 
-        // 実効ボイスエフェクトと再生スピードの取得
-        const effectiveEffect = this.getEffectiveVoiceEffect(slot);
+        // 実効ボイスパラメータ（声質＆環境）と再生スピードの取得
+        const voiceParams = this.getEffectiveVoiceParams(slot);
+        const envParams = this.getEffectiveEnvParams(slot);
         const effectiveSpeed = this.getEffectivePlaybackSpeed(slot);
 
         // ① AI音声合成 (TTS) スロットの場合
         if (slot.ttsText && !slot.audioBlob) {
-            this.playTtsSlot(slot, effectiveEffect, effectiveSpeed);
+            this.playTtsSlot(slot, voiceParams, envParams, effectiveSpeed);
             return;
         }
 
@@ -1858,8 +2120,8 @@ class VoicePadApp {
             const arrayBuffer = await slot.audioBlob.arrayBuffer();
             const originalBuffer = await ctx.decodeAudioData(arrayBuffer);
 
-            // ピッチシフト＆エフェクト適用
-            const finalBuffer = PitchShiftEngine.applyEffect(originalBuffer, effectiveEffect, ctx);
+            // 2ステージ直列DSPエフェクト適用（声質 -> 環境）
+            const finalBuffer = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, effectiveSpeed);
 
             const source = ctx.createBufferSource();
             source.buffer = finalBuffer;
@@ -1890,7 +2152,7 @@ class VoicePadApp {
         }
     }
 
-    playTtsSlot(slot, effect = 'normal', speed = 1.0) {
+    playTtsSlot(slot, voiceParams, envParams, speed = 1.0) {
         if (!('speechSynthesis' in window)) {
             alert('お使いのブラウザは音声合成に対応していません。');
             return;
@@ -1926,82 +2188,22 @@ class VoicePadApp {
             utter.lang = 'ja-JP';
         }
 
-        // キャラクター＆ボイスチェンジャーフィルターのピッチ・話速計算
+        const vParams = voiceParams || VoiceEngine.defaultVoiceParams();
+        const eParams = envParams || VoiceEngine.defaultEnvParams();
+
         const baseRate = slot.ttsRate || 1.0;
         const basePitch = slot.ttsPitch || 1.0;
 
-        let calculatedPitch = basePitch;
+        // ピッチシフト（半音数＋フォルマントからUtterance.pitchへのマッピング）
+        const semitones = vParams.pitchSemitones || 0;
+        const formant = vParams.formantRatio || 1.0;
+        const pitchFactor = Math.pow(2, semitones / 12) * Math.sqrt(formant);
+        const calculatedPitch = Math.max(0.1, Math.min(2.0, basePitch * pitchFactor));
+
+        // 話速計算
         let calculatedRate = baseRate * speed;
-
-        switch (effect) {
-            case 'baby':
-                calculatedPitch = Math.min(2.0, basePitch * 1.55);
-                calculatedRate = baseRate * 1.15 * speed;
-                break;
-            case 'boy':
-                calculatedPitch = Math.min(2.0, basePitch * 1.25);
-                calculatedRate = baseRate * 1.05 * speed;
-                break;
-            case 'girl':
-                calculatedPitch = Math.min(2.0, basePitch * 1.4);
-                calculatedRate = baseRate * 1.05 * speed;
-                break;
-            case 'man':
-                calculatedPitch = Math.max(0.2, basePitch * 0.78);
-                calculatedRate = baseRate * 0.95 * speed;
-                break;
-            case 'woman':
-                calculatedPitch = Math.min(2.0, basePitch * 1.2);
-                calculatedRate = baseRate * 1.0 * speed;
-                break;
-            case 'old_man':
-                calculatedPitch = Math.max(0.2, basePitch * 0.68);
-                calculatedRate = baseRate * 0.78 * speed;
-                break;
-            case 'old_woman':
-                calculatedPitch = Math.min(2.0, basePitch * 1.25);
-                calculatedRate = baseRate * 0.82 * speed;
-                break;
-            case 'alien':
-                calculatedPitch = Math.min(2.0, basePitch * 1.6);
-                calculatedRate = baseRate * 1.25 * speed;
-                break;
-            case 'robot':
-                calculatedPitch = 0.7;
-                calculatedRate = baseRate * 0.88 * speed;
-                break;
-            case 'monster':
-                calculatedPitch = Math.max(0.1, basePitch * 0.45);
-                calculatedRate = baseRate * 0.72 * speed;
-                break;
-            case 'cave':
-            case 'hall':
-                calculatedPitch = basePitch;
-                calculatedRate = baseRate * 0.92 * speed;
-                break;
-            case 'underwater':
-                calculatedPitch = Math.max(0.2, basePitch * 0.85);
-                calculatedRate = baseRate * 0.85 * speed;
-                break;
-            case 'telephone':
-                calculatedPitch = Math.min(2.0, basePitch * 1.05);
-                calculatedRate = baseRate * 1.0 * speed;
-                break;
-            case 'radio':
-                calculatedPitch = basePitch;
-                calculatedRate = baseRate * 1.02 * speed;
-                break;
-            case 'megaphone':
-                calculatedPitch = Math.min(2.0, basePitch * 1.15);
-                calculatedRate = baseRate * 1.08 * speed;
-                break;
-            default:
-                calculatedPitch = basePitch;
-                calculatedRate = baseRate * speed;
-                break;
-        }
-
-        utter.pitch = Math.max(0.1, Math.min(2.0, calculatedPitch));
+        if (vParams.roughness > 30) calculatedRate *= 0.92;
+        utter.pitch = calculatedPitch;
         utter.rate = Math.max(0.1, Math.min(3.0, calculatedRate));
 
         const ttsController = {
@@ -2018,8 +2220,8 @@ class VoicePadApp {
             this.stopSlot(slot.id);
         };
 
-        // 空間・環境エフェクト（洞窟、電話、ラジオ、ロボット等）をオーディオで並行適用
-        this.playAcousticFilterOverlay(effect);
+        // 空間・環境エフェクト（リバーブ、フィルター、ロボットモジュレーション）をWeb Audio APIで並行重畳
+        VoiceEngine.playAcousticFilterOverlay(eParams);
 
         setTimeout(() => {
             if (window.speechSynthesis.paused) {
@@ -2027,58 +2229,6 @@ class VoicePadApp {
             }
             window.speechSynthesis.speak(utter);
         }, 50);
-    }
-
-    playAcousticFilterOverlay(effect) {
-        if (!effect || effect === 'normal') return;
-        const ctx = AudioUnlocker.getContext();
-        if (!ctx) return;
-
-        try {
-            if (effect === 'robot') {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(80, ctx.currentTime);
-                gain.gain.setValueAtTime(0.04, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.start();
-                osc.stop(ctx.currentTime + 1.2);
-            } else if (effect === 'cave' || effect === 'hall') {
-                const bufferSize = ctx.sampleRate * 0.4;
-                const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-                const output = noiseBuffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.15)) * 0.05;
-                }
-                const whiteNoise = ctx.createBufferSource();
-                whiteNoise.buffer = noiseBuffer;
-                const filter = ctx.createBiquadFilter();
-                filter.type = 'lowpass';
-                filter.frequency.value = 800;
-                whiteNoise.connect(filter);
-                filter.connect(ctx.destination);
-                whiteNoise.start();
-            } else if (effect === 'radio') {
-                const bufferSize = Math.floor(ctx.sampleRate * 0.5);
-                const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-                const output = noiseBuffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    output[i] = (Math.random() - 0.5) * 0.035;
-                }
-                const noise = ctx.createBufferSource();
-                noise.buffer = noiseBuffer;
-                const filter = ctx.createBiquadFilter();
-                filter.type = 'bandpass';
-                filter.frequency.value = 1800;
-                filter.Q.value = 3.0;
-                noise.connect(filter);
-                filter.connect(ctx.destination);
-                noise.start();
-            }
-        } catch (e) {}
     }
 
     fallbackPlay(slot, slotId, speed = 1.0) {
@@ -2188,7 +2338,7 @@ class VoicePadApp {
         const audioBase64 = await this.blobToBase64(slot.audioBlob);
         const exportData = {
             type: 'voicepad_slot',
-            version: '2.1',
+            version: '2.2',
             exportedAt: new Date().toISOString(),
             slot: {
                 label: slot.label,
@@ -2201,6 +2351,9 @@ class VoicePadApp {
                 imageFit: slot.imageFit || 'cover',
                 duration: slot.duration,
                 voiceEffect: slot.voiceEffect || 'inherit',
+                voiceEffectMode: slot.voiceEffectMode || 'inherit',
+                voiceParams: slot.voiceParams || null,
+                envParams: slot.envParams || null,
                 playbackSpeed: slot.playbackSpeed || 'inherit',
                 ttsText: slot.ttsText || null,
                 ttsVoice: slot.ttsVoice || null,
@@ -2236,6 +2389,9 @@ class VoicePadApp {
                 imageFit: slot.imageFit || 'cover',
                 duration: slot.duration,
                 voiceEffect: slot.voiceEffect || 'inherit',
+                voiceEffectMode: slot.voiceEffectMode || 'inherit',
+                voiceParams: slot.voiceParams || null,
+                envParams: slot.envParams || null,
                 playbackSpeed: slot.playbackSpeed || 'inherit',
                 ttsText: slot.ttsText || null,
                 ttsVoice: slot.ttsVoice || null,
@@ -2248,11 +2404,14 @@ class VoicePadApp {
 
         const exportData = {
             type: 'voicepad_scroll',
-            version: '2.1',
+            version: '2.2',
             exportedAt: new Date().toISOString(),
             scroll: {
                 name: scroll.name,
                 voiceEffect: scroll.voiceEffect || 'inherit',
+                voiceEffectMode: scroll.voiceEffectMode || 'inherit',
+                voiceParams: scroll.voiceParams || null,
+                envParams: scroll.envParams || null,
                 playbackSpeed: scroll.playbackSpeed || 'inherit'
             },
             slots: serializedSlots
@@ -2273,6 +2432,9 @@ class VoicePadApp {
                 id: scroll.id,
                 name: scroll.name,
                 voiceEffect: scroll.voiceEffect || 'inherit',
+                voiceEffectMode: scroll.voiceEffectMode || 'inherit',
+                voiceParams: scroll.voiceParams || null,
+                envParams: scroll.envParams || null,
                 playbackSpeed: scroll.playbackSpeed || 'inherit',
                 order: scroll.order
             });
@@ -2293,6 +2455,9 @@ class VoicePadApp {
                 imageFit: slot.imageFit || 'cover',
                 duration: slot.duration,
                 voiceEffect: slot.voiceEffect || 'inherit',
+                voiceEffectMode: slot.voiceEffectMode || 'inherit',
+                voiceParams: slot.voiceParams || null,
+                envParams: slot.envParams || null,
                 playbackSpeed: slot.playbackSpeed || 'inherit',
                 ttsText: slot.ttsText || null,
                 ttsVoice: slot.ttsVoice || null,
@@ -2305,11 +2470,13 @@ class VoicePadApp {
 
         const exportData = {
             type: 'voicepad_all',
-            version: '2.1',
+            version: '2.2',
             exportedAt: new Date().toISOString(),
             settings: {
                 pageSize: this.pageSize,
                 effect: this.currentEffect,
+                globalVoiceParams: this.globalVoiceParams,
+                globalEnvParams: this.globalEnvParams,
                 globalPlaybackSpeed: this.globalPlaybackSpeed,
                 currentScrollId: this.currentScrollId,
                 theme: this.currentTheme,
@@ -2347,6 +2514,9 @@ class VoicePadApp {
                 audioBlob: file,
                 duration: 3.0,
                 voiceEffect: 'inherit',
+                voiceEffectMode: 'inherit',
+                voiceParams: null,
+                envParams: null,
                 playbackSpeed: 'inherit',
                 order: currentSlots.length + 1
             };
@@ -2378,6 +2548,14 @@ class VoicePadApp {
                         const globalEffectSelect = document.getElementById('setting-global-effect');
                         if (globalEffectSelect) globalEffectSelect.value = this.currentEffect;
                     }
+                    if (data.settings?.globalVoiceParams) {
+                        this.globalVoiceParams = { ...VoiceEngine.defaultVoiceParams(), ...data.settings.globalVoiceParams };
+                        await this.storage.saveSetting('globalVoiceParams', this.globalVoiceParams);
+                    }
+                    if (data.settings?.globalEnvParams) {
+                        this.globalEnvParams = { ...VoiceEngine.defaultEnvParams(), ...data.settings.globalEnvParams };
+                        await this.storage.saveSetting('globalEnvParams', this.globalEnvParams);
+                    }
                     if (data.settings?.globalPlaybackSpeed) {
                         this.globalPlaybackSpeed = data.settings.globalPlaybackSpeed;
                         await this.storage.saveSetting('globalPlaybackSpeed', this.globalPlaybackSpeed);
@@ -2388,6 +2566,137 @@ class VoicePadApp {
                     if (Array.isArray(data.scrolls)) {
                         for (const s of data.scrolls) {
                             const existing = this.scrolls.find(sc => sc.id === s.id);
+                            if (!existing) {
+                                const scrollObj = {
+                                    ...s,
+                                    voiceEffectMode: s.voiceEffectMode || 'inherit',
+                                    voiceParams: s.voiceParams || null,
+                                    envParams: s.envParams || null
+                                };
+                                await this.storage.saveScroll(scrollObj);
+                                this.scrolls.push(scrollObj);
+                            }
+                        }
+                    }
+
+                    if (Array.isArray(data.slots)) {
+                        for (const s of data.slots) {
+                            const blob = this.base64ToBlob(s.audioBase64);
+                            const slotObj = {
+                                ...s,
+                                audioBlob: blob,
+                                voiceEffect: s.voiceEffect || 'inherit',
+                                voiceEffectMode: s.voiceEffectMode || 'inherit',
+                                voiceParams: s.voiceParams || null,
+                                envParams: s.envParams || null,
+                                playbackSpeed: s.playbackSpeed || 'inherit'
+                            };
+                            delete slotObj.audioBase64;
+                            await this.storage.saveSlot(slotObj);
+
+                            const existingIdx = this.slots.findIndex(sl => sl.id === slotObj.id);
+                            if (existingIdx !== -1) {
+                                this.slots[existingIdx] = slotObj;
+                            } else {
+                                this.slots.push(slotObj);
+                            }
+                        }
+                    }
+
+                    this.renderScrollTabs();
+                    this.renderSlots();
+                    this.showToast('🎉 写真・声質・環境エフェクト・スピードを含む全データを復元しました！');
+                }
+            } else if (data.type === 'voicepad_scroll') {
+                const newScrollId = 'scroll_' + Date.now();
+                const newScroll = {
+                    id: newScrollId,
+                    name: data.scroll?.name || 'インポートスクロール',
+                    voiceEffect: data.scroll?.voiceEffect || 'inherit',
+                    voiceEffectMode: data.scroll?.voiceEffectMode || 'inherit',
+                    voiceParams: data.scroll?.voiceParams || null,
+                    envParams: data.scroll?.envParams || null,
+                    playbackSpeed: data.scroll?.playbackSpeed || 'inherit',
+                    order: this.scrolls.length,
+                    createdAt: Date.now()
+                };
+                await this.storage.saveScroll(newScroll);
+                this.scrolls.push(newScroll);
+
+                if (Array.isArray(data.slots)) {
+                    for (const s of data.slots) {
+                        const blob = this.base64ToBlob(s.audioBase64);
+                        const slotObj = {
+                            id: 'slot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                            scrollId: newScrollId,
+                            label: s.label || 'ボタン',
+                            labelPosition: s.labelPosition || 'bottom',
+                            emoji: s.emoji || '🔊',
+                            imageUrl: s.imageUrl || null,
+                            imageScale: s.imageScale !== undefined ? s.imageScale : 1.0,
+                            imageOffsetX: s.imageOffsetX !== undefined ? s.imageOffsetX : 0,
+                            imageOffsetY: s.imageOffsetY !== undefined ? s.imageOffsetY : 0,
+                            imageFit: s.imageFit || 'cover',
+                            audioBlob: blob,
+                            duration: s.duration || 0,
+                            voiceEffect: s.voiceEffect || 'inherit',
+                            voiceEffectMode: s.voiceEffectMode || 'inherit',
+                            voiceParams: s.voiceParams || null,
+                            envParams: s.envParams || null,
+                            playbackSpeed: s.playbackSpeed || 'inherit',
+                            ttsText: s.ttsText || null,
+                            ttsVoice: s.ttsVoice || null,
+                            ttsRate: s.ttsRate || 1.0,
+                            ttsPitch: s.ttsPitch || 1.0,
+                            order: s.order || 1
+                        };
+                        await this.storage.saveSlot(slotObj);
+                        this.slots.push(slotObj);
+                    }
+                }
+
+                await this.switchScroll(newScrollId);
+                this.showToast(`✨ スクロール「${newScroll.name}」を復元・インポートしました！`);
+            } else if (data.type === 'voicepad_slot' || data.slot) {
+                const s = data.slot || data;
+                const blob = this.base64ToBlob(s.audioBase64);
+                const currentSlots = this.getCurrentSlots();
+                const newSlot = {
+                    id: 'slot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                    scrollId: this.currentScrollId,
+                    label: s.label || 'インポートボタン',
+                    labelPosition: s.labelPosition || 'bottom',
+                    emoji: s.emoji || '🔊',
+                    imageUrl: s.imageUrl || null,
+                    imageScale: s.imageScale !== undefined ? s.imageScale : 1.0,
+                    imageOffsetX: s.imageOffsetX !== undefined ? s.imageOffsetX : 0,
+                    imageOffsetY: s.imageOffsetY !== undefined ? s.imageOffsetY : 0,
+                    imageFit: s.imageFit || 'cover',
+                    audioBlob: blob,
+                    duration: s.duration || 0,
+                    voiceEffect: s.voiceEffect || 'inherit',
+                    voiceEffectMode: s.voiceEffectMode || 'inherit',
+                    voiceParams: s.voiceParams || null,
+                    envParams: s.envParams || null,
+                    playbackSpeed: s.playbackSpeed || 'inherit',
+                    ttsText: s.ttsText || null,
+                    ttsVoice: s.ttsVoice || null,
+                    ttsRate: s.ttsRate || 1.0,
+                    ttsPitch: s.ttsPitch || 1.0,
+                    order: currentSlots.length + 1
+                };
+
+                await this.storage.saveSlot(newSlot);
+                this.slots.push(newSlot);
+                this.renderSlots();
+                this.renderScrollTabs();
+                this.showToast(`✨ 写真・声質設定付きスイッチ「${newSlot.label}」をインポートしました！`);
+            } else {
+                alert('対応していないファイル形式です。(.vpad / .json / 音声ファイル)');
+            }
+        } catch (err) {
+            console.error('Import error:', err);
+            alert('ファイルの読み込みに失敗しました。正しいVoice Padバックアップファイルを選択してください。');=> sc.id === s.id);
                             if (!existing) {
                                 await this.storage.saveScroll(s);
                                 this.scrolls.push(s);
@@ -2695,14 +3004,16 @@ class VoicePadApp {
         const labelInput = document.getElementById('edit-label');
         if (labelInput) labelInput.value = slot.label;
 
-        // ボイスエフェクト設定同期
-        const effectSelect = document.getElementById('edit-slot-effect');
-        if (effectSelect) {
-            effectSelect.value = slot.voiceEffect || 'inherit';
-            const parentEffect = this.getScrollEffectiveVoiceEffect(slot.scrollId);
-            const parentEffLabel = this.getVoiceEffectLabel(parentEffect);
-            effectSelect.options[0].text = `🔄 スクロール設定に従う (現在: ${parentEffLabel})`;
-        }
+        // ボイスエフェクトモード＆2ステージパラメータ同期
+        const modeSelect = document.getElementById('edit-slot-effect-mode');
+        const panel = document.getElementById('slot-fx-custom-panel');
+        const isCustom = (slot.voiceEffectMode === 'custom') || (slot.voiceEffect && slot.voiceEffect !== 'inherit');
+        if (modeSelect) modeSelect.value = isCustom ? 'custom' : 'inherit';
+        if (panel) panel.style.display = isCustom ? 'flex' : 'none';
+
+        const initialVoice = slot.voiceParams || (slot.voiceEffect ? VoiceEngine.presetToParams(slot.voiceEffect).voice : VoiceEngine.defaultVoiceParams());
+        const initialEnv = slot.envParams || (slot.voiceEffect ? VoiceEngine.presetToParams(slot.voiceEffect).env : VoiceEngine.defaultEnvParams());
+        this.setFxParamsToUI('slot', initialVoice, initialEnv);
 
         // スピード設定同期
         const speedSelect = document.getElementById('edit-slot-speed');
@@ -2795,6 +3106,7 @@ class VoicePadApp {
 
     closeEditModal() {
         this.stopWaveformPreview();
+        this.stopFxPreview();
         if ('speechSynthesis' in window) {
             window.speechSynthesis.cancel();
         }
@@ -2810,7 +3122,7 @@ class VoicePadApp {
         const labelInput = document.getElementById('edit-label')?.value.trim();
         const emojiInput = document.getElementById('edit-emoji')?.value.trim();
         const labelPos = document.getElementById('edit-label-pos')?.value || 'bottom';
-        const effectSelect = document.getElementById('edit-slot-effect');
+        const modeSelect = document.getElementById('edit-slot-effect-mode');
         const speedSelect = document.getElementById('edit-slot-speed');
 
         slot.label = labelInput || `ボタン`;
@@ -2822,9 +3134,17 @@ class VoicePadApp {
         slot.imageOffsetY = this.editingImageOffsetY;
         slot.imageFit = this.editingImageFit;
 
-        if (effectSelect) {
-            slot.voiceEffect = effectSelect.value;
+        slot.voiceEffectMode = modeSelect ? modeSelect.value : 'inherit';
+
+        if (slot.voiceEffectMode === 'custom') {
+            const { voiceParams, envParams } = this.getFxParamsFromUI('slot');
+            slot.voiceParams = voiceParams;
+            slot.envParams = envParams;
+            slot.voiceEffect = 'custom';
+        } else {
+            slot.voiceEffect = 'inherit';
         }
+
         if (speedSelect) {
             slot.playbackSpeed = speedSelect.value;
         }
@@ -3127,8 +3447,7 @@ class VoicePadApp {
     }
 
     openSettingsModal() {
-        const globalEffectSelect = document.getElementById('setting-global-effect');
-        if (globalEffectSelect) globalEffectSelect.value = this.currentEffect;
+        this.setFxParamsToUI('global', this.globalVoiceParams, this.globalEnvParams);
 
         const globalSpeedSelect = document.getElementById('setting-global-speed');
         if (globalSpeedSelect) globalSpeedSelect.value = String(this.globalPlaybackSpeed);
@@ -3217,6 +3536,242 @@ class VoicePadApp {
         }
     }
 
+    // ==================== 🎙️ 2ステージDSP UIバインディング ＆ 試聴プレビュー ====================
+    initVoiceEngineUIEvents() {
+        this.bindFxSliders('slot');
+        this.bindFxSliders('scroll');
+        this.bindFxSliders('global');
+
+        // スロットモーダルのモード切り替え
+        document.getElementById('edit-slot-effect-mode')?.addEventListener('change', (e) => {
+            const panel = document.getElementById('slot-fx-custom-panel');
+            if (panel) panel.style.display = e.target.value === 'custom' ? 'flex' : 'none';
+        });
+
+        // スクロールモーダルのモード切り替え
+        document.getElementById('edit-scroll-effect-mode')?.addEventListener('change', (e) => {
+            const panel = document.getElementById('scroll-fx-custom-panel');
+            if (panel) panel.style.display = e.target.value === 'custom' ? 'flex' : 'none';
+        });
+
+        // スロット個別エフェクト試聴ボタン
+        document.getElementById('btn-slot-fx-preview')?.addEventListener('click', () => {
+            this.previewSlotEffect();
+        });
+
+        // グローバルエフェクト変更の自動保存
+        const globalSliders = [
+            'global-pitch-slider', 'global-formant-slider', 'global-rough-slider',
+            'global-reverb-slider', 'global-filter-slider', 'global-mod-slider'
+        ];
+        globalSliders.forEach(id => {
+            document.getElementById(id)?.addEventListener('change', () => this.saveGlobalFxSettings());
+        });
+    }
+
+    bindFxSliders(prefix) {
+        // ① ピッチシフト
+        const pitchSlider = document.getElementById(`${prefix}-pitch-slider`);
+        const pitchVal = document.getElementById(`${prefix}-pitch-val`);
+        if (pitchSlider && pitchVal) {
+            pitchSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                pitchVal.innerText = val > 0 ? `+${val} 半音` : val < 0 ? `${val} 半音` : '±0 半音';
+            });
+        }
+
+        // ② フォルマントシフト
+        const formantSlider = document.getElementById(`${prefix}-formant-slider`);
+        const formantVal = document.getElementById(`${prefix}-formant-val`);
+        if (formantSlider && formantVal) {
+            formantSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                const desc = val <= 0.8 ? '太声/巨漢' : val >= 1.25 ? '妖精/子ども' : '標準';
+                formantVal.innerText = `${val.toFixed(2)}x (${desc})`;
+            });
+        }
+
+        // ③ 質感・ざらつき
+        const roughSlider = document.getElementById(`${prefix}-rough-slider`);
+        const roughVal = document.getElementById(`${prefix}-rough-val`);
+        if (roughSlider && roughVal) {
+            roughSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                const desc = val === 0 ? 'クリア' : val <= 40 ? 'ハスキー' : 'かすれ・歪み';
+                roughVal.innerText = `${val}% (${desc})`;
+            });
+        }
+
+        // ④ リバーブ
+        const reverbSlider = document.getElementById(`${prefix}-reverb-slider`);
+        const reverbVal = document.getElementById(`${prefix}-reverb-val`);
+        if (reverbSlider && reverbVal) {
+            reverbSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                const desc = val === 0 ? 'ドライ' : val <= 50 ? 'お風呂' : '大ホール/洞窟';
+                reverbVal.innerText = `${val}% (${desc})`;
+            });
+        }
+
+        // ⑤ フィルター
+        const filterSlider = document.getElementById(`${prefix}-filter-slider`);
+        const filterVal = document.getElementById(`${prefix}-filter-val`);
+        if (filterSlider && filterVal) {
+            filterSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                const desc = val === 0 ? 'オフ' : val <= 50 ? 'ラジオ' : 'メガホン/電話';
+                filterVal.innerText = `${val}% (${desc})`;
+            });
+        }
+
+        // ⑥ モジュレーション
+        const modSlider = document.getElementById(`${prefix}-mod-slider`);
+        const modVal = document.getElementById(`${prefix}-mod-val`);
+        if (modSlider && modVal) {
+            modSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                const desc = val === 0 ? 'オフ' : val <= 50 ? '宇宙人' : '金属ロボット';
+                modVal.innerText = `${val}% (${desc})`;
+            });
+        }
+
+        // プリセットチップス（声質）
+        document.querySelectorAll(`#${prefix}-voice-preset-chips .fx-chip-btn`).forEach(btn => {
+            btn.addEventListener('click', () => {
+                const presetName = btn.getAttribute('data-preset');
+                const preset = VoiceEngine.presetToParams(presetName).voice;
+                if (pitchSlider) { pitchSlider.value = preset.pitchSemitones; pitchSlider.dispatchEvent(new Event('input')); }
+                if (formantSlider) { formantSlider.value = preset.formantRatio; formantSlider.dispatchEvent(new Event('input')); }
+                if (roughSlider) { roughSlider.value = preset.roughness; roughSlider.dispatchEvent(new Event('input')); }
+
+                document.querySelectorAll(`#${prefix}-voice-preset-chips .fx-chip-btn`).forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                if (prefix === 'global') this.saveGlobalFxSettings();
+            });
+        });
+
+        // プリセットチップス（環境）
+        document.querySelectorAll(`#${prefix}-env-preset-chips .fx-chip-btn`).forEach(btn => {
+            btn.addEventListener('click', () => {
+                const presetName = btn.getAttribute('data-preset');
+                const preset = VoiceEngine.presetToParams(presetName).env;
+                if (reverbSlider) { reverbSlider.value = preset.reverb; reverbSlider.dispatchEvent(new Event('input')); }
+                if (filterSlider) { filterSlider.value = preset.filter; filterSlider.dispatchEvent(new Event('input')); }
+                if (modSlider) { modSlider.value = preset.modulation; modSlider.dispatchEvent(new Event('input')); }
+
+                document.querySelectorAll(`#${prefix}-env-preset-chips .fx-chip-btn`).forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                if (prefix === 'global') this.saveGlobalFxSettings();
+            });
+        });
+    }
+
+    setFxParamsToUI(prefix, voiceParams, envParams) {
+        const v = { ...VoiceEngine.defaultVoiceParams(), ...(voiceParams || {}) };
+        const e = { ...VoiceEngine.defaultEnvParams(), ...(envParams || {}) };
+
+        const pitchSlider = document.getElementById(`${prefix}-pitch-slider`);
+        const formantSlider = document.getElementById(`${prefix}-formant-slider`);
+        const roughSlider = document.getElementById(`${prefix}-rough-slider`);
+        const reverbSlider = document.getElementById(`${prefix}-reverb-slider`);
+        const filterSlider = document.getElementById(`${prefix}-filter-slider`);
+        const modSlider = document.getElementById(`${prefix}-mod-slider`);
+
+        if (pitchSlider) { pitchSlider.value = v.pitchSemitones; pitchSlider.dispatchEvent(new Event('input')); }
+        if (formantSlider) { formantSlider.value = v.formantRatio; formantSlider.dispatchEvent(new Event('input')); }
+        if (roughSlider) { roughSlider.value = v.roughness; roughSlider.dispatchEvent(new Event('input')); }
+        if (reverbSlider) { reverbSlider.value = e.reverb; reverbSlider.dispatchEvent(new Event('input')); }
+        if (filterSlider) { filterSlider.value = e.filter; filterSlider.dispatchEvent(new Event('input')); }
+        if (modSlider) { modSlider.value = e.modulation; modSlider.dispatchEvent(new Event('input')); }
+    }
+
+    getFxParamsFromUI(prefix) {
+        const pitchSlider = document.getElementById(`${prefix}-pitch-slider`);
+        const formantSlider = document.getElementById(`${prefix}-formant-slider`);
+        const roughSlider = document.getElementById(`${prefix}-rough-slider`);
+        const reverbSlider = document.getElementById(`${prefix}-reverb-slider`);
+        const filterSlider = document.getElementById(`${prefix}-filter-slider`);
+        const modSlider = document.getElementById(`${prefix}-mod-slider`);
+
+        return {
+            voiceParams: {
+                pitchSemitones: pitchSlider ? parseInt(pitchSlider.value, 10) : 0,
+                formantRatio: formantSlider ? parseFloat(formantSlider.value) : 1.0,
+                roughness: roughSlider ? parseInt(roughSlider.value, 10) : 0
+            },
+            envParams: {
+                reverb: reverbSlider ? parseInt(reverbSlider.value, 10) : 0,
+                filter: filterSlider ? parseInt(filterSlider.value, 10) : 0,
+                modulation: modSlider ? parseInt(modSlider.value, 10) : 0
+            }
+        };
+    }
+
+    async saveGlobalFxSettings() {
+        const { voiceParams, envParams } = this.getFxParamsFromUI('global');
+        this.globalVoiceParams = voiceParams;
+        this.globalEnvParams = envParams;
+        await this.storage.saveSetting('globalVoiceParams', this.globalVoiceParams);
+        await this.storage.saveSetting('globalEnvParams', this.globalEnvParams);
+    }
+
+    async previewSlotEffect() {
+        if (!this.editingSlotId) return;
+        const slot = this.slots.find(s => s.id === this.editingSlotId);
+        await AudioUnlocker.unlock();
+        const ctx = AudioUnlocker.getContext();
+        if (!ctx) return;
+
+        this.stopFxPreview();
+        const { voiceParams, envParams } = this.getFxParamsFromUI('slot');
+
+        if (slot && slot.audioBlob) {
+            try {
+                const arr = await slot.audioBlob.arrayBuffer();
+                const originalBuffer = await ctx.decodeAudioData(arr.slice(0));
+                const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, 1.0);
+
+                const src = ctx.createBufferSource();
+                src.buffer = processed;
+                src.connect(ctx.destination);
+                src.start(0);
+                this.fxPreviewSource = src;
+                this.showToast('▶️ エフェクト設定で音声を試聴中...');
+                src.onended = () => { this.fxPreviewSource = null; };
+            } catch (err) {
+                console.error('Preview error:', err);
+            }
+        } else {
+            // 音声未録音時はテストトーンでプレビュー
+            const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.75), ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < data.length; i++) {
+                const t = i / ctx.sampleRate;
+                data[i] = (Math.sin(2 * Math.PI * 440 * t) + 0.4 * Math.sin(2 * Math.PI * 880 * t)) * Math.exp(-t * 3.2);
+            }
+            const processed = VoiceEngine.processFull(buffer, ctx, voiceParams, envParams, 1.0);
+            const src = ctx.createBufferSource();
+            src.buffer = processed;
+            src.connect(ctx.destination);
+            src.start(0);
+            this.fxPreviewSource = src;
+            this.showToast('▶️ テスト音でエフェクトを試聴中...');
+            src.onended = () => { this.fxPreviewSource = null; };
+        }
+    }
+
+    stopFxPreview() {
+        if (this.fxPreviewSource) {
+            try {
+                this.fxPreviewSource.stop();
+                this.fxPreviewSource.disconnect();
+            } catch (e) {}
+            this.fxPreviewSource = null;
+        }
+    }
+
     // ==================== 🤖 AI音声合成 (TTS) エンジン ====================
     initTTS() {
         if ('speechSynthesis' in window) {
@@ -3242,6 +3797,33 @@ class VoicePadApp {
             });
         }
 
+        // イントネーション・ポーズ補助ツール
+        document.querySelectorAll('.tts-pause-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const pauseType = btn.getAttribute('data-pause');
+                const ttsInput = document.getElementById('tts-input-text');
+                if (!ttsInput) return;
+
+                const start = ttsInput.selectionStart || ttsInput.value.length;
+                const end = ttsInput.selectionEnd || ttsInput.value.length;
+                let text = ttsInput.value;
+
+                if (pauseType === 'comma') {
+                    ttsInput.value = text.slice(0, start) + '、' + text.slice(end);
+                    ttsInput.selectionStart = ttsInput.selectionEnd = start + 1;
+                } else if (pauseType === 'space') {
+                    ttsInput.value = text.slice(0, start) + ' ' + text.slice(end);
+                    ttsInput.selectionStart = ttsInput.selectionEnd = start + 1;
+                } else if (pauseType === 'period') {
+                    ttsInput.value = text.slice(0, start) + '。' + text.slice(end);
+                    ttsInput.selectionStart = ttsInput.selectionEnd = start + 1;
+                } else if (pauseType === 'clear') {
+                    ttsInput.value = text.replace(/[、。，． 　]/g, '');
+                }
+                ttsInput.focus();
+            });
+        });
+
         document.getElementById('btn-tts-preview')?.addEventListener('click', () => this.previewTts());
         document.getElementById('btn-tts-apply')?.addEventListener('click', () => this.applyTtsToSlot());
     }
@@ -3262,7 +3844,6 @@ class VoicePadApp {
             return;
         }
 
-        // 日本語・英語・その他で整理
         const jaVoices = this.ttsVoices.filter(v => v.lang.startsWith('ja'));
         const enVoices = this.ttsVoices.filter(v => v.lang.startsWith('en'));
         const otherVoices = this.ttsVoices.filter(v => !v.lang.startsWith('ja') && !v.lang.startsWith('en'));
@@ -3323,8 +3904,17 @@ class VoicePadApp {
         const rate = parseFloat(document.getElementById('tts-rate-slider')?.value || '1.0');
         const pitch = parseFloat(document.getElementById('tts-pitch-slider')?.value || '1.0');
 
+        // スロットモーダルの声質・環境パラメータも重ねがけ反映
+        const { voiceParams, envParams } = this.getFxParamsFromUI('slot');
+        const semitones = voiceParams.pitchSemitones || 0;
+        const formant = voiceParams.formantRatio || 1.0;
+        const pitchFactor = Math.pow(2, semitones / 12) * Math.sqrt(formant);
+
         utter.rate = Math.max(0.1, Math.min(3.0, rate));
-        utter.pitch = Math.max(0.1, Math.min(2.0, pitch));
+        utter.pitch = Math.max(0.1, Math.min(2.0, pitch * pitchFactor));
+
+        // 空間・環境エフェクトの重畳
+        VoiceEngine.playAcousticFilterOverlay(envParams);
 
         setTimeout(() => {
             if (window.speechSynthesis.paused) {
@@ -3355,7 +3945,7 @@ class VoicePadApp {
         slot.ttsVoice = voiceName;
         slot.ttsRate = rate;
         slot.ttsPitch = pitch;
-        slot.audioBlob = null; // AI音声合成として登録するため、合成トーン（ノイズ）Blobは生成せずクリア
+        slot.audioBlob = null;
         slot.duration = Math.max(1.0, (text.length * 0.25) / rate);
 
         // ボタンのラベルが空または初期値ならテキストを反映
@@ -3365,17 +3955,26 @@ class VoicePadApp {
             slot.label = text.slice(0, 14);
         }
 
+        // 現在設定されている声質・環境エフェクトも反映
+        const modeSelect = document.getElementById('edit-slot-effect-mode');
+        slot.voiceEffectMode = modeSelect ? modeSelect.value : 'inherit';
+        if (slot.voiceEffectMode === 'custom') {
+            const { voiceParams, envParams } = this.getFxParamsFromUI('slot');
+            slot.voiceParams = voiceParams;
+            slot.envParams = envParams;
+            slot.voiceEffect = 'custom';
+        }
+
         await this.storage.saveSlot(slot);
         this.renderSlots();
 
-        // プレビューボタン・消去ボタンの表示更新
         const deleteAudioBtn = document.getElementById('delete-audio-btn');
         const downloadAudioBtn = document.getElementById('download-audio-btn');
         if (deleteAudioBtn) deleteAudioBtn.style.display = 'block';
         if (downloadAudioBtn) downloadAudioBtn.style.display = 'none';
 
         this.previewTts();
-        this.showToast(`✨ AI音声を「${slot.label}」に登録しました！`);
+        this.showToast(`✨ 声質＆環境エフェクトを重ねて「${slot.label}」に登録しました！`);
     }
 
     // ==================== ✂️ 音声波形エディター ＆ トリム ====================
@@ -4055,6 +4654,9 @@ class VoicePadApp {
             audioBlob: blob,
             duration: s.duration || 0,
             voiceEffect: s.voiceEffect || 'inherit',
+            voiceEffectMode: s.voiceEffectMode || 'inherit',
+            voiceParams: s.voiceParams || null,
+            envParams: s.envParams || null,
             playbackSpeed: s.playbackSpeed || 'inherit',
             ttsText: s.ttsText || null,
             ttsVoice: s.ttsVoice || null,
@@ -4086,6 +4688,9 @@ class VoicePadApp {
                 id: newScrollId,
                 name: this.incomingData.scroll?.name || '受信スクロール',
                 voiceEffect: this.incomingData.scroll?.voiceEffect || 'inherit',
+                voiceEffectMode: this.incomingData.scroll?.voiceEffectMode || 'inherit',
+                voiceParams: this.incomingData.scroll?.voiceParams || null,
+                envParams: this.incomingData.scroll?.envParams || null,
                 playbackSpeed: this.incomingData.scroll?.playbackSpeed || 'inherit',
                 order: this.scrolls.length,
                 createdAt: Date.now()
@@ -4110,6 +4715,9 @@ class VoicePadApp {
                         audioBlob: blob,
                         duration: s.duration || 0,
                         voiceEffect: s.voiceEffect || 'inherit',
+                        voiceEffectMode: s.voiceEffectMode || 'inherit',
+                        voiceParams: s.voiceParams || null,
+                        envParams: s.envParams || null,
                         playbackSpeed: s.playbackSpeed || 'inherit',
                         ttsText: s.ttsText || null,
                         ttsVoice: s.ttsVoice || null,
@@ -4137,6 +4745,9 @@ class VoicePadApp {
             name: scrollName,
             order: this.scrolls.length,
             voiceEffect: 'inherit',
+            voiceEffectMode: 'inherit',
+            voiceParams: null,
+            envParams: null,
             playbackSpeed: 'inherit',
             createdAt: Date.now()
         };
@@ -4158,6 +4769,9 @@ class VoicePadApp {
             audioBlob: blob,
             duration: s.duration || 0,
             voiceEffect: s.voiceEffect || 'inherit',
+            voiceEffectMode: s.voiceEffectMode || 'inherit',
+            voiceParams: s.voiceParams || null,
+            envParams: s.envParams || null,
             playbackSpeed: s.playbackSpeed || 'inherit',
             ttsText: s.ttsText || null,
             ttsVoice: s.ttsVoice || null,

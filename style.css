@@ -2045,3 +2045,222 @@ body.theme-mint {
     color: #94a3b8;
 }
 
+/* ==================== 🎙️ 2ステージ音声エンジン＆エフェクトUI ==================== */
+.fx-engine-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+.fx-stage-card {
+    background: rgba(18, 25, 38, 0.9);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    position: relative;
+    overflow: hidden;
+}
+
+.fx-stage-card.stage-voice {
+    border-color: rgba(59, 130, 246, 0.35);
+    background: linear-gradient(180deg, rgba(59, 130, 246, 0.08) 0%, rgba(18, 25, 38, 0.95) 100%);
+}
+
+.fx-stage-card.stage-env {
+    border-color: rgba(139, 92, 246, 0.35);
+    background: linear-gradient(180deg, rgba(139, 92, 246, 0.08) 0%, rgba(18, 25, 38, 0.95) 100%);
+}
+
+.fx-stage-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.fx-stage-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.fx-stage-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+}
+
+.stage-voice .fx-stage-badge {
+    background: rgba(59, 130, 246, 0.25);
+    color: #93c5fd;
+    border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.stage-env .fx-stage-badge {
+    background: rgba(139, 92, 246, 0.25);
+    color: #c4b5fd;
+    border: 1px solid rgba(139, 92, 246, 0.4);
+}
+
+.fx-slider-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.fx-slider-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.fx-slider-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.fx-slider-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #cbd5e1;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.fx-slider-val {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--accent-cyan);
+    font-variant-numeric: tabular-nums;
+    background: rgba(6, 182, 212, 0.15);
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.fx-slider-track {
+    width: 100%;
+    margin: 2px 0;
+}
+
+.fx-slider-hints {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9.5px;
+    color: var(--text-muted);
+}
+
+/* プリセットチップス */
+.fx-preset-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+}
+
+.fx-preset-label {
+    font-size: 10.5px;
+    color: var(--text-muted);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.fx-preset-chips {
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    flex: 1;
+}
+
+.fx-chip-btn {
+    padding: 4px 9px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #e2e8f0;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.fx-chip-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+    transform: translateY(-1px);
+}
+
+.fx-chip-btn.active {
+    background: var(--accent-blue);
+    color: #ffffff;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}
+
+/* TTS ポーズ・イントネーション補助ツール */
+.tts-pause-tools {
+    display: flex;
+    gap: 5px;
+    margin-top: 4px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.tts-pause-btn {
+    padding: 3px 8px;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.tts-pause-btn:hover {
+    background: rgba(59, 130, 246, 0.25);
+}
+
+/* ライセンス＆規約アコーディオン */
+.license-card {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.license-content {
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 10.5px;
+    color: #94a3b8;
+    line-height: 1.5;
+    max-height: 140px;
+    overflow-y: auto;
+    font-family: monospace;
+    white-space: pre-wrap;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
