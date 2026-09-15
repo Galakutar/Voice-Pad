@@ -909,6 +909,10 @@ class VoicePadApp {
         // プレビュー用音声ノード
         this.fxPreviewSource = null;
 
+        // 🗂️ スクロールまとめ（マージ）モード
+        this.isMergeMode = false;
+        this.selectedScrollIdsForMerge = new Set();
+
         this.init();
     }
 
@@ -1136,7 +1140,7 @@ class VoicePadApp {
         return names[effectVal] || effectVal;
     }
 
-    // ==================== 描画処理 ====================
+    // ==================== 描画処理 ＆ スクロールまとめ機能 ====================
     renderScrollTabs() {
         const container = document.getElementById('scroll-tabs-container');
         if (!container) return;
@@ -1146,18 +1150,36 @@ class VoicePadApp {
             const count = this.slots.filter(s => s.scrollId === scroll.id).length;
             const tab = document.createElement('div');
             const isLocked = !!scroll.isLocked;
-            tab.className = `scroll-tab-item${scroll.id === this.currentScrollId ? ' active' : ''}${isLocked ? ' is-locked' : ''}`;
+            const isSelectedForMerge = this.isMergeMode && this.selectedScrollIdsForMerge.has(scroll.id);
+
+            let tabClass = `scroll-tab-item${scroll.id === this.currentScrollId ? ' active' : ''}${isLocked ? ' is-locked' : ''}`;
+            if (this.isMergeMode) {
+                tabClass += ' is-merge-mode';
+                if (isSelectedForMerge) tabClass += ' is-merge-selected';
+            }
+            tab.className = tabClass;
             tab.setAttribute('data-scroll-id', scroll.id);
             tab.setAttribute('data-index', index);
 
+            let checkboxHtml = '';
+            if (this.isMergeMode) {
+                checkboxHtml = `<input type="checkbox" class="scroll-merge-checkbox" data-scroll-id="${scroll.id}" ${isSelectedForMerge ? 'checked' : ''} aria-label="まとめる対象に選択">`;
+            }
+
             tab.innerHTML = `
+                ${checkboxHtml}
                 <span class="scroll-tab-name">${this.escapeHtml(scroll.name)}</span>
                 <span class="scroll-tab-badge">${count}</span>
-                <span class="scroll-tab-edit-icon ${isLocked ? 'is-locked' : ''}" title="${isLocked ? 'スクロールロック中 (長押しで解除)' : 'スクロール設定 (長押しでロック)'}">${isLocked ? '🔒' : '⚙️'}</span>
+                ${!this.isMergeMode ? `<span class="scroll-tab-edit-icon ${isLocked ? 'is-locked' : ''}" title="${isLocked ? 'スクロールロック中 (長押しで解除)' : 'スクロール設定 (長押しでロック)'}">${isLocked ? '🔒' : '⚙️'}</span>` : ''}
             `;
 
             tab.addEventListener('click', (e) => {
                 if (this.isDraggingScroll) return;
+                if (this.isMergeMode) {
+                    e.stopPropagation();
+                    this.toggleScrollSelectionForMerge(scroll.id);
+                    return;
+                }
                 if (e.target.closest('.scroll-tab-edit-icon')) {
                     // Handled by attachScrollTabLockListeners
                     return;
@@ -1165,14 +1187,241 @@ class VoicePadApp {
                 this.switchScroll(scroll.id);
             });
 
-            const editIcon = tab.querySelector('.scroll-tab-edit-icon');
-            if (editIcon) {
-                this.attachScrollTabLockListeners(editIcon, scroll);
+            if (!this.isMergeMode) {
+                const editIcon = tab.querySelector('.scroll-tab-edit-icon');
+                if (editIcon) {
+                    this.attachScrollTabLockListeners(editIcon, scroll);
+                }
+                this.attachTabDragListeners(tab, scroll.id);
             }
 
-            this.attachTabDragListeners(tab, scroll.id);
             container.appendChild(tab);
         });
+    }
+
+    // ==================== 🗂️ スクロールまとめ（マージ）モード制御 ====================
+    toggleScrollSelectionForMerge(scrollId) {
+        if (this.selectedScrollIdsForMerge.has(scrollId)) {
+            this.selectedScrollIdsForMerge.delete(scrollId);
+        } else {
+            this.selectedScrollIdsForMerge.add(scrollId);
+        }
+        this.updateMergeModeUI();
+        this.renderScrollTabs();
+    }
+
+    toggleMergeMode(forceState) {
+        this.isMergeMode = (forceState !== undefined) ? forceState : !this.isMergeMode;
+        if (!this.isMergeMode) {
+            this.selectedScrollIdsForMerge.clear();
+        }
+        this.updateMergeModeUI();
+        this.renderScrollTabs();
+
+        if (this.isMergeMode) {
+            if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+            this.showToast('🗂️ まとめモードに入りました。まとめたいスクロールにチェックを入れて【まとめる】を押してください');
+        } else {
+            this.showToast('まとめモードを終了しました');
+        }
+    }
+
+    exitMergeMode() {
+        if (this.isMergeMode) {
+            this.toggleMergeMode(false);
+        }
+    }
+
+    updateMergeModeUI() {
+        const mergeBtn = document.getElementById('header-merge-btn');
+        const banner = document.getElementById('merge-mode-banner');
+
+        if (mergeBtn) {
+            if (this.isMergeMode) {
+                mergeBtn.classList.add('active-merge-mode');
+                const count = this.selectedScrollIdsForMerge.size;
+                mergeBtn.innerHTML = `✨ <span class="btn-text">まとめる${count > 0 ? ` (${count}件)` : ''}</span>`;
+            } else {
+                mergeBtn.classList.remove('active-merge-mode');
+                mergeBtn.innerHTML = `🗂️ <span class="btn-text">まとめる</span>`;
+            }
+        }
+
+        if (banner) {
+            banner.style.display = this.isMergeMode ? 'flex' : 'none';
+        }
+    }
+
+    attachMergeButtonListeners(btn) {
+        if (!btn) return;
+        let timer = null;
+        let isLongPress = false;
+        let startX = 0, startY = 0;
+
+        const startPress = (e) => {
+            isLongPress = false;
+            startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            btn.classList.add('is-pressing');
+
+            timer = setTimeout(() => {
+                isLongPress = true;
+                btn.classList.remove('is-pressing');
+                this.toggleMergeMode();
+            }, 800);
+        };
+
+        const cancelPress = () => {
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+            btn.classList.remove('is-pressing');
+        };
+
+        const movePress = (e) => {
+            const curX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+            const curY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+            if (Math.abs(curX - startX) > 10 || Math.abs(curY - startY) > 10) {
+                cancelPress();
+            }
+        };
+
+        btn.addEventListener('pointerdown', startPress);
+        btn.addEventListener('pointermove', movePress);
+        btn.addEventListener('pointerup', (e) => {
+            cancelPress();
+            if (!isLongPress) {
+                e.stopPropagation();
+                if (this.isMergeMode) {
+                    this.triggerMergeAction();
+                } else {
+                    this.showToast('💡 【長押し】すると複数のスクロールをまとめる「まとめモード」になります');
+                }
+            }
+        });
+        btn.addEventListener('pointercancel', cancelPress);
+        btn.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+
+    triggerMergeAction() {
+        if (this.selectedScrollIdsForMerge.size < 2) {
+            this.showToast('⚠️ まとめたいスクロールを2つ以上チェックしてください');
+            return;
+        }
+        this.openMergeConfirmModal();
+    }
+
+    openMergeConfirmModal() {
+        const selectedScrolls = this.scrolls.filter(s => this.selectedScrollIdsForMerge.has(s.id));
+        if (selectedScrolls.length === 0) return;
+
+        let totalButtons = 0;
+        const scrollNames = [];
+        selectedScrolls.forEach(s => {
+            const cnt = this.slots.filter(slot => slot.scrollId === s.id).length;
+            totalButtons += cnt;
+            scrollNames.push(s.name);
+        });
+
+        const summaryEl = document.getElementById('merge-target-summary');
+        if (summaryEl) {
+            summaryEl.innerHTML = `
+                <div>選択されたスクロール: <strong>${selectedScrolls.length}個</strong>（合計 <strong>${totalButtons}個</strong> のボタン）</div>
+                <div style="font-size: 11px; color: #94a3b8; margin-top: 3px;">対象: ${scrollNames.map(n => `「${this.escapeHtml(n)}」`).join(' ＋ ')}</div>
+            `;
+        }
+
+        const nameInput = document.getElementById('merge-new-scroll-name');
+        if (nameInput) {
+            nameInput.value = `${scrollNames.slice(0, 2).join('・')} まとめ`;
+        }
+
+        document.getElementById('merge-confirm-modal-backdrop')?.classList.add('open');
+    }
+
+    closeMergeConfirmModal() {
+        document.getElementById('merge-confirm-modal-backdrop')?.classList.remove('open');
+    }
+
+    async executeMergeScrolls() {
+        const nameInput = document.getElementById('merge-new-scroll-name');
+        const newName = nameInput ? nameInput.value.trim() || 'まとめ作品' : 'まとめ作品';
+        const keepOriginal = document.getElementById('merge-keep-original-check')?.checked !== false;
+
+        const selectedScrolls = this.scrolls.filter(s => this.selectedScrollIdsForMerge.has(s.id));
+        if (selectedScrolls.length < 2) {
+            this.showToast('⚠️ まとめるスクロールが選択されていません');
+            return;
+        }
+
+        const newScrollId = 'scroll_' + Date.now();
+        const newScroll = {
+            id: newScrollId,
+            name: newName,
+            order: this.scrolls.length,
+            voiceEffectMode: 'inherit',
+            voiceParams: VoiceEngine.defaultVoiceParams(),
+            envParams: VoiceEngine.defaultEnvParams(),
+            playbackSpeed: 'inherit',
+            createdAt: Date.now()
+        };
+
+        // 選択されたスクロール内の全スロットを順番通りに収集・複製
+        let orderCounter = 1;
+        const newSlotsToAdd = [];
+
+        for (const scroll of selectedScrolls) {
+            const scrollSlots = this.slots
+                .filter(s => s.scrollId === scroll.id)
+                .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            for (const originalSlot of scrollSlots) {
+                const uniqueSlotId = `slot_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_${orderCounter}`;
+                const clonedSlot = {
+                    ...originalSlot,
+                    id: uniqueSlotId,
+                    scrollId: newScrollId,
+                    order: orderCounter++
+                };
+                newSlotsToAdd.push(clonedSlot);
+            }
+        }
+
+        // 元スクロールの削除（オプションがオフの場合）
+        if (!keepOriginal) {
+            for (const scroll of selectedScrolls) {
+                await this.storage.deleteScroll(scroll.id);
+                this.scrolls = this.scrolls.filter(s => s.id !== scroll.id);
+                // 元スロット削除
+                const slotsToDelete = this.slots.filter(s => s.scrollId === scroll.id);
+                for (const slot of slotsToDelete) {
+                    await this.storage.deleteSlot(slot.id);
+                }
+                this.slots = this.slots.filter(s => s.scrollId !== scroll.id);
+            }
+        }
+
+        // 新スクロールとスロットをIndexedDBに保存
+        await this.storage.saveScroll(newScroll);
+        this.scrolls.push(newScroll);
+
+        for (const slot of newSlotsToAdd) {
+            await this.storage.saveSlot(slot);
+            this.slots.push(slot);
+        }
+
+        this.currentScrollId = newScrollId;
+        await this.storage.saveSetting('currentScrollId', newScrollId);
+
+        this.closeMergeConfirmModal();
+        this.exitMergeMode();
+
+        this.renderScrollTabs();
+        this.renderSlots();
+
+        if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+        this.showToast(`🎉 「${newName}」に ${newSlotsToAdd.length} 個のボタンをまとめました！`);
     }
 
     attachScrollTabLockListeners(editIcon, scroll) {
@@ -1747,6 +1996,28 @@ class VoicePadApp {
                 this.currentPage++;
                 this.renderSlots();
             }
+        });
+
+        // 🗂️ まとめるボタンスイッチ
+        const headerMergeBtn = document.getElementById('header-merge-btn');
+        if (headerMergeBtn) {
+            this.attachMergeButtonListeners(headerMergeBtn);
+        }
+
+        // まとめモードバナー解除ボタン
+        document.getElementById('btn-cancel-merge-mode')?.addEventListener('click', () => {
+            this.exitMergeMode();
+        });
+
+        // まとめ確認モーダル関連
+        document.getElementById('close-merge-modal-btn')?.addEventListener('click', () => {
+            this.closeMergeConfirmModal();
+        });
+        document.getElementById('btn-cancel-merge-modal')?.addEventListener('click', () => {
+            this.closeMergeConfirmModal();
+        });
+        document.getElementById('btn-execute-merge')?.addEventListener('click', async () => {
+            await this.executeMergeScrolls();
         });
 
         this.initSwipeGesture();
@@ -3153,7 +3424,10 @@ class VoicePadApp {
         // 🤖 AI TTS設定の同期
         this.populateTtsVoices();
         const ttsInput = document.getElementById('tts-input-text');
-        if (ttsInput) ttsInput.value = slot.ttsText || '';
+        if (ttsInput) {
+            ttsInput.value = slot.ttsText || '';
+            setTimeout(() => this.adjustTtsTextarea(ttsInput), 10);
+        }
         const ttsVoiceSelect = document.getElementById('tts-voice-select');
         if (ttsVoiceSelect && slot.ttsVoice) ttsVoiceSelect.value = slot.ttsVoice;
         const currentRate = slot.ttsRate || 1.0;
@@ -4225,6 +4499,13 @@ class VoicePadApp {
             };
         }
 
+        const ttsInput = document.getElementById('tts-input-text');
+        if (ttsInput) {
+            ttsInput.addEventListener('input', () => {
+                this.adjustTtsTextarea(ttsInput);
+            });
+        }
+
         const rateSlider = document.getElementById('tts-rate-slider');
         if (rateSlider) {
             rateSlider.addEventListener('input', (e) => {
@@ -4257,31 +4538,39 @@ class VoicePadApp {
         document.querySelectorAll('.tts-pause-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const pauseType = btn.getAttribute('data-pause');
-                const ttsInput = document.getElementById('tts-input-text');
-                if (!ttsInput) return;
+                const ttsTextarea = document.getElementById('tts-input-text');
+                if (!ttsTextarea) return;
 
-                const start = ttsInput.selectionStart || ttsInput.value.length;
-                const end = ttsInput.selectionEnd || ttsInput.value.length;
-                let text = ttsInput.value;
+                const start = ttsTextarea.selectionStart || ttsTextarea.value.length;
+                const end = ttsTextarea.selectionEnd || ttsTextarea.value.length;
+                let text = ttsTextarea.value;
 
                 if (pauseType === 'comma') {
-                    ttsInput.value = text.slice(0, start) + '、' + text.slice(end);
-                    ttsInput.selectionStart = ttsInput.selectionEnd = start + 1;
+                    ttsTextarea.value = text.slice(0, start) + '、' + text.slice(end);
+                    ttsTextarea.selectionStart = ttsTextarea.selectionEnd = start + 1;
                 } else if (pauseType === 'space') {
-                    ttsInput.value = text.slice(0, start) + ' ' + text.slice(end);
-                    ttsInput.selectionStart = ttsInput.selectionEnd = start + 1;
+                    ttsTextarea.value = text.slice(0, start) + ' ' + text.slice(end);
+                    ttsTextarea.selectionStart = ttsTextarea.selectionEnd = start + 1;
                 } else if (pauseType === 'period') {
-                    ttsInput.value = text.slice(0, start) + '。' + text.slice(end);
-                    ttsInput.selectionStart = ttsInput.selectionEnd = start + 1;
+                    ttsTextarea.value = text.slice(0, start) + '。' + text.slice(end);
+                    ttsTextarea.selectionStart = ttsTextarea.selectionEnd = start + 1;
                 } else if (pauseType === 'clear') {
-                    ttsInput.value = text.replace(/[、。，． 　]/g, '');
+                    ttsTextarea.value = text.replace(/[、。，． 　]/g, '');
                 }
-                ttsInput.focus();
+                this.adjustTtsTextarea(ttsTextarea);
+                ttsTextarea.focus();
             });
         });
 
         document.getElementById('btn-tts-preview')?.addEventListener('click', () => this.previewTts());
         document.getElementById('btn-tts-apply')?.addEventListener('click', () => this.applyTtsToSlot());
+    }
+
+    adjustTtsTextarea(textarea) {
+        if (!textarea) return;
+        textarea.style.height = 'auto';
+        const newHeight = Math.max(64, Math.min(220, textarea.scrollHeight));
+        textarea.style.height = `${newHeight}px`;
     }
 
     clearTtsPresetActiveState() {

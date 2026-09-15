@@ -233,6 +233,99 @@ body, html {
     transform: scale(0.94);
 }
 
+.header-action-btn.merge-btn {
+    background: rgba(124, 58, 237, 0.15);
+    border-color: rgba(139, 92, 246, 0.4);
+    color: #ddd6fe;
+}
+
+.header-action-btn.merge-btn:hover {
+    background: rgba(124, 58, 237, 0.3);
+    border-color: rgba(139, 92, 246, 0.7);
+    color: #ffffff;
+}
+
+.header-action-btn.merge-btn.active-merge-mode {
+    background: linear-gradient(135deg, #7c3aed, #2563eb) !important;
+    border-color: rgba(255, 255, 255, 0.6) !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 16px rgba(124, 58, 237, 0.6);
+    animation: mergeBtnPulse 1.5s infinite alternate ease-in-out;
+}
+
+@keyframes mergeBtnPulse {
+    0% { transform: scale(1); box-shadow: 0 0 12px rgba(124, 58, 237, 0.5); }
+    100% { transform: scale(1.05); box-shadow: 0 0 22px rgba(59, 130, 246, 0.85); }
+}
+
+/* 🗂️ まとめモード案内バナー */
+.merge-mode-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(37, 99, 235, 0.9));
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 12px;
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    box-shadow: 0 4px 16px rgba(124, 58, 237, 0.35);
+    animation: bannerSlideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+@keyframes bannerSlideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.merge-banner-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.merge-banner-badge {
+    background: #ffffff;
+    color: #6d28d9;
+    font-size: 11px;
+    font-weight: 900;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.merge-banner-text {
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.merge-banner-cancel-btn {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+    font-size: 11.5px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+
+.merge-banner-cancel-btn:hover {
+    background: rgba(239, 68, 68, 0.4);
+    border-color: rgba(239, 68, 68, 0.6);
+}
+
 /* ==================== ２段目：スクロールタブバー（縦2倍拡大） ==================== */
 .scroll-tabs-bar {
     display: flex;
@@ -280,6 +373,29 @@ body, html {
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+}
+
+/* まとめモード時のスクロールタブスタイル */
+.scroll-tab-item.is-merge-mode {
+    border-color: rgba(139, 92, 246, 0.4);
+    padding-left: 10px;
+}
+
+.scroll-merge-checkbox {
+    width: 20px;
+    height: 20px;
+    accent-color: #8b5cf6;
+    cursor: pointer;
+    margin: 0;
+    pointer-events: auto;
+}
+
+.scroll-tab-item.is-merge-selected {
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.8), rgba(37, 99, 235, 0.8)) !important;
+    border-color: rgba(255, 255, 255, 0.7) !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 14px rgba(124, 58, 237, 0.6) !important;
+    transform: scale(1.03);
 }
 
 .scroll-tab-item:hover {
@@ -2415,17 +2531,75 @@ body.theme-mint {
     letter-spacing: 0.02em;
 }
 
-/* TTS ポーズ・イントネーション補助ツール */
-.tts-pause-tools {
+/* TTS 全幅・自動行拡張テキストエリア＆コントロールバー */
+.tts-textarea-wrapper {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.tts-textarea {
+    width: 100% !important;
+    min-height: 64px;
+    max-height: 180px;
+    line-height: 1.55;
+    font-size: 13.5px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    box-sizing: border-box;
+    resize: none;
+    overflow-y: auto;
+    word-break: break-word;
+    white-space: pre-wrap;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--border-color);
+    color: #ffffff;
+    transition: border-color 0.15s ease, height 0.1s ease;
+}
+
+.tts-textarea:focus {
+    border-color: var(--accent-blue);
+    background: rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.tts-control-bar {
     display: flex;
-    gap: 5px;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
     margin-top: 4px;
     margin-bottom: 6px;
     flex-wrap: wrap;
 }
 
+.tts-preview-btn-wide {
+    padding: 7px 14px;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #ffffff;
+    background: linear-gradient(135deg, #0284c7, #2563eb);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+    border-radius: 8px;
+    cursor: pointer;
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.tts-preview-btn-wide:hover {
+    background: linear-gradient(135deg, #0369a1, #1d4ed8);
+}
+
+/* TTS ポーズ・イントネーション補助ツール */
+.tts-pause-tools {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
 .tts-pause-btn {
-    padding: 3px 8px;
+    padding: 4px 8px;
     border-radius: 8px;
     background: rgba(59, 130, 246, 0.12);
     border: 1px solid rgba(59, 130, 246, 0.3);

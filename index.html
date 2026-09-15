@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260916_5">
+    <link rel="stylesheet" href="style.css?v=20260916_7">
 </head>
 <body>
     <div id="app-container">
@@ -41,6 +41,11 @@
 
             <!-- ヘッダー右側コントロール -->
             <div class="header-controls">
+                <!-- まとめるボタン（長押しでまとめモードへ） -->
+                <button id="header-merge-btn" class="header-action-btn merge-btn" title="長押しでまとめモード（複数スクロールを1つに統合）" aria-label="まとめる">
+                    🗂️ <span class="btn-text">まとめる</span>
+                </button>
+
                 <!-- アプリ内インポートボタン -->
                 <button id="header-import-btn" class="header-action-btn" title="ファイルからインポート (.vpad / 音声)" aria-label="インポート">
                     📥 <span class="btn-text">インポート</span>
@@ -52,6 +57,17 @@
                 </button>
             </div>
         </header>
+
+        <!-- 🗂️ まとめモード案内バナー（まとめモード中のみ表示） -->
+        <div id="merge-mode-banner" class="merge-mode-banner" style="display: none;">
+            <div class="merge-banner-info">
+                <span class="merge-banner-badge">🗂️ まとめモード中</span>
+                <span class="merge-banner-text">まとめたいスクロールにチェックを入れて【まとめる】を押してください</span>
+            </div>
+            <div class="merge-banner-actions">
+                <button id="btn-cancel-merge-mode" class="merge-banner-cancel-btn" title="まとめモードを終了">❌ 解除</button>
+            </div>
+        </div>
 
         <!-- ２段目：スクロールタブバー（横スクロール＆長押しドラッグ並び替え対応） -->
         <nav class="scroll-tabs-bar" aria-label="スクロールタブ">
@@ -275,18 +291,23 @@
                         <label class="form-label" style="margin-bottom:0;">🤖 AI音声合成（テキストから音声を自動作成）</label>
                         <span class="badge-tag">完全ローカルTTS</span>
                     </div>
-                    <div class="tts-input-row">
-                        <input type="text" id="tts-input-text" class="form-input" placeholder="例: おはようございます、お茶ください、ありがとう..." maxlength="100">
-                        <button type="button" id="btn-tts-preview" class="action-btn download-btn" style="margin:0; padding:8px 12px; font-size:12px;" title="試聴する">▶️ 試聴</button>
+                    <!-- 全幅・自動改行＆行数拡張テキストエリア -->
+                    <div class="tts-textarea-wrapper">
+                        <textarea id="tts-input-text" class="form-input tts-textarea" placeholder="読み上げる文章をここに入力してください（例: おはようございます、今日もよろしくお願いします）..." rows="2" maxlength="300"></textarea>
                     </div>
                     
-                    <!-- イントネーション・ポーズ補助ツール -->
-                    <div class="tts-pause-tools">
-                        <span style="font-size: 10.5px; color: var(--text-muted); align-self: center; font-weight:700;">ポーズ補助:</span>
-                        <button type="button" class="tts-pause-btn" data-pause="comma">➕「、」挿入</button>
-                        <button type="button" class="tts-pause-btn" data-pause="space">⏸️ スペース</button>
-                        <button type="button" class="tts-pause-btn" data-pause="period">➕「。」挿入</button>
-                        <button type="button" class="tts-pause-btn" data-pause="clear" style="color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);">🔄 記号クリア</button>
+                    <!-- イントネーション・ポーズ補助ツール ＆ 試聴ボタンバー -->
+                    <div class="tts-control-bar">
+                        <div class="tts-pause-tools" style="margin: 0;">
+                            <span style="font-size: 10.5px; color: var(--text-muted); align-self: center; font-weight:700;">ポーズ補助:</span>
+                            <button type="button" class="tts-pause-btn" data-pause="comma">➕「、」</button>
+                            <button type="button" class="tts-pause-btn" data-pause="space">⏸️ 空白</button>
+                            <button type="button" class="tts-pause-btn" data-pause="period">➕「。」</button>
+                            <button type="button" class="tts-pause-btn" data-pause="clear" style="color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);">🔄 記号消去</button>
+                        </div>
+                        <button type="button" id="btn-tts-preview" class="action-btn download-btn tts-preview-btn-wide" title="試聴する">
+                            ▶️ 音声を試聴
+                        </button>
                     </div>
 
                     <!-- 🎭 声のキャラクター・クイックプリセット（女の子・男の子・おとな女・おとな男） -->
@@ -1028,6 +1049,52 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
         </div>
     </div>
 
+    <!-- 🗂️ スクロールまとめ実行確認モーダル -->
+    <div id="merge-confirm-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3 class="modal-title">🗂️ スクロールの統合・まとめ</h3>
+                <button id="close-merge-modal-btn" class="close-modal-btn" title="閉じる" aria-label="閉じる">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="modal-body-scroll">
+                <div class="info-card" style="background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.35);">
+                    <div class="info-title">📦 まとめる対象のスクロール</div>
+                    <div id="merge-target-summary" class="info-desc" style="color: #e2e8f0; font-weight: 700;">
+                        選択されたスクロール: 2個（合計 16個のボタン）
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="merge-new-scroll-name">📝 新しいスクロールの名前</label>
+                    <input type="text" id="merge-new-scroll-name" class="form-input" placeholder="例: まとめ作品 1" maxlength="20">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="merge-keep-original-check" checked style="width: 18px; height: 18px; accent-color: var(--accent-blue); cursor: pointer;">
+                        <span>元のスクロールを残す（安全コピー推奨）</span>
+                    </label>
+                    <span style="font-size: 11px; color: var(--text-muted); margin-left: 26px;">チェックを外すと元のスクロールは統合後に削除されます</span>
+                </div>
+
+                <div class="modal-actions" style="margin-top: 8px;">
+                    <button id="btn-execute-merge" class="action-btn save-btn" style="background: linear-gradient(135deg, #2563eb, #7c3aed); font-size: 13.5px; padding: 11px;">
+                        🚀 選択したスクロールを1つにまとめる
+                    </button>
+                    <button id="btn-cancel-merge-modal" class="action-btn download-btn">
+                        キャンセル
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 📖 使い方ガイド・操作説明モーダル -->
     <div id="guide-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true">
         <div class="modal-content guide-modal-content">
@@ -1233,6 +1300,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260916_5"></script>
+    <script src="app.js?v=20260916_7"></script>
 </body>
 </html>
