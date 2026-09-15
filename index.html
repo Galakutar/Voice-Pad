@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260915_2">
+    <link rel="stylesheet" href="style.css?v=20260916_4">
 </head>
 <body>
     <div id="app-container">
@@ -289,18 +289,32 @@
                         <button type="button" class="tts-pause-btn" data-pause="clear" style="color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);">🔄 記号クリア</button>
                     </div>
 
+                    <!-- 🎭 声のキャラクター・クイックプリセット（赤ちゃん・男の子・女の子・おとな男・おとな女・おじいちゃん・おばあちゃん） -->
+                    <div class="tts-preset-container" style="margin-top: 4px; margin-bottom: 6px;">
+                        <span class="opt-label" style="display:block; margin-bottom: 4px; font-size: 11px; font-weight: 700; color: #93c5fd;">🎭 声のキャラクター（ワンタップ切り替え）:</span>
+                        <div class="fx-preset-chips" id="tts-preset-chips">
+                            <button type="button" class="fx-chip-btn" data-tts-preset="baby">👶 赤ちゃん</button>
+                            <button type="button" class="fx-chip-btn" data-tts-preset="boy">👦 男の子</button>
+                            <button type="button" class="fx-chip-btn" data-tts-preset="girl">👧 女の子</button>
+                            <button type="button" class="fx-chip-btn" data-tts-preset="man">👨 おとな男</button>
+                            <button type="button" class="fx-chip-btn active" data-tts-preset="woman">👩 おとな女</button>
+                            <button type="button" class="fx-chip-btn" data-tts-preset="old_man">👴 おじいちゃん</button>
+                            <button type="button" class="fx-chip-btn" data-tts-preset="old_woman">👵 おばあちゃん</button>
+                        </div>
+                    </div>
+
                     <div class="tts-options-grid">
                         <div class="tts-opt-item">
-                            <label class="opt-label">声の種類</label>
+                            <label class="opt-label" for="tts-voice-select">🎙️ ベース音声（日本語）</label>
                             <select id="tts-voice-select" class="form-input tts-select"></select>
                         </div>
                         <div class="tts-opt-item">
-                            <label class="opt-label">話速: <span id="tts-rate-val">1.0x</span></label>
-                            <input type="range" id="tts-rate-slider" min="0.5" max="1.8" step="0.1" value="1.0" class="adjust-slider">
+                            <label class="opt-label">話速: <span id="tts-rate-val">1.00x</span></label>
+                            <input type="range" id="tts-rate-slider" min="0.5" max="1.8" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
                         </div>
                         <div class="tts-opt-item">
-                            <label class="opt-label">音程: <span id="tts-pitch-val">1.0</span></label>
-                            <input type="range" id="tts-pitch-slider" min="0.5" max="1.8" step="0.1" value="1.0" class="adjust-slider">
+                            <label class="opt-label">音程: <span id="tts-pitch-val">1.00</span></label>
+                            <input type="range" id="tts-pitch-slider" min="0.4" max="1.8" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
                         </div>
                     </div>
                     <button type="button" id="btn-tts-apply" class="action-btn highlight-btn" style="margin-top: 6px; width: 100%;">
@@ -1222,6 +1236,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260915_2"></script>
+    <script src="app.js?v=20260916_4"></script>
 </body>
 </html>

@@ -775,55 +775,67 @@ body.mode-record .pad-card:not(.recording):hover {
     width: 100%;
     z-index: 3;
     pointer-events: none;
-    gap: 4px;
+    gap: 6px;
+    margin-bottom: 2px;
 }
 
 .slot-badge {
-    font-size: 10px;
-    font-weight: 800;
-    background: rgba(0, 0, 0, 0.65);
+    font-size: 13px;
+    font-weight: 900;
+    background: rgba(0, 0, 0, 0.75);
     color: var(--slot-color, #38bdf8);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    padding: 2px 5px;
-    border-radius: 5px;
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
+    padding: 3px 8px;
+    min-height: 28px;
+    min-width: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
     line-height: 1;
     flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
-/* スロットカード上のアクションボタングループ（設定/ロック・声質・環境） */
+/* スロットカード上のアクションボタングループ（設定/ロック・声質・環境） - 縦横2倍大型化 */
 .pad-actions-group {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: 5px;
     pointer-events: auto;
 }
 
 .pad-action-btn {
-    background: rgba(0, 0, 0, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    color: rgba(255, 255, 255, 0.88);
-    border-radius: 6px;
-    padding: 3px 5px;
-    font-size: 11px;
-    font-weight: 700;
+    background: rgba(0, 0, 0, 0.72);
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
+    color: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    padding: 4px 7px;
+    min-width: 32px;
+    min-height: 32px;
+    font-size: 17px;
+    font-weight: 800;
     font-family: inherit;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 3px;
     line-height: 1;
     transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
     -webkit-user-select: none;
     user-select: none;
     touch-action: manipulation;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    flex-shrink: 0;
 }
 
 .pad-action-btn:hover {
-    background: rgba(255, 255, 255, 0.22);
-    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.55);
     color: #ffffff;
-    transform: translateY(-1px);
+    transform: translateY(-1.5px) scale(1.06);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
 }
 
 .pad-action-btn:active {
@@ -832,22 +844,23 @@ body.mode-record .pad-card:not(.recording):hover {
 
 /* 長押し中アニメーション */
 .pad-action-btn.is-pressing {
-    background: rgba(245, 158, 11, 0.4) !important;
+    background: rgba(245, 158, 11, 0.5) !important;
     border-color: #f59e0b !important;
-    transform: scale(1.15) !important;
-    box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+    transform: scale(1.22) !important;
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.8) !important;
 }
 
 /* ロック中スタイル */
 .pad-action-btn.btn-lock.is-locked {
-    background: rgba(245, 158, 11, 0.25) !important;
-    border-color: rgba(245, 158, 11, 0.6) !important;
+    background: rgba(245, 158, 11, 0.35) !important;
+    border-color: rgba(245, 158, 11, 0.85) !important;
     color: #fbbf24 !important;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.4) !important;
 }
 
 .pad-action-btn.has-custom {
-    border-color: rgba(56, 189, 248, 0.6);
-    background: rgba(56, 189, 248, 0.18);
+    border-color: rgba(56, 189, 248, 0.7);
+    background: rgba(56, 189, 248, 0.25);
     color: #38bdf8;
 }
 
@@ -861,17 +874,21 @@ body.mode-record .pad-card:not(.recording):hover {
 }
 
 .pad-settings-btn {
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.85);
-    border-radius: 4px;
-    padding: 2px 4px;
+    background: rgba(0, 0, 0, 0.72);
+    border: 1.5px solid rgba(255, 255, 255, 0.28);
+    color: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
+    padding: 4px 7px;
+    min-width: 32px;
+    min-height: 32px;
+    font-size: 17px;
     cursor: pointer;
     pointer-events: auto;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     transition: all 0.15s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .pad-settings-btn:hover {

@@ -2332,17 +2332,28 @@ class VoicePadApp {
         const allVoices = window.speechSynthesis.getVoices();
         if (allVoices.length > 0) this.ttsVoices = allVoices;
 
+        const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf]/.test(slot.ttsText);
+
         let selectedVoice = null;
         if (slot.ttsVoice) {
             selectedVoice = this.ttsVoices.find(v => v.name === slot.ttsVoice || v.voiceURI === slot.ttsVoice);
         }
+
+        // 日本語テキストなのに非日本語音声が選ばれている場合は、音が出ないエラーを防ぐため安全な日本語音声に自動フォールバック
+        if (hasJapanese && selectedVoice && !selectedVoice.lang.startsWith('ja')) {
+            const jaVoice = this.ttsVoices.find(v => v.lang.startsWith('ja'));
+            if (jaVoice) {
+                selectedVoice = jaVoice;
+            }
+        }
+
         if (!selectedVoice) {
             selectedVoice = this.ttsVoices.find(v => v.lang.startsWith('ja')) || this.ttsVoices[0];
         }
 
         if (selectedVoice) {
             utter.voice = selectedVoice;
-            utter.lang = selectedVoice.lang || 'ja-JP';
+            utter.lang = (hasJapanese && !selectedVoice.lang.startsWith('ja')) ? 'ja-JP' : (selectedVoice.lang || 'ja-JP');
         } else {
             utter.lang = 'ja-JP';
         }
@@ -3145,17 +3156,37 @@ class VoicePadApp {
         if (ttsInput) ttsInput.value = slot.ttsText || '';
         const ttsVoiceSelect = document.getElementById('tts-voice-select');
         if (ttsVoiceSelect && slot.ttsVoice) ttsVoiceSelect.value = slot.ttsVoice;
+        const currentRate = slot.ttsRate || 1.0;
+        const currentPitch = slot.ttsPitch || 1.0;
         const ttsRateSlider = document.getElementById('tts-rate-slider');
         if (ttsRateSlider) {
-            ttsRateSlider.value = slot.ttsRate || 1.0;
+            ttsRateSlider.value = currentRate;
             const rateVal = document.getElementById('tts-rate-val');
-            if (rateVal) rateVal.innerText = `${ttsRateSlider.value}x`;
+            if (rateVal) rateVal.innerText = `${parseFloat(currentRate).toFixed(2)}x`;
         }
         const ttsPitchSlider = document.getElementById('tts-pitch-slider');
         if (ttsPitchSlider) {
-            ttsPitchSlider.value = slot.ttsPitch || 1.0;
+            ttsPitchSlider.value = currentPitch;
             const pitchVal = document.getElementById('tts-pitch-val');
-            if (pitchVal) pitchVal.innerText = `${ttsPitchSlider.value}`;
+            if (pitchVal) pitchVal.innerText = `${parseFloat(currentPitch).toFixed(2)}`;
+        }
+
+        // プリセットチップのアクティブ状態判定
+        this.clearTtsPresetActiveState();
+        if (Math.abs(currentPitch - 1.60) < 0.08) {
+            document.querySelector('#tts-preset-chips button[data-tts-preset="baby"]')?.classList.add('active');
+        } else if (Math.abs(currentPitch - 1.40) < 0.08) {
+            document.querySelector('#tts-preset-chips button[data-tts-preset="girl"]')?.classList.add('active');
+        } else if (Math.abs(currentPitch - 1.25) < 0.08) {
+            document.querySelector('#tts-preset-chips button[data-tts-preset="boy"]')?.classList.add('active');
+        } else if (Math.abs(currentPitch - 0.65) < 0.08) {
+            document.querySelector('#tts-preset-chips button[data-tts-preset="man"]')?.classList.add('active');
+        } else if (Math.abs(currentPitch - 0.55) < 0.08) {
+            document.querySelector('#tts-preset-chips button[data-tts-preset="old_man"]')?.classList.add('active');
+        } else if (Math.abs(currentPitch - 0.85) < 0.08 && Math.abs(currentRate - 0.80) < 0.08) {
+            document.querySelector('#tts-preset-chips button[data-tts-preset="old_woman"]')?.classList.add('active');
+        } else if (Math.abs(currentPitch - 1.0) < 0.08 && Math.abs(currentRate - 1.0) < 0.08) {
+            document.querySelector('#tts-preset-chips button[data-tts-preset="woman"]')?.classList.add('active');
         }
 
         // ✂️ 波形エディターの同期＆描画（録音データがある時のみ）
@@ -4204,7 +4235,8 @@ class VoicePadApp {
         if (rateSlider) {
             rateSlider.addEventListener('input', (e) => {
                 const valEl = document.getElementById('tts-rate-val');
-                if (valEl) valEl.innerText = `${parseFloat(e.target.value).toFixed(1)}x`;
+                if (valEl) valEl.innerText = `${parseFloat(e.target.value).toFixed(2)}x`;
+                this.clearTtsPresetActiveState();
             });
         }
 
@@ -4212,9 +4244,20 @@ class VoicePadApp {
         if (pitchSlider) {
             pitchSlider.addEventListener('input', (e) => {
                 const valEl = document.getElementById('tts-pitch-val');
-                if (valEl) valEl.innerText = `${parseFloat(e.target.value).toFixed(1)}`;
+                if (valEl) valEl.innerText = `${parseFloat(e.target.value).toFixed(2)}`;
+                this.clearTtsPresetActiveState();
             });
         }
+
+        // 🎭 声のキャラクター・クイックプリセットボタン
+        document.querySelectorAll('#tts-preset-chips .fx-chip-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const presetKey = btn.getAttribute('data-tts-preset');
+                if (presetKey) {
+                    this.applyTtsPreset(presetKey);
+                }
+            });
+        });
 
         // イントネーション・ポーズ補助ツール
         document.querySelectorAll('.tts-pause-btn').forEach(btn => {
@@ -4247,42 +4290,155 @@ class VoicePadApp {
         document.getElementById('btn-tts-apply')?.addEventListener('click', () => this.applyTtsToSlot());
     }
 
+    clearTtsPresetActiveState() {
+        document.querySelectorAll('#tts-preset-chips .fx-chip-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+    }
+
+    applyTtsPreset(presetKey) {
+        const presets = {
+            baby: { label: '👶 赤ちゃん', rate: 0.90, pitch: 1.60, formant: 1.45, roughness: 0, gender: 'child', semitones: 4 },
+            boy: { label: '👦 男の子', rate: 1.05, pitch: 1.25, formant: 1.15, roughness: 0, gender: 'child', semitones: 2 },
+            girl: { label: '👧 女の子', rate: 1.05, pitch: 1.40, formant: 1.25, roughness: 0, gender: 'female', semitones: 3 },
+            man: { label: '👨 おとな男', rate: 0.95, pitch: 0.65, formant: 0.85, roughness: 10, gender: 'male', semitones: -2 },
+            woman: { label: '👩 おとな女', rate: 1.00, pitch: 1.00, formant: 1.00, roughness: 0, gender: 'female', semitones: 0 },
+            old_man: { label: '👴 おじいちゃん', rate: 0.80, pitch: 0.55, formant: 0.75, roughness: 25, gender: 'male', semitones: -4 },
+            old_woman: { label: '👵 おばあちゃん', rate: 0.80, pitch: 0.85, formant: 0.90, roughness: 15, gender: 'female', semitones: -1 }
+        };
+
+        const config = presets[presetKey];
+        if (!config) return;
+
+        // アクティブ表示の切り替え
+        document.querySelectorAll('#tts-preset-chips .fx-chip-btn').forEach(btn => {
+            if (btn.getAttribute('data-tts-preset') === presetKey) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+
+        // 話速・音程スライダーへの反映
+        const rateSlider = document.getElementById('tts-rate-slider');
+        const rateVal = document.getElementById('tts-rate-val');
+        if (rateSlider) {
+            rateSlider.value = config.rate;
+            if (rateVal) rateVal.innerText = `${config.rate.toFixed(2)}x`;
+        }
+
+        const pitchSlider = document.getElementById('tts-pitch-slider');
+        const pitchVal = document.getElementById('tts-pitch-val');
+        if (pitchSlider) {
+            pitchSlider.value = config.pitch;
+            if (pitchVal) pitchVal.innerText = `${config.pitch.toFixed(2)}`;
+        }
+
+        // システム音声（OS音声）の自動セレクション（該当する性別の音声があれば切り替え）
+        const select = document.getElementById('tts-voice-select');
+        if (select && this.ttsVoices && this.ttsVoices.length > 0) {
+            const jaVoices = this.ttsVoices.filter(v => v.lang.startsWith('ja'));
+            if (jaVoices.length > 0) {
+                let matchedVoice = null;
+                if (config.gender === 'male') {
+                    matchedVoice = jaVoices.find(v => /otoya|ichiro|keita|takumi|kenji|daichi|male/i.test(v.name));
+                } else if (config.gender === 'female') {
+                    matchedVoice = jaVoices.find(v => /kyoko|ayumi|nanami|haruka|sayaka|mizuki|female/i.test(v.name));
+                }
+                if (matchedVoice) {
+                    select.value = matchedVoice.name;
+                } else {
+                    // 男声指定で男性専用音声が無い場合でも、標準日本語音声（Kyoko等）を選択（ピッチ0.65で男声化）
+                    const defaultJa = jaVoices[0];
+                    if (defaultJa) select.value = defaultJa.name;
+                }
+            }
+        }
+
+        // スロットモーダルの声質・環境スライダーも連動更新（より自然で迫力ある声質へ）
+        const formantSlider = document.getElementById('slot-formant-slider');
+        const formantVal = document.getElementById('slot-formant-val');
+        if (formantSlider) {
+            formantSlider.value = config.formant;
+            if (formantVal) formantVal.innerText = `${config.formant.toFixed(2)}x`;
+        }
+
+        const pitchSemiSlider = document.getElementById('slot-pitch-slider');
+        const pitchSemiVal = document.getElementById('slot-pitch-val');
+        if (pitchSemiSlider) {
+            pitchSemiSlider.value = config.semitones || 0;
+            if (pitchSemiVal) pitchSemiVal.innerText = `${config.semitones > 0 ? '+' : ''}${config.semitones}半音`;
+        }
+
+        const modSlider = document.getElementById('slot-mod-slider');
+        const modVal = document.getElementById('slot-mod-val');
+        if (modSlider) {
+            const modValNum = config.mod || 0;
+            modSlider.value = modValNum;
+            if (modVal) modVal.innerText = `${modValNum}%`;
+        }
+
+        this.showToast(`🎭 声質を「${config.label}」に設定しました`);
+    }
+
     populateTtsVoices() {
         if (!('speechSynthesis' in window)) return;
         const select = document.getElementById('tts-voice-select');
         if (!select) return;
 
         this.ttsVoices = window.speechSynthesis.getVoices();
+        const currentVal = select.value;
         select.innerHTML = '';
 
         if (this.ttsVoices.length === 0) {
             const opt = document.createElement('option');
             opt.value = '';
-            opt.innerText = '標準の日本語音声 (デフォルト)';
+            opt.innerText = '標準の日本語音声 (Kyoko / システムデフォルト)';
             select.appendChild(opt);
             return;
         }
 
         const jaVoices = this.ttsVoices.filter(v => v.lang.startsWith('ja'));
-        const enVoices = this.ttsVoices.filter(v => v.lang.startsWith('en'));
-        const otherVoices = this.ttsVoices.filter(v => !v.lang.startsWith('ja') && !v.lang.startsWith('en'));
 
-        const addGroup = (label, voices) => {
-            if (voices.length === 0) return;
-            const group = document.createElement('optgroup');
-            group.label = label;
-            voices.forEach(v => {
-                const opt = document.createElement('option');
-                opt.value = v.name;
-                opt.innerText = `${v.name} (${v.lang})`;
-                group.appendChild(opt);
-            });
-            select.appendChild(group);
+        const formatVoiceLabel = (v) => {
+            const name = v.name;
+            let icon = '🎙️';
+            let label = name;
+
+            if (/kyoko|nanami|ayumi|haruka|sayaka|mizuki|female/i.test(name)) {
+                icon = '👩';
+                label = `${icon} ${name} (女性 / 日本語)`;
+            } else if (/otoya|ichiro|keita|takumi|kenji|daichi|male/i.test(name)) {
+                icon = '👨';
+                label = `${icon} ${name} (男性 / 日本語)`;
+            } else if (v.lang.startsWith('ja')) {
+                icon = '🇯🇵';
+                label = `${icon} ${name} (日本語)`;
+            }
+            return label;
         };
 
-        addGroup('🇯🇵 日本語音声', jaVoices);
-        addGroup('🇺🇸 英語音声', enVoices);
-        addGroup('🌐 その他の言語音声', otherVoices.slice(0, 15));
+        if (jaVoices.length > 0) {
+            jaVoices.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.name;
+                opt.innerText = formatVoiceLabel(v);
+                select.appendChild(opt);
+            });
+        } else {
+            // 日本語音声が明示的に見つからない場合のフォールバック（第1音声）
+            const opt = document.createElement('option');
+            opt.value = this.ttsVoices[0].name;
+            opt.innerText = `🇯🇵 ${this.ttsVoices[0].name} (デフォルト日本語)`;
+            select.appendChild(opt);
+        }
+
+        // 以前の選択値があれば復元、無ければ日本語音声を最優先
+        if (currentVal && jaVoices.some(v => v.name === currentVal)) {
+            select.value = currentVal;
+        } else if (jaVoices.length > 0) {
+            select.value = jaVoices[0].name;
+        }
     }
 
     previewTts() {
@@ -4304,18 +4460,28 @@ class VoicePadApp {
         const allVoices = window.speechSynthesis.getVoices();
         if (allVoices.length > 0) this.ttsVoices = allVoices;
 
+        const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf]/.test(text);
         const voiceName = document.getElementById('tts-voice-select')?.value;
         let selectedVoice = null;
         if (voiceName) {
             selectedVoice = this.ttsVoices.find(v => v.name === voiceName || v.voiceURI === voiceName);
         }
+
+        // 日本語テキストなのに非日本語音声が選ばれている場合は、安全な日本語音声にフォールバック（音が出ないエラー防止）
+        if (hasJapanese && selectedVoice && !selectedVoice.lang.startsWith('ja')) {
+            const jaVoice = this.ttsVoices.find(v => v.lang.startsWith('ja'));
+            if (jaVoice) {
+                selectedVoice = jaVoice;
+            }
+        }
+
         if (!selectedVoice) {
             selectedVoice = this.ttsVoices.find(v => v.lang.startsWith('ja')) || this.ttsVoices[0];
         }
 
         if (selectedVoice) {
             utter.voice = selectedVoice;
-            utter.lang = selectedVoice.lang || 'ja-JP';
+            utter.lang = (hasJapanese && !selectedVoice.lang.startsWith('ja')) ? 'ja-JP' : (selectedVoice.lang || 'ja-JP');
         } else {
             utter.lang = 'ja-JP';
         }
