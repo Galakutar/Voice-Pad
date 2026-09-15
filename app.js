@@ -3133,11 +3133,11 @@ class VoicePadApp {
                 this.renderScrollTabs();
                 this.showToast(`✨ 写真・声質設定付きスイッチ「${newSlot.label}」をインポートしました！`);
             } else {
-                alert('対応していないファイル形式です。(.vpad / .json / 音声ファイル)');
+                alert('対応していないファイル形式です。共有されたスクロールまたはボタンのファイル（.json）を選択してください。');
             }
         } catch (err) {
             console.error('Import error:', err);
-            alert('ファイルの読み込みに失敗しました。正しいVoice Padバックアップファイルを選択してください。');
+            alert('ファイルの読み込みに失敗しました。正しいVoice Pad共有ファイル（.json）を選択してください。');
         }
     }
 

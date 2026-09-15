@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260916_7">
+    <link rel="stylesheet" href="style.css?v=20260916_9">
 </head>
 <body>
     <div id="app-container">
@@ -46,8 +46,8 @@
                     🗂️ <span class="btn-text">まとめる</span>
                 </button>
 
-                <!-- アプリ内インポートボタン -->
-                <button id="header-import-btn" class="header-action-btn" title="ファイルからインポート (.vpad / 音声)" aria-label="インポート">
+                <!-- 共有データ（スクロール・ボタン）インポートボタン -->
+                <button id="header-import-btn" class="header-action-btn" title="共有されたスクロールやボタンを読み込む (.json)" aria-label="インポート">
                     📥 <span class="btn-text">インポート</span>
                 </button>
 
@@ -75,7 +75,7 @@
                 <!-- JavaScript で動的にスクロールタブを生成 -->
             </div>
             <button id="add-scroll-btn" class="add-scroll-btn" title="新しいスクロールを追加" aria-label="スクロールを追加">
-                <span class="plus-icon">＋</span> 新規スクロール
+                <span class="plus-icon">＋</span>
             </button>
         </nav>
 
@@ -1287,12 +1287,12 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
         <div class="dropzone-content">
             <div class="dropzone-icon">📥</div>
             <div class="dropzone-title">ここにファイルをドロップ</div>
-            <div class="dropzone-desc">.vpad-button / .vpad-page / .vpad / 音声ファイルをインポート</div>
+            <div class="dropzone-desc">共有されたスクロール・ボタンファイル (.json) をインポート</div>
         </div>
     </div>
 
     <!-- 隠しファイルインプット -->
-    <input type="file" id="global-import-input" accept=".vpad,.vpad-button,.vpad-page,.vpadbtn,.vpadpage,.json,audio/*" style="display: none;">
+    <input type="file" id="global-import-input" accept=".json,.vpad,.vpad-button,.vpad-page,.vpadbtn,.vpadpage,application/json" style="display: none;">
     <input type="file" id="slot-audio-input" accept="audio/*" style="display: none;">
     <input type="file" id="photo-file-input" accept="image/*" style="display: none;">
 
@@ -1300,6 +1300,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260916_7"></script>
+    <script src="app.js?v=20260916_10"></script>
 </body>
 </html>
