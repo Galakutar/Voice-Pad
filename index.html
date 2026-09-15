@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260916_4">
+    <link rel="stylesheet" href="style.css?v=20260916_5">
 </head>
 <body>
     <div id="app-container">
@@ -289,17 +289,14 @@
                         <button type="button" class="tts-pause-btn" data-pause="clear" style="color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);">🔄 記号クリア</button>
                     </div>
 
-                    <!-- 🎭 声のキャラクター・クイックプリセット（赤ちゃん・男の子・女の子・おとな男・おとな女・おじいちゃん・おばあちゃん） -->
+                    <!-- 🎭 声のキャラクター・クイックプリセット（女の子・男の子・おとな女・おとな男） -->
                     <div class="tts-preset-container" style="margin-top: 4px; margin-bottom: 6px;">
                         <span class="opt-label" style="display:block; margin-bottom: 4px; font-size: 11px; font-weight: 700; color: #93c5fd;">🎭 声のキャラクター（ワンタップ切り替え）:</span>
-                        <div class="fx-preset-chips" id="tts-preset-chips">
-                            <button type="button" class="fx-chip-btn" data-tts-preset="baby">👶 赤ちゃん</button>
-                            <button type="button" class="fx-chip-btn" data-tts-preset="boy">👦 男の子</button>
-                            <button type="button" class="fx-chip-btn" data-tts-preset="girl">👧 女の子</button>
-                            <button type="button" class="fx-chip-btn" data-tts-preset="man">👨 おとな男</button>
-                            <button type="button" class="fx-chip-btn active" data-tts-preset="woman">👩 おとな女</button>
-                            <button type="button" class="fx-chip-btn" data-tts-preset="old_man">👴 おじいちゃん</button>
-                            <button type="button" class="fx-chip-btn" data-tts-preset="old_woman">👵 おばあちゃん</button>
+                        <div class="fx-preset-chips" id="tts-preset-chips" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+                            <button type="button" class="fx-chip-btn" data-tts-preset="girl" style="justify-content: center; padding: 7px 4px;">👧 女の子</button>
+                            <button type="button" class="fx-chip-btn" data-tts-preset="boy" style="justify-content: center; padding: 7px 4px;">👦 男の子</button>
+                            <button type="button" class="fx-chip-btn active" data-tts-preset="woman" style="justify-content: center; padding: 7px 4px;">👩 おとな女</button>
+                            <button type="button" class="fx-chip-btn" data-tts-preset="man" style="justify-content: center; padding: 7px 4px;">👨 おとな男</button>
                         </div>
                     </div>
 
@@ -1236,6 +1233,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260916_4"></script>
+    <script src="app.js?v=20260916_5"></script>
 </body>
 </html>

@@ -3173,18 +3173,12 @@ class VoicePadApp {
 
         // プリセットチップのアクティブ状態判定
         this.clearTtsPresetActiveState();
-        if (Math.abs(currentPitch - 1.60) < 0.08) {
-            document.querySelector('#tts-preset-chips button[data-tts-preset="baby"]')?.classList.add('active');
-        } else if (Math.abs(currentPitch - 1.40) < 0.08) {
+        if (Math.abs(currentPitch - 1.40) < 0.08) {
             document.querySelector('#tts-preset-chips button[data-tts-preset="girl"]')?.classList.add('active');
         } else if (Math.abs(currentPitch - 1.25) < 0.08) {
             document.querySelector('#tts-preset-chips button[data-tts-preset="boy"]')?.classList.add('active');
         } else if (Math.abs(currentPitch - 0.65) < 0.08) {
             document.querySelector('#tts-preset-chips button[data-tts-preset="man"]')?.classList.add('active');
-        } else if (Math.abs(currentPitch - 0.55) < 0.08) {
-            document.querySelector('#tts-preset-chips button[data-tts-preset="old_man"]')?.classList.add('active');
-        } else if (Math.abs(currentPitch - 0.85) < 0.08 && Math.abs(currentRate - 0.80) < 0.08) {
-            document.querySelector('#tts-preset-chips button[data-tts-preset="old_woman"]')?.classList.add('active');
         } else if (Math.abs(currentPitch - 1.0) < 0.08 && Math.abs(currentRate - 1.0) < 0.08) {
             document.querySelector('#tts-preset-chips button[data-tts-preset="woman"]')?.classList.add('active');
         }
@@ -4298,13 +4292,10 @@ class VoicePadApp {
 
     applyTtsPreset(presetKey) {
         const presets = {
-            baby: { label: '👶 赤ちゃん', rate: 0.90, pitch: 1.60, formant: 1.45, roughness: 0, gender: 'child', semitones: 4 },
-            boy: { label: '👦 男の子', rate: 1.05, pitch: 1.25, formant: 1.15, roughness: 0, gender: 'child', semitones: 2 },
             girl: { label: '👧 女の子', rate: 1.05, pitch: 1.40, formant: 1.25, roughness: 0, gender: 'female', semitones: 3 },
-            man: { label: '👨 おとな男', rate: 0.95, pitch: 0.65, formant: 0.85, roughness: 10, gender: 'male', semitones: -2 },
+            boy: { label: '👦 男の子', rate: 1.05, pitch: 1.25, formant: 1.15, roughness: 0, gender: 'child', semitones: 2 },
             woman: { label: '👩 おとな女', rate: 1.00, pitch: 1.00, formant: 1.00, roughness: 0, gender: 'female', semitones: 0 },
-            old_man: { label: '👴 おじいちゃん', rate: 0.80, pitch: 0.55, formant: 0.75, roughness: 25, gender: 'male', semitones: -4 },
-            old_woman: { label: '👵 おばあちゃん', rate: 0.80, pitch: 0.85, formant: 0.90, roughness: 15, gender: 'female', semitones: -1 }
+            man: { label: '👨 おとな男', rate: 0.95, pitch: 0.65, formant: 0.85, roughness: 10, gender: 'male', semitones: -2 }
         };
 
         const config = presets[presetKey];
