@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260917_6">
+    <link rel="stylesheet" href="style.css?v=20260917_7">
 </head>
 <body>
     <div id="app-container">
@@ -300,6 +300,55 @@
                             </div>
                         </div>
 
+                        <!-- ステージ4: 特殊エフェクト (コーラス / 無線ノイズ / 音割れ) -->
+                        <div class="special-stage-card">
+                            <div class="fx-stage-header">
+                                <span class="fx-stage-title" style="color: #34d399;">✨ ステージ4: 特殊エフェクト (Special FX)</span>
+                                <span class="fx-stage-badge" style="background: rgba(16, 185, 129, 0.4); border-color: #34d399;">Special FX</span>
+                            </div>
+
+                            <div class="fx-slider-list">
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">👥 コーラス・分身（多重クローンボイス）</span>
+                                        <span id="slot-special-chorus-val" class="fx-slider-val">0% (オフ)</span>
+                                    </div>
+                                    <input type="range" id="slot-special-chorus-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                                    <div class="fx-slider-hints">
+                                        <span>0% (単体)</span>
+                                        <span>50% (合唱)</span>
+                                        <span>100% (大合唱/クローン)</span>
+                                    </div>
+                                </div>
+
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">📻 無線ノイズ（トランシーバー・スケルチ）</span>
+                                        <span id="slot-special-radio-val" class="fx-slider-val">0% (オフ)</span>
+                                    </div>
+                                    <input type="range" id="slot-special-radio-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                                    <div class="fx-slider-hints">
+                                        <span>0% (クリア)</span>
+                                        <span>50% (通信音)</span>
+                                        <span>100% (ミリタリー交信)</span>
+                                    </div>
+                                </div>
+
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">🗑️ 音割れドライブ（ネットミーム・過大入力）</span>
+                                        <span id="slot-special-trash-val" class="fx-slider-val">0% (オフ)</span>
+                                    </div>
+                                    <input type="range" id="slot-special-trash-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                                    <div class="fx-slider-hints">
+                                        <span>0% (オフ)</span>
+                                        <span>50% (サチュレーション)</span>
+                                        <span>100% (爆音ミーム)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- 試聴ボタン -->
                         <button type="button" id="btn-slot-fx-preview" class="action-btn share-btn" style="padding: 9px 12px; font-size: 12.5px; background: linear-gradient(135deg, #06b6d4, #3b82f6);">
                             ▶️ このエフェクト設定で試聴する
@@ -541,84 +590,164 @@
                     </select>
                 </div>
 
-                <div id="slot-quick-voice-panel" class="fx-stage-card stage-voice" style="margin-top: 6px;">
-                    <div class="fx-stage-header">
-                        <span class="fx-stage-title">🗣️ 人の声質パラメータ（中身）</span>
-                        <span class="fx-stage-badge">Voice Character</span>
+                <div id="slot-quick-voice-panel" style="margin-top: 6px;">
+                    <!-- 🎛️ Voicemod スタイル 統合ボイスセレクター -->
+                    <div class="voicemod-section" style="margin-bottom: 10px;">
+                        <div class="voicemod-header">
+                            <span class="voicemod-title">🎛️ Voicemod プリセットカード</span>
+                            <span class="voicemod-badge">VOICEMOD FX</span>
+                        </div>
+                        <div class="voicemod-category-tabs" id="quick-voice-voicemod-tabs">
+                            <button type="button" class="vm-tab-btn active" data-category="all">すべて</button>
+                            <button type="button" class="vm-tab-btn" data-category="device">🎙️ 通信・機材</button>
+                            <button type="button" class="vm-tab-btn" data-category="character">🎭 キャラクター</button>
+                            <button type="button" class="vm-tab-btn" data-category="horror">👻 ホラー・SF</button>
+                            <button type="button" class="vm-tab-btn" data-category="music">👥 空間・音楽</button>
+                        </div>
+                        <div class="voicemod-grid" id="quick-voice-voicemod-grid"></div>
                     </div>
 
-                    <div class="fx-slider-list">
-                        <!-- ① ピッチシフト -->
-                        <div class="fx-slider-item">
-                            <div class="fx-slider-top">
-                                <span class="fx-slider-label">🎵 ピッチシフト（声の高さ）</span>
-                                <span id="quick-voice-pitch-val" class="fx-slider-val">±0 半音</span>
+                    <div class="fx-stage-card stage-voice">
+                        <div class="fx-stage-header">
+                            <span class="fx-stage-title">🗣️ 人の声質パラメータ（中身）</span>
+                            <span class="fx-stage-badge">Voice Character</span>
+                        </div>
+
+                        <div class="fx-slider-list">
+                            <!-- ① ピッチシフト -->
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">🎵 ピッチシフト（声の高さ）</span>
+                                    <span id="quick-voice-pitch-val" class="fx-slider-val">±0 半音</span>
+                                </div>
+                                <input type="range" id="quick-voice-pitch-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
+                                <div class="fx-slider-hints">
+                                    <span>-12 (1オクターブ低)</span>
+                                    <span>±0 (標準)</span>
+                                    <span>+12 (1オクターブ高)</span>
+                                </div>
                             </div>
-                            <input type="range" id="quick-voice-pitch-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
-                            <div class="fx-slider-hints">
-                                <span>-12 (1オクターブ低)</span>
-                                <span>±0 (標準)</span>
-                                <span>+12 (1オクターブ高)</span>
+
+                            <!-- ② フォルマントシフト -->
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">🗣️ フォルマント（喉・身体のサイズ感・太さ）</span>
+                                    <span id="quick-voice-formant-val" class="fx-slider-val">1.00x (標準)</span>
+                                </div>
+                                <input type="range" id="quick-voice-formant-slider" min="0.35" max="2.0" step="0.01" value="1.0" class="adjust-slider fx-slider-track">
+                                <div class="fx-slider-hints">
+                                    <span>0.35x (極太/モンスター)</span>
+                                    <span>1.0x (原音)</span>
+                                    <span>2.0x (妖精/子ども)</span>
+                                </div>
+                            </div>
+
+                            <!-- ③ 質感・ざらつき -->
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">🌾 質感・ざらつき（息成分・倍音歪み）</span>
+                                    <span id="quick-voice-rough-val" class="fx-slider-val">0% (クリア)</span>
+                                </div>
+                                <input type="range" id="quick-voice-rough-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                                <div class="fx-slider-hints">
+                                    <span>0% (クリア)</span>
+                                    <span>50% (ハスキー)</span>
+                                    <span>100% (歪み/かすれ)</span>
+                                </div>
+                            </div>
+
+                            <!-- ④ 再生スピード -->
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">⚡ 再生スピード（速度・テンポ）</span>
+                                    <span id="quick-voice-speed-val" class="fx-slider-val">1.00x (等倍)</span>
+                                </div>
+                                <input type="range" id="quick-voice-speed-slider" min="0.5" max="2.0" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
+                                <div class="fx-slider-hints">
+                                    <span>0.5x (ゆっくり)</span>
+                                    <span>1.0x (等倍)</span>
+                                    <span>2.0x (倍速)</span>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- ② フォルマントシフト -->
-                        <div class="fx-slider-item">
-                            <div class="fx-slider-top">
-                                <span class="fx-slider-label">🗣️ フォルマント（喉・身体のサイズ感・太さ）</span>
-                                <span id="quick-voice-formant-val" class="fx-slider-val">1.00x (標準)</span>
-                            </div>
-                            <input type="range" id="quick-voice-formant-slider" min="0.35" max="2.0" step="0.01" value="1.0" class="adjust-slider fx-slider-track">
-                            <div class="fx-slider-hints">
-                                <span>0.35x (極太/モンスター)</span>
-                                <span>1.0x (原音)</span>
-                                <span>2.0x (妖精/子ども)</span>
-                            </div>
-                        </div>
-
-                        <!-- ③ 質感・ざらつき -->
-                        <div class="fx-slider-item">
-                            <div class="fx-slider-top">
-                                <span class="fx-slider-label">🌾 質感・ざらつき（息成分・倍音歪み）</span>
-                                <span id="quick-voice-rough-val" class="fx-slider-val">0% (クリア)</span>
-                            </div>
-                            <input type="range" id="quick-voice-rough-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                            <div class="fx-slider-hints">
-                                <span>0% (クリア)</span>
-                                <span>50% (ハスキー)</span>
-                                <span>100% (歪み/かすれ)</span>
-                            </div>
-                        </div>
-
-                        <!-- ④ 再生スピード -->
-                        <div class="fx-slider-item">
-                            <div class="fx-slider-top">
-                                <span class="fx-slider-label">⚡ 再生スピード（速度・テンポ）</span>
-                                <span id="quick-voice-speed-val" class="fx-slider-val">1.00x (等倍)</span>
-                            </div>
-                            <input type="range" id="quick-voice-speed-slider" min="0.5" max="2.0" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
-                            <div class="fx-slider-hints">
-                                <span>0.5x (ゆっくり)</span>
-                                <span>1.0x (等倍)</span>
-                                <span>2.0x (倍速)</span>
+                        <!-- 声質クイックプリセット -->
+                        <div class="fx-preset-row">
+                            <span class="fx-preset-label">クイック選択:</span>
+                            <div class="fx-preset-chips" id="quick-voice-preset-chips">
+                                <button type="button" class="fx-chip-btn" data-preset="normal">🎙️ 標準</button>
+                                <button type="button" class="fx-chip-btn" data-preset="helium">🎈 ヘリウム</button>
+                                <button type="button" class="fx-chip-btn" data-preset="baby">👶 赤ちゃん</button>
+                                <button type="button" class="fx-chip-btn" data-preset="girl">👧 女の子</button>
+                                <button type="button" class="fx-chip-btn" data-preset="boy">👦 男の子</button>
+                                <button type="button" class="fx-chip-btn" data-preset="man">👨 男の人</button>
+                                <button type="button" class="fx-chip-btn" data-preset="woman">👩 女の人</button>
+                                <button type="button" class="fx-chip-btn" data-preset="old_man">👴 おじいさん</button>
+                                <button type="button" class="fx-chip-btn" data-preset="old_woman">👵 おばあさん</button>
+                                <button type="button" class="fx-chip-btn" data-preset="monster">👹 怪獣</button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- 声質クイックプリセット -->
-                    <div class="fx-preset-row">
-                        <span class="fx-preset-label">クイック選択:</span>
-                        <div class="fx-preset-chips" id="quick-voice-preset-chips">
-                            <button type="button" class="fx-chip-btn" data-preset="normal">🎙️ 標準</button>
-                            <button type="button" class="fx-chip-btn" data-preset="helium">🎈 ヘリウム</button>
-                            <button type="button" class="fx-chip-btn" data-preset="baby">👶 赤ちゃん</button>
-                            <button type="button" class="fx-chip-btn" data-preset="girl">👧 女の子</button>
-                            <button type="button" class="fx-chip-btn" data-preset="boy">👦 男の子</button>
-                            <button type="button" class="fx-chip-btn" data-preset="man">👨 男の人</button>
-                            <button type="button" class="fx-chip-btn" data-preset="woman">👩 女の人</button>
-                            <button type="button" class="fx-chip-btn" data-preset="old_man">👴 おじいさん</button>
-                            <button type="button" class="fx-chip-btn" data-preset="old_woman">👵 おばあさん</button>
-                            <button type="button" class="fx-chip-btn" data-preset="monster">👹 怪獣</button>
+                    <!-- ステージ3: 3バンドEQ -->
+                    <div class="eq-stage-card">
+                        <div class="fx-stage-header">
+                            <span class="fx-stage-title" style="color: #c084fc;">🎚️ 3バンドEQ (音質イコライザー)</span>
+                            <span class="fx-stage-badge" style="background: rgba(139, 92, 246, 0.4); border-color: #c084fc;">3-Band EQ</span>
+                        </div>
+                        <div class="eq-grid">
+                            <div class="eq-item">
+                                <div class="eq-label-row">
+                                    <span class="eq-label">低音 (Bass)</span>
+                                    <span id="quick-voice-eq-bass-val" class="eq-val">±0 dB</span>
+                                </div>
+                                <input type="range" id="quick-voice-eq-bass-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
+                            </div>
+                            <div class="eq-item">
+                                <div class="eq-label-row">
+                                    <span class="eq-label">中音 (Mid)</span>
+                                    <span id="quick-voice-eq-mid-val" class="eq-val">±0 dB</span>
+                                </div>
+                                <input type="range" id="quick-voice-eq-mid-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
+                            </div>
+                            <div class="eq-item">
+                                <div class="eq-label-row">
+                                    <span class="eq-label">高音 (Treble)</span>
+                                    <span id="quick-voice-eq-treble-val" class="eq-val">±0 dB</span>
+                                </div>
+                                <input type="range" id="quick-voice-eq-treble-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ステージ4: 特殊エフェクト -->
+                    <div class="special-stage-card">
+                        <div class="fx-stage-header">
+                            <span class="fx-stage-title" style="color: #34d399;">✨ 特殊エフェクト (Special FX)</span>
+                            <span class="fx-stage-badge" style="background: rgba(16, 185, 129, 0.4); border-color: #34d399;">Special FX</span>
+                        </div>
+                        <div class="fx-slider-list">
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">👥 コーラス・分身</span>
+                                    <span id="quick-voice-special-chorus-val" class="fx-slider-val">0% (オフ)</span>
+                                </div>
+                                <input type="range" id="quick-voice-special-chorus-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                            </div>
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">📻 無線ノイズ</span>
+                                    <span id="quick-voice-special-radio-val" class="fx-slider-val">0% (オフ)</span>
+                                </div>
+                                <input type="range" id="quick-voice-special-radio-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                            </div>
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">🗑️ 音割れドライブ</span>
+                                    <span id="quick-voice-special-trash-val" class="fx-slider-val">0% (オフ)</span>
+                                </div>
+                                <input type="range" id="quick-voice-special-trash-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -759,6 +888,22 @@
 
                     <!-- スクロール個別エフェクトパネル -->
                     <div id="scroll-fx-custom-panel" class="fx-engine-container" style="display: none; margin-top: 6px;">
+                        <!-- 🎛️ Voicemod スタイル 統合ボイスセレクター -->
+                        <div class="voicemod-section">
+                            <div class="voicemod-header">
+                                <span class="voicemod-title">🎛️ Voice Lab プリセット</span>
+                                <span class="voicemod-badge">VOICEMOD FX</span>
+                            </div>
+                            <div class="voicemod-category-tabs" id="scroll-voicemod-tabs">
+                                <button type="button" class="vm-tab-btn active" data-category="all">すべて</button>
+                                <button type="button" class="vm-tab-btn" data-category="device">🎙️ 通信・機材</button>
+                                <button type="button" class="vm-tab-btn" data-category="character">🎭 キャラクター</button>
+                                <button type="button" class="vm-tab-btn" data-category="horror">👻 ホラー・SF</button>
+                                <button type="button" class="vm-tab-btn" data-category="music">👥 空間・音楽</button>
+                            </div>
+                            <div class="voicemod-grid" id="scroll-voicemod-grid"></div>
+                        </div>
+
                         <div class="fx-stage-card stage-voice">
                             <div class="fx-stage-header">
                                 <span class="fx-stage-title">🗣️ ステージ1: 声質パラメータ</span>
@@ -848,6 +993,73 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- ステージ3: 3バンドEQ -->
+                        <div class="eq-stage-card">
+                            <div class="fx-stage-header">
+                                <span class="fx-stage-title" style="color: #c084fc;">🎚️ ステージ3: 3バンドEQ (音質イコライザー)</span>
+                                <span class="fx-stage-badge" style="background: rgba(139, 92, 246, 0.4); border-color: #c084fc;">3-Band EQ</span>
+                            </div>
+                            <div class="eq-grid">
+                                <div class="eq-item">
+                                    <div class="eq-label-row">
+                                        <span class="eq-label">低音 (Bass)</span>
+                                        <span id="scroll-eq-bass-val" class="eq-val">±0 dB</span>
+                                    </div>
+                                    <input type="range" id="scroll-eq-bass-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
+                                </div>
+                                <div class="eq-item">
+                                    <div class="eq-label-row">
+                                        <span class="eq-label">中音 (Mid)</span>
+                                        <span id="scroll-eq-mid-val" class="eq-val">±0 dB</span>
+                                    </div>
+                                    <input type="range" id="scroll-eq-mid-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
+                                </div>
+                                <div class="eq-item">
+                                    <div class="eq-label-row">
+                                        <span class="eq-label">高音 (Treble)</span>
+                                        <span id="scroll-eq-treble-val" class="eq-val">±0 dB</span>
+                                    </div>
+                                    <input type="range" id="scroll-eq-treble-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ステージ4: 特殊エフェクト -->
+                        <div class="special-stage-card">
+                            <div class="fx-stage-header">
+                                <span class="fx-stage-title" style="color: #34d399;">✨ ステージ4: 特殊エフェクト (Special FX)</span>
+                                <span class="fx-stage-badge" style="background: rgba(16, 185, 129, 0.4); border-color: #34d399;">Special FX</span>
+                            </div>
+                            <div class="fx-slider-list">
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">👥 コーラス・分身</span>
+                                        <span id="scroll-special-chorus-val" class="fx-slider-val">0% (オフ)</span>
+                                    </div>
+                                    <input type="range" id="scroll-special-chorus-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                                </div>
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">📻 無線ノイズ</span>
+                                        <span id="scroll-special-radio-val" class="fx-slider-val">0% (オフ)</span>
+                                    </div>
+                                    <input type="range" id="scroll-special-radio-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                                </div>
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">🗑️ 音割れドライブ</span>
+                                        <span id="scroll-special-trash-val" class="fx-slider-val">0% (オフ)</span>
+                                    </div>
+                                    <input type="range" id="scroll-special-trash-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 試聴ボタン -->
+                        <button type="button" id="btn-scroll-fx-preview" class="action-btn share-btn" style="padding: 9px 12px; font-size: 12.5px; background: linear-gradient(135deg, #06b6d4, #3b82f6);">
+                            ▶️ このスクロールのエフェクト設定で試聴する
+                        </button>
                     </div>
                 </div>
 
@@ -1365,6 +1577,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260917_6"></script>
+    <script src="app.js?v=20260917_7"></script>
 </body>
 </html>
