@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.17.0005';
+const APP_VERSION = '2026.09.17.0006';
 
 // ==================== 0. 音声エンコード＆波形編集ユーティリティ ====================
 class AudioUtils {
@@ -197,7 +197,7 @@ class VoiceEngine {
     static defaultVoiceParams() {
         return {
             pitchSemitones: 0,   // -12 〜 +12 半音 (速度不変)
-            formantRatio: 1.0,   // 0.5x (巨漢/太声) 〜 1.8x (妖精/子ども)
+            formantRatio: 1.0,   // 0.35x (極太/巨漢/モンスター) 〜 2.0x (妖精/子ども)
             roughness: 0         // 0% 〜 100% (倍音サチュレーション＋息ノイズ)
         };
     }
@@ -223,11 +223,11 @@ class VoiceEngine {
             'baby': { pitchSemitones: 7, formantRatio: 1.5, roughness: 5 },
             'girl': { pitchSemitones: 4, formantRatio: 1.35, roughness: 5 },
             'boy': { pitchSemitones: 2, formantRatio: 1.15, roughness: 0 },
-            'man': { pitchSemitones: -3, formantRatio: 0.82, roughness: 20 },
+            'man': { pitchSemitones: -3, formantRatio: 0.72, roughness: 20 },
             'woman': { pitchSemitones: 3, formantRatio: 1.2, roughness: 10 },
-            'old_man': { pitchSemitones: -4, formantRatio: 0.82, roughness: 55 },
+            'old_man': { pitchSemitones: -4, formantRatio: 0.75, roughness: 55 },
             'old_woman': { pitchSemitones: 3, formantRatio: 1.12, roughness: 45 },
-            'monster': { pitchSemitones: -8, formantRatio: 0.58, roughness: 75 }
+            'monster': { pitchSemitones: -8, formantRatio: 0.45, roughness: 75 }
         };
 
         const envPresets = {
@@ -259,7 +259,7 @@ class VoiceEngine {
         const params = { ...this.defaultVoiceParams(), ...(voiceParams || {}) };
 
         const pitchRatio = Math.pow(2, (params.pitchSemitones || 0) / 12);
-        const formantRatio = Math.max(0.5, Math.min(2.0, params.formantRatio || 1.0));
+        const formantRatio = Math.max(0.35, Math.min(2.2, params.formantRatio || 1.0));
         const roughness = Math.max(0, Math.min(100, params.roughness || 0));
 
         // パラメータ変更がない場合はそのまま返す
@@ -383,6 +383,7 @@ class VoiceEngine {
 
     /**
      * フォルマントシフトDSP（再生スピード・長さを100%厳密に保持）
+     * 喉・声道・胸腔の共鳴周波数を伸縮させ、声の太さ・サイズ感をダイナミックに変化
      */
     static applyFormantShift(buffer, formantRatio, ctx) {
         if (!buffer || !ctx || Math.abs(formantRatio - 1.0) < 0.02) return buffer;
@@ -414,6 +415,46 @@ class VoiceEngine {
 
         // 3. 変化してしまった音程を逆ピッチシフト（1 / formantRatio）で元の高さに復元
         const pitchRestored = this.applyGranularPitchShift(stretchedBuffer, 1.0 / formantRatio, ctx);
+
+        // 4. 【極太・声道/胸腔共鳴エンハンサー】（formantRatio < 0.98 の時に低中域の胴鳴り・声帯の太さを大幅増強）
+        if (formantRatio < 0.98) {
+            const depthFactor = Math.min(1.0, (1.0 - formantRatio) / 0.65); // 0.0〜1.0
+            // 喉・胸の共鳴ピーク（140Hz〜240Hz）をブーストし、音に芯と圧倒的な太さを付加
+            const bodyFreq = 160 + (formantRatio * 70); // 160Hz〜230Hz
+            const resonanceGain = 1.0 + (depthFactor * 1.7); // 最大 +8.5dB 相当の胴鳴り
+            
+            const enhancedBuffer = ctx.createBuffer(numChannels, origLength, sampleRate);
+            for (let ch = 0; ch < numChannels; ch++) {
+                const src = pitchRestored.getChannelData(ch);
+                const dst = enhancedBuffer.getChannelData(ch);
+                
+                // 2次レゾナントバンドパス/ピーキングフィルター
+                const omega = (2 * Math.PI * bodyFreq) / sampleRate;
+                const sinOmega = Math.sin(omega);
+                const cosOmega = Math.cos(omega);
+                const alpha = sinOmega / (2 * 1.2); // Q = 1.2
+                
+                const b0 = 1 + alpha * resonanceGain;
+                const b1 = -2 * cosOmega;
+                const b2 = 1 - alpha * resonanceGain;
+                const a0 = 1 + alpha;
+                const a1 = -2 * cosOmega;
+                const a2 = 1 - alpha;
+                
+                let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+                for (let i = 0; i < origLength; i++) {
+                    const x0 = src[i];
+                    const y0 = (b0/a0)*x0 + (b1/a0)*x1 + (b2/a0)*x2 - (a1/a0)*y1 - (a2/a0)*y2;
+                    x2 = x1; x1 = x0;
+                    y2 = y1; y1 = y0;
+                    
+                    // ソフトサチュレーション（音割れ防止＆温かみのある太さ）
+                    const mixed = src[i] * (1.0 - depthFactor * 0.35) + y0 * (depthFactor * 0.65);
+                    dst[i] = Math.tanh(mixed * 1.1) / 1.1;
+                }
+            }
+            return enhancedBuffer;
+        }
 
         return pitchRestored;
     }
@@ -1075,7 +1116,7 @@ class VoiceEngine {
                 category: 'character',
                 icon: '👹',
                 desc: '巨体の咆哮＆重低音ガラガラ声',
-                voice: { pitchSemitones: -9, formantRatio: 0.55, roughness: 80 },
+                voice: { pitchSemitones: -9, formantRatio: 0.42, roughness: 80 },
                 env: { reverb: 30, filter: 0, modulation: 0 },
                 eq: { bass: 9, mid: 2, treble: -4 },
                 special: { chorus: 0, radioNoise: 0, trash: 0 }
@@ -4664,7 +4705,7 @@ class VoicePadApp {
         if (qvFormant && qvFormantVal) {
             qvFormant.addEventListener('input', (e) => {
                 const val = parseFloat(e.target.value);
-                const desc = val <= 0.8 ? '太声/巨漢' : val >= 1.25 ? '妖精/子ども' : '標準';
+                const desc = val <= 0.55 ? '極太/巨人・モンスター' : val <= 0.8 ? '太声/巨漢' : val >= 1.4 ? '超高域/妖精' : val >= 1.2 ? '子ども/女性' : '標準';
                 qvFormantVal.innerText = `${val.toFixed(2)}x (${desc})`;
             });
         }
@@ -4870,7 +4911,7 @@ class VoicePadApp {
         if (formantSlider && formantVal) {
             formantSlider.addEventListener('input', (e) => {
                 const val = parseFloat(e.target.value);
-                const desc = val <= 0.8 ? '太声/巨漢' : val >= 1.25 ? '妖精/子ども' : '標準';
+                const desc = val <= 0.55 ? '極太/巨人・モンスター' : val <= 0.8 ? '太声/巨漢' : val >= 1.4 ? '超高域/妖精' : val >= 1.2 ? '子ども/女性' : '標準';
                 formantVal.innerText = `${val.toFixed(2)}x (${desc})`;
             });
         }
@@ -5347,12 +5388,16 @@ class VoicePadApp {
         const dur = 0.85;
         const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
         const data = buffer.getChannelData(0);
-        const freq = 340;
+        const freq = 220;
         for (let i = 0; i < data.length; i++) {
             const t = i / ctx.sampleRate;
             const env = Math.sin((t / dur) * Math.PI);
-            const harm = Math.sin(2 * Math.PI * freq * t) + 0.5 * Math.sin(4 * Math.PI * freq * t) + 0.25 * Math.sin(6 * Math.PI * freq * t);
-            data[i] = harm * env * 0.35;
+            const harm = Math.sin(2 * Math.PI * freq * t) 
+                       + 0.65 * Math.sin(4 * Math.PI * freq * t) 
+                       + 0.45 * Math.sin(6 * Math.PI * freq * t)
+                       + 0.30 * Math.sin(8 * Math.PI * freq * t)
+                       + 0.20 * Math.sin(10 * Math.PI * freq * t);
+            data[i] = harm * env * 0.3;
         }
         const processed = VoiceEngine.processFull(buffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
         const src = ctx.createBufferSource();
