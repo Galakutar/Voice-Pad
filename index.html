@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260917_3">
+    <link rel="stylesheet" href="style.css?v=20260917_5">
 </head>
 <body>
     <div id="app-container">
@@ -197,6 +197,20 @@
                                         <span>0% (クリア)</span>
                                         <span>50% (ハスキー)</span>
                                         <span>100% (かすれ・歪み)</span>
+                                    </div>
+                                </div>
+
+                                <!-- ④ 再生スピード -->
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">⚡ 再生スピード（速度・テンポ）</span>
+                                        <span id="slot-speed-val" class="fx-slider-val">1.00x (等倍)</span>
+                                    </div>
+                                    <input type="range" id="slot-speed-slider" min="0.5" max="2.0" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
+                                    <div class="fx-slider-hints">
+                                        <span>0.5x (ゆっくり)</span>
+                                        <span>1.0x (等倍)</span>
+                                        <span>2.0x (倍速)</span>
                                     </div>
                                 </div>
                             </div>
@@ -575,6 +589,20 @@
                                 <span>100% (歪み/かすれ)</span>
                             </div>
                         </div>
+
+                        <!-- ④ 再生スピード -->
+                        <div class="fx-slider-item">
+                            <div class="fx-slider-top">
+                                <span class="fx-slider-label">⚡ 再生スピード（速度・テンポ）</span>
+                                <span id="quick-voice-speed-val" class="fx-slider-val">1.00x (等倍)</span>
+                            </div>
+                            <input type="range" id="quick-voice-speed-slider" min="0.5" max="2.0" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
+                            <div class="fx-slider-hints">
+                                <span>0.5x (ゆっくり)</span>
+                                <span>1.0x (等倍)</span>
+                                <span>2.0x (倍速)</span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 声質クイックプリセット -->
@@ -757,6 +785,13 @@
                                         <span id="scroll-rough-val" class="fx-slider-val">0% (クリア)</span>
                                     </div>
                                     <input type="range" id="scroll-rough-slider" min="0" max="100" step="5" value="0" class="adjust-slider fx-slider-track">
+                                </div>
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">⚡ 再生スピード</span>
+                                        <span id="scroll-speed-val" class="fx-slider-val">1.00x (等倍)</span>
+                                    </div>
+                                    <input type="range" id="scroll-speed-slider" min="0.5" max="2.0" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
                                 </div>
                             </div>
                             <div class="fx-preset-row">
@@ -1330,6 +1365,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260917_3"></script>
+    <script src="app.js?v=20260917_5"></script>
 </body>
 </html>
