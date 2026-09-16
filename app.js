@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.17.0008';
+const APP_VERSION = '2026.09.17.0009';
 
 // ==================== 0. 音声エンコード＆波形編集ユーティリティ ====================
 class AudioUtils {
@@ -189,6 +189,281 @@ class AudioUnlocker {
     }
 }
 
+// ==================== 1.8 🌲 プロシージャル環境背景音 (Ambient Audio) エンジン ====================
+class AmbientAudioEngine {
+    /**
+     * サウンドタイプに応じたプロシージャル環境背景音の生成（完全ローカル・外部依存ゼロ）
+     * @param {string} type - 'underwater'|'birds'|'forest'|'city'|'train'|'rain'|'cafe'|'cave_drip'|'cathedral'|'space'
+     * @param {number} durationSec - 長さ（秒）
+     * @param {number} sampleRate
+     * @param {AudioContext} ctx
+     */
+    static generateAmbientTrack(type, durationSec, sampleRate, ctx) {
+        if (!type || type === 'none') return null;
+        const numSamples = Math.max(1, Math.floor(durationSec * sampleRate));
+        const buffer = ctx ? ctx.createBuffer(1, numSamples, sampleRate) : null;
+        if (!buffer) return null;
+        const data = buffer.getChannelData(0);
+
+        switch (type) {
+            case 'underwater':
+                this.synthesizeUnderwater(data, sampleRate, numSamples);
+                break;
+            case 'birds':
+                this.synthesizeBirds(data, sampleRate, numSamples);
+                break;
+            case 'forest':
+                this.synthesizeForest(data, sampleRate, numSamples);
+                break;
+            case 'city':
+                this.synthesizeCity(data, sampleRate, numSamples);
+                break;
+            case 'train':
+                this.synthesizeTrain(data, sampleRate, numSamples);
+                break;
+            case 'rain':
+                this.synthesizeRain(data, sampleRate, numSamples);
+                break;
+            case 'cafe':
+                this.synthesizeCafe(data, sampleRate, numSamples);
+                break;
+            case 'cave_drip':
+                this.synthesizeCaveDrip(data, sampleRate, numSamples);
+                break;
+            case 'cathedral':
+                this.synthesizeCathedral(data, sampleRate, numSamples);
+                break;
+            case 'space':
+                this.synthesizeSpace(data, sampleRate, numSamples);
+                break;
+            default:
+                break;
+        }
+
+        return buffer;
+    }
+
+    // 🫧 水の中: 深海のうねり低音 + ランダムな気泡のポコポコ音（FMサイン波＋周波数急上昇）
+    static synthesizeUnderwater(data, sampleRate, numSamples) {
+        let lp1 = 0, lp2 = 0;
+        const dt = 1 / sampleRate;
+        const alpha = (2 * Math.PI * 90 * dt) / (1 + 2 * Math.PI * 90 * dt);
+
+        for (let i = 0; i < numSamples; i++) {
+            const white = Math.random() * 2 - 1;
+            lp1 += alpha * (white - lp1);
+            lp2 += alpha * (lp1 - lp2);
+            data[i] = lp2 * 0.45;
+        }
+
+        const bubbleCount = Math.max(2, Math.floor((numSamples / sampleRate) * 5.5));
+        for (let b = 0; b < bubbleCount; b++) {
+            const startIdx = Math.floor(Math.random() * (numSamples - sampleRate * 0.15));
+            const bubbleLen = Math.floor(sampleRate * (0.04 + Math.random() * 0.08));
+            const baseFreq = 320 + Math.random() * 550;
+            const endFreq = baseFreq * (1.8 + Math.random() * 1.5);
+            let phase = 0;
+
+            for (let j = 0; j < bubbleLen && (startIdx + j) < numSamples; j++) {
+                const progress = j / bubbleLen;
+                const freq = baseFreq + (endFreq - baseFreq) * Math.pow(progress, 1.4);
+                phase += (2 * Math.PI * freq) / sampleRate;
+                const env = Math.sin(progress * Math.PI);
+                const pop = Math.sin(phase) * env * 0.38;
+                data[startIdx + j] += pop;
+            }
+        }
+    }
+
+    // 🐦 鳥の声: 穏やかな微風ノイズ + 複数の小鳥のさえずり（2.8kHz〜5.5kHz FMピッチスイープ＆トリル）
+    static synthesizeBirds(data, sampleRate, numSamples) {
+        let lp = 0;
+        const dt = 1 / sampleRate;
+        const alpha = (2 * Math.PI * 650 * dt) / (1 + 2 * Math.PI * 650 * dt);
+        for (let i = 0; i < numSamples; i++) {
+            const white = Math.random() * 2 - 1;
+            lp += alpha * (white - lp);
+            const breezeEnv = 0.04 + 0.03 * Math.sin((2 * Math.PI * 0.2 * i) / sampleRate);
+            data[i] = lp * breezeEnv;
+        }
+
+        const birdCount = Math.max(2, Math.floor((numSamples / sampleRate) * 2.8));
+        for (let b = 0; b < birdCount; b++) {
+            const startIdx = Math.floor(Math.random() * (numSamples - sampleRate * 0.35));
+            const chirpType = b % 3;
+            const len = Math.floor(sampleRate * (0.18 + Math.random() * 0.15));
+            let phase = 0;
+
+            for (let j = 0; j < len && (startIdx + j) < numSamples; j++) {
+                const t = j / sampleRate;
+                let freq = 3200;
+                let env = 0;
+
+                if (chirpType === 0) {
+                    freq = 4800 - 2000 * (j / len);
+                    env = Math.sin((j / len) * Math.PI);
+                } else if (chirpType === 1) {
+                    freq = 3800 + 700 * Math.sin(2 * Math.PI * 32 * t);
+                    env = Math.sin((j / len) * Math.PI);
+                } else {
+                    const u = (j / len) * 2 - 1;
+                    freq = 3200 + 1600 * (u * u);
+                    env = Math.sin((j / len) * Math.PI);
+                }
+
+                phase += (2 * Math.PI * freq) / sampleRate;
+                const sample = Math.sin(phase) * env * 0.28;
+                data[startIdx + j] += sample;
+            }
+        }
+    }
+
+    // 🌲 森の音: 木々のざわめき（2段階バンドパス変調） + 自然の風
+    static synthesizeForest(data, sampleRate, numSamples) {
+        let bp1 = 0, bp2 = 0;
+        const dt = 1 / sampleRate;
+        for (let i = 0; i < numSamples; i++) {
+            const white = Math.random() * 2 - 1;
+            const centerFreq = 800 + 400 * Math.sin((2 * Math.PI * 0.15 * i) / sampleRate) + 200 * Math.sin((2 * Math.PI * 0.4 * i) / sampleRate);
+            const alpha = (2 * Math.PI * centerFreq * dt) / (1 + 2 * Math.PI * centerFreq * dt);
+            bp1 += alpha * (white - bp1);
+            bp2 += alpha * (bp1 - bp2);
+            const gust = 0.08 + 0.06 * Math.sin((2 * Math.PI * 0.09 * i) / sampleRate);
+            data[i] = (bp1 - bp2) * gust * 2.2;
+        }
+    }
+
+    // 🏙️ 街の喧騒: 低周波の交通ノイズ (50-200Hz) + 通り過ぎる気配
+    static synthesizeCity(data, sampleRate, numSamples) {
+        let lp1 = 0, lp2 = 0;
+        const dt = 1 / sampleRate;
+        const alpha = (2 * Math.PI * 160 * dt) / (1 + 2 * Math.PI * 160 * dt);
+
+        for (let i = 0; i < numSamples; i++) {
+            const white = Math.random() * 2 - 1;
+            lp1 += alpha * (white - lp1);
+            lp2 += alpha * (lp1 - lp2);
+            const carRumble = 0.12 + 0.08 * Math.sin((2 * Math.PI * 0.07 * i) / sampleRate);
+            data[i] = lp2 * carRumble * 1.8;
+        }
+    }
+
+    // 🚃 電車の中: ガタゴト線路音 (タ・タン・タ・タン周期パルス) + 110Hz モーター音
+    static synthesizeTrain(data, sampleRate, numSamples) {
+        const periodSec = 0.85;
+        const periodSamples = Math.floor(sampleRate * periodSec);
+
+        for (let i = 0; i < numSamples; i++) {
+            const t = i / sampleRate;
+            const motor = (0.035 * Math.sin(2 * Math.PI * 110 * t) + 0.015 * Math.sin(2 * Math.PI * 220 * t));
+            const cycleSample = i % periodSamples;
+            const cycleSec = cycleSample / sampleRate;
+
+            let clatter = 0;
+            const pulses = [0.0, 0.11, 0.35, 0.46];
+            for (let p of pulses) {
+                const diff = cycleSec - p;
+                if (diff >= 0 && diff < 0.045) {
+                    const env = Math.exp(-diff * 75);
+                    const impact = (Math.random() * 2 - 1) * Math.sin(2 * Math.PI * 240 * diff) * env * 0.32;
+                    clatter += impact;
+                }
+            }
+
+            data[i] = motor + clatter;
+        }
+    }
+
+    // 🌧️ 雨と雷: 密度の高い雨粒ノイズ (ピンクノイズ + 微細クリック) + 遠雷
+    static synthesizeRain(data, sampleRate, numSamples) {
+        let pink = 0;
+        for (let i = 0; i < numSamples; i++) {
+            const white = Math.random() * 2 - 1;
+            pink = pink * 0.95 + white * 0.05;
+            const drop = (Math.random() > 0.985) ? (Math.random() * 2 - 1) * 0.09 : 0;
+            data[i] = pink * 0.22 + drop;
+        }
+    }
+
+    // ☕ カフェ: 店内の心地よいざわめき + カップやスプーンが触れ合う高音のチンという響き
+    static synthesizeCafe(data, sampleRate, numSamples) {
+        let lp = 0;
+        const dt = 1 / sampleRate;
+        const alpha = (2 * Math.PI * 450 * dt) / (1 + 2 * Math.PI * 450 * dt);
+
+        for (let i = 0; i < numSamples; i++) {
+            const white = Math.random() * 2 - 1;
+            lp += alpha * (white - lp);
+            const murmur = 0.08 + 0.04 * Math.sin((2 * Math.PI * 0.3 * i) / sampleRate);
+            data[i] = lp * murmur * 1.5;
+        }
+
+        const clinkCount = Math.max(1, Math.floor((numSamples / sampleRate) * 1.8));
+        for (let c = 0; c < clinkCount; c++) {
+            const startIdx = Math.floor(Math.random() * (numSamples - sampleRate * 0.1));
+            const clinkLen = Math.floor(sampleRate * 0.07);
+            const freq = 3400 + Math.random() * 1200;
+
+            for (let j = 0; j < clinkLen && (startIdx + j) < numSamples; j++) {
+                const t = j / sampleRate;
+                const env = Math.exp(-t * 50);
+                const ping = Math.sin(2 * Math.PI * freq * t) * env * 0.22;
+                data[startIdx + j] += ping;
+            }
+        }
+    }
+
+    // ⛰️ 洞窟の滴: 低周波の空間共鳴 + 水滴が水面にポチャンと落ちる音
+    static synthesizeCaveDrip(data, sampleRate, numSamples) {
+        for (let i = 0; i < numSamples; i++) {
+            const t = i / sampleRate;
+            const caveHum = 0.03 * Math.sin(2 * Math.PI * 58 * t) + 0.015 * Math.sin(2 * Math.PI * 116 * t);
+            data[i] = caveHum;
+        }
+
+        const dripCount = Math.max(1, Math.floor((numSamples / sampleRate) * 2.2));
+        for (let d = 0; d < dripCount; d++) {
+            const startIdx = Math.floor(Math.random() * (numSamples - sampleRate * 0.2));
+            const dripLen = Math.floor(sampleRate * 0.12);
+            let phase = 0;
+
+            for (let j = 0; j < dripLen && (startIdx + j) < numSamples; j++) {
+                const t = j / sampleRate;
+                const freq = 850 + 750 * Math.exp(-t * 40);
+                phase += (2 * Math.PI * freq) / sampleRate;
+                const env = Math.exp(-t * 22);
+                const drip = Math.sin(phase) * env * 0.36;
+                data[startIdx + j] += drip;
+            }
+        }
+    }
+
+    // ⛪ 大聖堂のドローン: 荘厳な聖歌・パイプオルガン風コード和音ドローン (Cmaj)
+    static synthesizeCathedral(data, sampleRate, numSamples) {
+        for (let i = 0; i < numSamples; i++) {
+            const t = i / sampleRate;
+            const slowTremolo = 0.85 + 0.15 * Math.sin(2 * Math.PI * 0.25 * t);
+            const chord = (
+                0.045 * Math.sin(2 * Math.PI * 130.81 * t) +
+                0.035 * Math.sin(2 * Math.PI * 196.00 * t) +
+                0.030 * Math.sin(2 * Math.PI * 261.63 * t) +
+                0.020 * Math.sin(2 * Math.PI * 329.63 * t)
+            ) * slowTremolo;
+            data[i] = chord;
+        }
+    }
+
+    // 🌌 宇宙: 低周波サブベース (45Hz + 67Hz) + フランジャー風の周波数スイープ
+    static synthesizeSpace(data, sampleRate, numSamples) {
+        for (let i = 0; i < numSamples; i++) {
+            const t = i / sampleRate;
+            const sweep = 0.03 * Math.sin((2 * Math.PI * (50 + 20 * Math.sin(2 * Math.PI * 0.1 * t)) * t));
+            const sub = 0.04 * Math.sin(2 * Math.PI * 45 * t);
+            data[i] = (sub + sweep) * 1.5;
+        }
+    }
+}
+
 // ==================== 2. 完全クライアントサイド 2ステージ直列音声DSPエンジン ====================
 class VoiceEngine {
     /**
@@ -207,9 +482,11 @@ class VoiceEngine {
      */
     static defaultEnvParams() {
         return {
-            reverb: 0,           // 0% 〜 100% (残響の深さ・ディケイ)
+            reverb: 0,           // 0% 〜 100% (残響・やまびこエコーの深さ)
             filter: 0,           // 0% 〜 100% (こもり・電話・ラジオ・メガホン)
-            modulation: 0        // 0% 〜 100% (ロボット・宇宙人・リングモジュレーション)
+            modulation: 0,       // 0% 〜 100% (ロボット・宇宙人・リングモジュレーション)
+            ambientSound: 'none',// 'none'|'underwater'|'birds'|'forest'|'city'|'train'|'rain'|'cafe'|'cave_drip'|'cathedral'|'space'
+            ambientVolume: 35    // 0% 〜 100% (背景環境音の音量)
         };
     }
 
@@ -231,15 +508,24 @@ class VoiceEngine {
         };
 
         const envPresets = {
-            'none': { reverb: 0, filter: 0, modulation: 0 },
-            'cave': { reverb: 85, filter: 20, modulation: 0 },
-            'hall': { reverb: 65, filter: 0, modulation: 0 },
-            'telephone': { reverb: 0, filter: 85, modulation: 0 },
-            'radio': { reverb: 0, filter: 68, modulation: 15 },
-            'megaphone': { reverb: 5, filter: 95, modulation: 0 },
-            'robot': { reverb: 10, filter: 0, modulation: 80 },
-            'alien': { reverb: 45, filter: 15, modulation: 60 },
-            'underwater': { reverb: 35, filter: 48, modulation: 0 }
+            'none': { reverb: 0, filter: 0, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
+            'cathedral': { reverb: 95, filter: 0, modulation: 0, ambientSound: 'cathedral', ambientVolume: 40 },
+            'cave': { reverb: 85, filter: 20, modulation: 0, ambientSound: 'cave_drip', ambientVolume: 45 },
+            'bath': { reverb: 55, filter: 0, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
+            'hall': { reverb: 70, filter: 0, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
+            'underwater': { reverb: 40, filter: 48, modulation: 0, ambientSound: 'underwater', ambientVolume: 50 },
+            'forest': { reverb: 25, filter: 5, modulation: 0, ambientSound: 'forest', ambientVolume: 45 },
+            'birds': { reverb: 20, filter: 0, modulation: 0, ambientSound: 'birds', ambientVolume: 45 },
+            'city': { reverb: 15, filter: 10, modulation: 0, ambientSound: 'city', ambientVolume: 40 },
+            'train': { reverb: 20, filter: 25, modulation: 0, ambientSound: 'train', ambientVolume: 45 },
+            'rain': { reverb: 35, filter: 15, modulation: 0, ambientSound: 'rain', ambientVolume: 45 },
+            'cafe': { reverb: 25, filter: 10, modulation: 0, ambientSound: 'cafe', ambientVolume: 40 },
+            'space': { reverb: 60, filter: 20, modulation: 50, ambientSound: 'space', ambientVolume: 45 },
+            'telephone': { reverb: 0, filter: 85, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
+            'radio': { reverb: 0, filter: 68, modulation: 15, ambientSound: 'none', ambientVolume: 0 },
+            'megaphone': { reverb: 5, filter: 95, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
+            'robot': { reverb: 10, filter: 0, modulation: 80, ambientSound: 'none', ambientVolume: 0 },
+            'alien': { reverb: 45, filter: 15, modulation: 60, ambientSound: 'none', ambientVolume: 0 }
         };
 
         if (voicePresets[presetName]) {
@@ -530,7 +816,7 @@ class VoiceEngine {
     }
 
     /**
-     * 【ステージ2】環境フィルターパラメータ処理（リバーブ・フィルター・モジュレーション）
+     * 【ステージ2】環境フィルターパラメータ処理（リバーブ・フィルター・モジュレーション・背景環境音）
      */
     static processEnvStage(buffer, envParams, ctx) {
         if (!buffer || !ctx) return buffer;
@@ -539,8 +825,9 @@ class VoiceEngine {
         const reverbAmt = Math.max(0, Math.min(100, params.reverb || 0)) / 100;
         const filterAmt = Math.max(0, Math.min(100, params.filter || 0)) / 100;
         const modAmt = Math.max(0, Math.min(100, params.modulation || 0)) / 100;
+        const hasAmbient = params.ambientSound && params.ambientSound !== 'none';
 
-        if (reverbAmt === 0 && filterAmt === 0 && modAmt === 0) {
+        if (reverbAmt === 0 && filterAmt === 0 && modAmt === 0 && !hasAmbient) {
             return buffer;
         }
 
@@ -556,12 +843,45 @@ class VoiceEngine {
             workingBuffer = this.applyModulation(workingBuffer, modAmt, ctx);
         }
 
-        // 3. プロシージャルリバーブ（残響・大ホール・洞窟）
+        // 3. プロシージャル空間リバーブ＆やまびこマルチタップエコー
         if (reverbAmt > 0) {
             workingBuffer = this.applySchroederReverb(workingBuffer, reverbAmt, ctx);
         }
 
+        // 4. プロシージャル背景環境音の合成・ミックス（水の中・鳥の声・森の音・街の喧騒・電車・雨・カフェ等）
+        if (hasAmbient) {
+            workingBuffer = this.mixAmbientSound(workingBuffer, params.ambientSound, params.ambientVolume ?? 35, ctx);
+        }
+
         return workingBuffer;
+    }
+
+    /**
+     * 背景環境音バッファの合成・ブレンド
+     */
+    static mixAmbientSound(buffer, soundType, volumePercent, ctx) {
+        if (!buffer || !ctx || !soundType || soundType === 'none') return buffer;
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const numSamples = buffer.length;
+        const vol = Math.max(0, Math.min(100, volumePercent !== undefined ? volumePercent : 35)) / 100;
+        if (vol <= 0) return buffer;
+
+        const ambientBuffer = AmbientAudioEngine.generateAmbientBuffer(ctx, soundType, numSamples / sampleRate);
+        if (!ambientBuffer) return buffer;
+
+        const outputBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+        const ambData = ambientBuffer.getChannelData(0);
+
+        for (let ch = 0; ch < numChannels; ch++) {
+            const src = buffer.getChannelData(ch);
+            const dst = outputBuffer.getChannelData(ch);
+            for (let i = 0; i < numSamples; i++) {
+                const ambSample = (ambData[i] || 0) * vol * 0.7;
+                dst[i] = Math.tanh(src[i] + ambSample);
+            }
+        }
+        return outputBuffer;
     }
 
     /**
@@ -696,8 +1016,10 @@ class VoiceEngine {
     }
 
     /**
-     * 本格 Freeverb / Schroeder プロシージャル空間リバーブ
-     * 8基の独立LPFフィードバック・コムフィルター ＋ 4基のオールパス・ディフューザー
+     * 本格 Schroeder / Multi-Tap やまびこエコー ＆ 空間リバーブDSP
+     * 1. 5段マルチタップ・ステレオディレイライン（明瞭なやまびこ・初期反射音）
+     * 2. 8基の独立ダンピングLPFフィードバック・コムフィルター（豊かな残響密度）
+     * 3. 4基の直列オールパス・ディフューザー（空間拡散）
      */
     static applySchroederReverb(buffer, reverbAmt, ctx) {
         if (!buffer || !ctx || reverbAmt <= 0) return buffer;
@@ -707,8 +1029,8 @@ class VoiceEngine {
 
         const amt = Math.max(0, Math.min(100, reverbAmt)) / 100; // 0.0 〜 1.0
 
-        // 残響テイル時間の計算（最大1.8秒拡張）
-        const tailSec = 0.4 + (amt * 1.5);
+        // 残響テイル時間の計算（最大2.5秒拡張）
+        const tailSec = 0.5 + (amt * 2.0);
         const extraSamples = Math.floor(sampleRate * tailSec);
         const totalSamples = numSamples + extraSamples;
         const outputBuffer = ctx.createBuffer(numChannels, totalSamples, sampleRate);
@@ -734,14 +1056,27 @@ class VoiceEngine {
             Math.floor(225 * srScale)
         ];
 
-        // フィードバック係数（0.68 〜 0.93：豊かなロング残響テイル）
-        const feedback = 0.68 + (amt * 0.25);
-        // 高域ダンピング（壁の吸音: 0.25）
-        const damp = 0.28;
+        // マルチタップ・やまびこエコーのディレイ長（秒 -> サンプル数）
+        const echoTaps = [
+            { delay: Math.floor(sampleRate * 0.085), gain: 0.45 * amt },
+            { delay: Math.floor(sampleRate * 0.170), gain: 0.35 * amt },
+            { delay: Math.floor(sampleRate * 0.260), gain: 0.28 * amt },
+            { delay: Math.floor(sampleRate * 0.380), gain: 0.22 * amt },
+            { delay: Math.floor(sampleRate * 0.520), gain: 0.18 * amt }
+        ];
+        const maxEchoDelay = Math.floor(sampleRate * 0.55);
+
+        // フィードバック係数（0.72 〜 0.94：圧倒的に豊かなロング残響テイル）
+        const feedback = 0.72 + (amt * 0.22);
+        const damp = 0.26;
 
         for (let ch = 0; ch < numChannels; ch++) {
             const src = buffer.getChannelData(ch);
             const dst = outputBuffer.getChannelData(ch);
+
+            // やまびこリングバッファ
+            const echoBuffer = new Float32Array(maxEchoDelay);
+            let echoIdx = 0;
 
             // コムフィルター用ディレイライン
             const combBuffers = combTuning.map(len => new Float32Array(len));
@@ -753,29 +1088,41 @@ class VoiceEngine {
             const apIndices = new Int32Array(allpassTuning.length);
 
             // ドライ・ウェット比率
-            const wetGain = (0.35 + amt * 0.85) / Math.sqrt(combTuning.length);
-            const dryGain = Math.max(0.15, 1.0 - (amt * 0.45));
+            const wetGain = (0.45 + amt * 0.95) / Math.sqrt(combTuning.length);
+            const dryGain = Math.max(0.1, 1.0 - (amt * 0.35));
+            const echoGain = 0.65 * amt;
 
             for (let i = 0; i < totalSamples; i++) {
                 const inSample = (i < numSamples) ? src[i] : 0;
-                let combOutSum = 0;
 
-                // 8基のコムフィルター並列処理
+                // ① マルチタップ・やまびこエコー処理
+                let echoSum = 0;
+                for (let t = 0; t < echoTaps.length; t++) {
+                    const tap = echoTaps[t];
+                    let rPos = echoIdx - tap.delay;
+                    if (rPos < 0) rPos += maxEchoDelay;
+                    echoSum += echoBuffer[rPos] * tap.gain;
+                }
+                echoBuffer[echoIdx] = inSample + echoSum * (0.35 * amt);
+                echoIdx = (echoIdx + 1) % maxEchoDelay;
+
+                // ② 8基のコムフィルター並列処理
+                const combIn = inSample + echoSum * 0.5;
+                let combOutSum = 0;
                 for (let c = 0; c < combTuning.length; c++) {
                     const cBuf = combBuffers[c];
                     const cLen = combTuning[c];
                     const cIdx = combIndices[c];
 
                     const delayed = cBuf[cIdx];
-                    // ダンピングローパス
                     combFilterStore[c] = (delayed * (1 - damp)) + (combFilterStore[c] * damp);
-                    cBuf[cIdx] = inSample + (combFilterStore[c] * feedback);
+                    cBuf[cIdx] = combIn + (combFilterStore[c] * feedback);
 
                     combIndices[c] = (cIdx + 1) % cLen;
                     combOutSum += delayed;
                 }
 
-                // 4基のオールパスフィルター直列処理（空間拡散・ディフュージョン）
+                // ③ 4基のオールパスフィルター直列処理（空間拡散・ディフュージョン）
                 let apOut = combOutSum;
                 for (let a = 0; a < allpassTuning.length; a++) {
                     const aBuf = apBuffers[a];
@@ -792,7 +1139,9 @@ class VoiceEngine {
                     apIndices[a] = (aIdx + 1) % aLen;
                 }
 
-                dst[i] = (inSample * dryGain) + (apOut * wetGain);
+                // ④ 最終ミックス ＆ tanh サチュレーション（豊かな響きと音割れ防止）
+                const mixed = (inSample * dryGain) + (echoSum * echoGain) + (apOut * wetGain);
+                dst[i] = Math.tanh(mixed);
             }
         }
         return outputBuffer;
@@ -1037,7 +1386,7 @@ class VoiceEngine {
     }
 
     /**
-     * Voicemodスタイル 統合ボイスプリセット定義マスター
+     * Voicemodスタイル 統合ボイスプリセット定義マスター（声質・キャラクター・機材）
      */
     static getVoicemodPresets() {
         return [
@@ -1049,7 +1398,7 @@ class VoiceEngine {
                 icon: '🎙️',
                 desc: '原音高音質化・マイク明瞭化',
                 voice: { pitchSemitones: 0, formantRatio: 1.0, roughness: 0 },
-                env: { reverb: 5, filter: 0, modulation: 0 },
+                env: { reverb: 5, filter: 0, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: 3, mid: 4, treble: 5 },
                 special: { chorus: 0, radioNoise: 0, trash: 0 }
             },
@@ -1060,7 +1409,7 @@ class VoiceEngine {
                 icon: '📢',
                 desc: 'ホーン共鳴＆過大入力歪み',
                 voice: { pitchSemitones: 1, formantRatio: 1.05, roughness: 10 },
-                env: { reverb: 5, filter: 95, modulation: 0 },
+                env: { reverb: 5, filter: 95, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: -8, mid: 8, treble: -3 },
                 special: { chorus: 0, radioNoise: 0, trash: 0 }
             },
@@ -1071,7 +1420,7 @@ class VoiceEngine {
                 icon: '🪖',
                 desc: 'FPS交信＆プツッザザッ通信音',
                 voice: { pitchSemitones: 0, formantRatio: 1.0, roughness: 15 },
-                env: { reverb: 0, filter: 88, modulation: 0 },
+                env: { reverb: 0, filter: 88, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: -10, mid: 6, treble: -6 },
                 special: { chorus: 0, radioNoise: 90, trash: 0 }
             },
@@ -1082,7 +1431,7 @@ class VoiceEngine {
                 icon: '📻',
                 desc: 'AM放送のノスタルジック帯域',
                 voice: { pitchSemitones: 0, formantRatio: 1.0, roughness: 5 },
-                env: { reverb: 0, filter: 68, modulation: 15 },
+                env: { reverb: 0, filter: 68, modulation: 15, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: -6, mid: 5, treble: -8 },
                 special: { chorus: 0, radioNoise: 20, trash: 0 }
             },
@@ -1093,7 +1442,7 @@ class VoiceEngine {
                 icon: '🗑️',
                 desc: '爆音・低品質ネットミームマイク',
                 voice: { pitchSemitones: 0, formantRatio: 1.0, roughness: 60 },
-                env: { reverb: 0, filter: 30, modulation: 0 },
+                env: { reverb: 0, filter: 30, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: 8, mid: 10, treble: -5 },
                 special: { chorus: 0, radioNoise: 0, trash: 85 }
             },
@@ -1106,7 +1455,7 @@ class VoiceEngine {
                 icon: '🍌',
                 desc: '甲高い超高音＆ミニオン風',
                 voice: { pitchSemitones: 10, formantRatio: 1.62, roughness: 0 },
-                env: { reverb: 5, filter: 0, modulation: 0 },
+                env: { reverb: 5, filter: 0, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: -4, mid: 2, treble: 6 },
                 special: { chorus: 0, radioNoise: 0, trash: 0 }
             },
@@ -1117,7 +1466,7 @@ class VoiceEngine {
                 icon: '👹',
                 desc: '巨体の咆哮＆重低音ガラガラ声',
                 voice: { pitchSemitones: -9, formantRatio: 0.42, roughness: 80 },
-                env: { reverb: 30, filter: 0, modulation: 0 },
+                env: { reverb: 30, filter: 0, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: 9, mid: 2, treble: -4 },
                 special: { chorus: 0, radioNoise: 0, trash: 0 }
             },
@@ -1128,7 +1477,7 @@ class VoiceEngine {
                 icon: '👶',
                 desc: '愛らしい高音トーン',
                 voice: { pitchSemitones: 7, formantRatio: 1.5, roughness: 5 },
-                env: { reverb: 5, filter: 0, modulation: 0 },
+                env: { reverb: 5, filter: 0, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: -2, mid: 3, treble: 4 },
                 special: { chorus: 0, radioNoise: 0, trash: 0 }
             },
@@ -1139,7 +1488,7 @@ class VoiceEngine {
                 icon: '👴',
                 desc: '深いしゃがれ＆かすれ声',
                 voice: { pitchSemitones: -4, formantRatio: 0.82, roughness: 60 },
-                env: { reverb: 10, filter: 10, modulation: 0 },
+                env: { reverb: 10, filter: 10, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: 2, mid: -2, treble: -3 },
                 special: { chorus: 0, radioNoise: 0, trash: 0 }
             },
@@ -1152,7 +1501,7 @@ class VoiceEngine {
                 icon: '💀',
                 desc: '怨念のピッチダウン＆暗黒残響',
                 voice: { pitchSemitones: -5, formantRatio: 0.75, roughness: 35 },
-                env: { reverb: 90, filter: 25, modulation: 30 },
+                env: { reverb: 90, filter: 25, modulation: 30, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: 6, mid: -4, treble: 3 },
                 special: { chorus: 40, radioNoise: 0, trash: 0 }
             },
@@ -1163,7 +1512,7 @@ class VoiceEngine {
                 icon: '🤖',
                 desc: '金属リング変調＆メカニカル音',
                 voice: { pitchSemitones: -2, formantRatio: 0.9, roughness: 20 },
-                env: { reverb: 15, filter: 0, modulation: 80 },
+                env: { reverb: 15, filter: 0, modulation: 80, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: 0, mid: 6, treble: 4 },
                 special: { chorus: 0, radioNoise: 0, trash: 0 }
             },
@@ -1174,7 +1523,7 @@ class VoiceEngine {
                 icon: '👽',
                 desc: '異星人の周波数うねり',
                 voice: { pitchSemitones: 5, formantRatio: 1.25, roughness: 10 },
-                env: { reverb: 50, filter: 15, modulation: 65 },
+                env: { reverb: 50, filter: 15, modulation: 65, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: -3, mid: 2, treble: 5 },
                 special: { chorus: 50, radioNoise: 0, trash: 0 }
             },
@@ -1185,44 +1534,144 @@ class VoiceEngine {
                 icon: '👥',
                 desc: '多重クローンボイスの大合唱',
                 voice: { pitchSemitones: 0, formantRatio: 1.0, roughness: 0 },
-                env: { reverb: 35, filter: 0, modulation: 0 },
+                env: { reverb: 35, filter: 0, modulation: 0, ambientSound: 'none', ambientVolume: 0 },
                 eq: { bass: 2, mid: 3, treble: 4 },
                 special: { chorus: 90, radioNoise: 0, trash: 0 }
-            },
+            }
+        ];
+    }
 
-            // 🏛️ 空間・音楽系
+    /**
+     * ⛰️ 環境・空間プリセット定義マスター（15種類の空間・自然・日常・特殊シーン）
+     */
+    static getEnvironmentPresets() {
+        return [
+            // 🏛️ 空間・反響系
             {
                 id: 'cathedral',
                 name: '大聖堂 (Cathedral)',
-                category: 'music',
+                category: 'spatial',
                 icon: '⛪',
-                desc: '神秘的で圧倒的な超ロング残響',
-                voice: { pitchSemitones: 0, formantRatio: 1.0, roughness: 0 },
-                env: { reverb: 95, filter: 0, modulation: 0 },
-                eq: { bass: 4, mid: 2, treble: 6 },
-                special: { chorus: 20, radioNoise: 0, trash: 0 }
+                desc: '神秘的で圧倒的な超ロング残響ドローン',
+                env: { reverb: 95, filter: 0, modulation: 0, ambientSound: 'cathedral', ambientVolume: 40 }
             },
             {
                 id: 'cave',
                 name: '洞窟 (Cave)',
-                category: 'music',
+                category: 'spatial',
                 icon: '⛰️',
-                desc: '岩肌に反響するディープエコー',
-                voice: { pitchSemitones: -1, formantRatio: 0.95, roughness: 0 },
-                env: { reverb: 85, filter: 20, modulation: 0 },
-                eq: { bass: 5, mid: -1, treble: -2 },
-                special: { chorus: 0, radioNoise: 0, trash: 0 }
+                desc: '水滴が滴る岩肌のディープエコー',
+                env: { reverb: 85, filter: 20, modulation: 0, ambientSound: 'cave_drip', ambientVolume: 45 }
             },
+            {
+                id: 'bath',
+                name: 'お風呂 (Bath)',
+                category: 'spatial',
+                icon: '🛁',
+                desc: 'タイルに反響する明るいエコー残響',
+                env: { reverb: 55, filter: 0, modulation: 0, ambientSound: 'none', ambientVolume: 0 }
+            },
+            {
+                id: 'hall',
+                name: 'コンサートホール',
+                category: 'spatial',
+                icon: '🏛️',
+                desc: '華やかで広大なホール空間残響',
+                env: { reverb: 70, filter: 0, modulation: 0, ambientSound: 'none', ambientVolume: 0 }
+            },
+
+            // 🌿 自然・風景系
             {
                 id: 'underwater',
                 name: '水の中 (Underwater)',
-                category: 'meme',
+                category: 'nature',
                 icon: '🫧',
-                desc: '深い水底の極限こもり音響',
-                voice: { pitchSemitones: -2, formantRatio: 0.85, roughness: 0 },
-                env: { reverb: 40, filter: 48, modulation: 0 },
-                eq: { bass: 7, mid: -6, treble: -12 },
-                special: { chorus: 30, radioNoise: 0, trash: 0 }
+                desc: '深海の気泡音と極限こもり音響',
+                env: { reverb: 40, filter: 48, modulation: 0, ambientSound: 'underwater', ambientVolume: 50 }
+            },
+            {
+                id: 'forest',
+                name: '森の音 (Forest)',
+                category: 'nature',
+                icon: '🌲',
+                desc: '爽やかな木々のざわめきと風の静けさ',
+                env: { reverb: 25, filter: 5, modulation: 0, ambientSound: 'forest', ambientVolume: 45 }
+            },
+            {
+                id: 'birds',
+                name: '鳥の声 (Birds)',
+                category: 'nature',
+                icon: '🐦',
+                desc: '小鳥のさえずりと穏やかな自然の息吹',
+                env: { reverb: 20, filter: 0, modulation: 0, ambientSound: 'birds', ambientVolume: 45 }
+            },
+            {
+                id: 'rain',
+                name: '雨と雷 (Rain & Thunder)',
+                category: 'nature',
+                icon: '🌧️',
+                desc: 'しとしと降る雨音と遠雷の響き',
+                env: { reverb: 35, filter: 15, modulation: 0, ambientSound: 'rain', ambientVolume: 45 }
+            },
+
+            // 🏙️ 日常・生活系
+            {
+                id: 'city',
+                name: '街の喧騒 (City)',
+                category: 'daily',
+                icon: '🏙️',
+                desc: '都市の雑踏・足音・車の走行音',
+                env: { reverb: 15, filter: 10, modulation: 0, ambientSound: 'city', ambientVolume: 40 }
+            },
+            {
+                id: 'train',
+                name: '電車の中 (Train)',
+                category: 'daily',
+                icon: '🚃',
+                desc: 'ガタゴト揺れる線路音とモーター音',
+                env: { reverb: 20, filter: 25, modulation: 0, ambientSound: 'train', ambientVolume: 45 }
+            },
+            {
+                id: 'cafe',
+                name: 'カフェ (Cafe)',
+                category: 'daily',
+                icon: '☕',
+                desc: '店内の話し声とカップの触れ合う音',
+                env: { reverb: 25, filter: 10, modulation: 0, ambientSound: 'cafe', ambientVolume: 40 }
+            },
+
+            // 📡 機材・特殊系
+            {
+                id: 'space',
+                name: '宇宙ステーション (Space)',
+                category: 'special',
+                icon: '🌌',
+                desc: '無重力サブベースとSF空間うねり',
+                env: { reverb: 60, filter: 20, modulation: 50, ambientSound: 'space', ambientVolume: 45 }
+            },
+            {
+                id: 'megaphone_env',
+                name: 'メガホン・広場 (Megaphone)',
+                category: 'special',
+                icon: '📢',
+                desc: '屋外広場に響く拡声器の反響',
+                env: { reverb: 45, filter: 95, modulation: 0, ambientSound: 'none', ambientVolume: 0 }
+            },
+            {
+                id: 'radio_env',
+                name: 'レトロラジオ環境 (Radio)',
+                category: 'special',
+                icon: '📻',
+                desc: '昭和レトロなAM電波帯域フィルター',
+                env: { reverb: 10, filter: 68, modulation: 15, ambientSound: 'none', ambientVolume: 0 }
+            },
+            {
+                id: 'telephone_env',
+                name: '黒電話・固定電話 (Telephone)',
+                category: 'special',
+                icon: '☎️',
+                desc: '狭帯域な電話回線の音響特性',
+                env: { reverb: 0, filter: 85, modulation: 0, ambientSound: 'none', ambientVolume: 0 }
             }
         ];
     }
@@ -4971,7 +5420,9 @@ class VoicePadApp {
         this.bindFxSliders('scroll');
         this.bindFxSliders('global');
         this.bindFxSliders('quick-voice');
+        this.bindFxSliders('quick-env');
         this.initVoicemodCategoryTabs();
+        this.initEnvironmentCategoryTabs();
 
         // スロットモーダルのモード切り替え
         document.getElementById('edit-slot-effect-mode')?.addEventListener('change', (e) => {
@@ -5099,6 +5550,14 @@ class VoicePadApp {
                 qeModVal.innerText = `${val}% (${desc})`;
             });
         }
+        const qeAmbVol = document.getElementById('quick-env-ambient-vol-slider');
+        const qeAmbVolVal = document.getElementById('quick-env-ambient-vol-val');
+        if (qeAmbVol && qeAmbVolVal) {
+            qeAmbVol.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                qeAmbVolVal.innerText = `${val}%`;
+            });
+        }
 
         // ⛰️ クイック環境プリセット
         document.querySelectorAll('#quick-env-preset-chips .fx-chip-btn').forEach(btn => {
@@ -5170,6 +5629,20 @@ class VoicePadApp {
     }
 
     /**
+     * ⛰️ 環境カテゴリタブの初期化
+     */
+    initEnvironmentCategoryTabs() {
+        document.querySelectorAll('#quick-env-voicemod-tabs .vm-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#quick-env-voicemod-tabs .vm-tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const category = btn.getAttribute('data-category');
+                this.renderEnvironmentPresetCards('quick-env-voicemod-grid', category);
+            });
+        });
+    }
+
+    /**
      * Voicemod風 プリセットカード一覧の動的描画
      */
     renderVoicemodPresetCards(containerId, category = 'all', prefix = 'slot') {
@@ -5210,6 +5683,64 @@ class VoicePadApp {
         // モードを「個別に設定」に自動切り替え
         const modeSelectId = prefix === 'quick-voice' ? 'slot-quick-voice-mode' : `edit-${prefix}-effect-mode`;
         const modeSelect = document.getElementById(modeSelectId);
+        if (modeSelect) {
+            modeSelect.value = 'custom';
+            modeSelect.dispatchEvent(new Event('change'));
+        }
+    }
+
+    /**
+     * ⛰️ 環境プリセットカード一覧の動的描画
+     */
+    renderEnvironmentPresetCards(containerId = 'quick-env-voicemod-grid', category = 'all') {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        const allPresets = VoiceEngine.getEnvironmentPresets();
+        const filtered = category === 'all' ? allPresets : allPresets.filter(p => p.category === category);
+
+        container.innerHTML = '';
+        filtered.forEach(preset => {
+            const card = document.createElement('div');
+            card.className = 'vm-card';
+            card.setAttribute('data-vm-id', preset.id);
+
+            card.innerHTML = `
+                <div class="vm-card-icon">${preset.icon}</div>
+                <div class="vm-card-name">${this.escapeHtml(preset.name)}</div>
+                <div class="vm-card-desc">${this.escapeHtml(preset.desc)}</div>
+            `;
+
+            card.addEventListener('click', () => {
+                container.querySelectorAll('.vm-card').forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                this.applyEnvironmentPresetToUI(preset);
+                this.showToast(`✨ 環境「${preset.name}」を適用しました（下のシークバーで微調整できます）`);
+            });
+
+            container.appendChild(card);
+        });
+    }
+
+    /**
+     * 選択された環境プリセットのパラメータをスライダーUIへ即時反映（シークバーは常に表示されて微調整可能）
+     */
+    applyEnvironmentPresetToUI(preset) {
+        const env = preset.env || {};
+        const reverbSlider = document.getElementById('quick-env-reverb-slider');
+        const filterSlider = document.getElementById('quick-env-filter-slider');
+        const modSlider = document.getElementById('quick-env-mod-slider');
+        const ambVolSlider = document.getElementById('quick-env-ambient-vol-slider');
+        const ambSoundSelect = document.getElementById('quick-env-ambient-sound-select');
+
+        if (reverbSlider) { reverbSlider.value = env.reverb ?? 0; reverbSlider.dispatchEvent(new Event('input')); }
+        if (filterSlider) { filterSlider.value = env.filter ?? 0; filterSlider.dispatchEvent(new Event('input')); }
+        if (modSlider) { modSlider.value = env.modulation ?? 0; modSlider.dispatchEvent(new Event('input')); }
+        if (ambVolSlider) { ambVolSlider.value = env.ambientVolume ?? 35; ambVolSlider.dispatchEvent(new Event('input')); }
+        if (ambSoundSelect) { ambSoundSelect.value = env.ambientSound ?? 'none'; }
+
+        // モードを「個別に設定」に自動切り替え
+        const modeSelect = document.getElementById('slot-quick-env-mode');
         if (modeSelect) {
             modeSelect.value = 'custom';
             modeSelect.dispatchEvent(new Event('change'));
@@ -5362,6 +5893,16 @@ class VoicePadApp {
                 trashVal.innerText = `${val}% (${desc})`;
             });
         }
+
+        // ⑩ 環境背景音
+        const ambientVolSlider = document.getElementById(`${prefix}-ambient-vol-slider`);
+        const ambientVolVal = document.getElementById(`${prefix}-ambient-vol-val`);
+        if (ambientVolSlider && ambientVolVal) {
+            ambientVolSlider.addEventListener('input', (e) => {
+                const val = parseInt(e.target.value, 10);
+                ambientVolVal.innerText = `${val}%`;
+            });
+        }
     }
 
     setFxParamsToUI(prefix, voiceParams, envParams, eqParams = null, specialParams = null, speed = null) {
@@ -5377,6 +5918,8 @@ class VoicePadApp {
         const reverbSlider = document.getElementById(`${prefix}-reverb-slider`);
         const filterSlider = document.getElementById(`${prefix}-filter-slider`);
         const modSlider = document.getElementById(`${prefix}-mod-slider`);
+        const ambientVolSlider = document.getElementById(`${prefix}-ambient-vol-slider`);
+        const ambientSoundSelect = document.getElementById(`${prefix}-ambient-sound-select`);
 
         const eqBass = document.getElementById(`${prefix}-eq-bass-slider`);
         const eqMid = document.getElementById(`${prefix}-eq-mid-slider`);
@@ -5396,9 +5939,11 @@ class VoicePadApp {
             speedSlider.dispatchEvent(new Event('input'));
         }
         if (e) {
-            if (reverbSlider) { reverbSlider.value = e.reverb; reverbSlider.dispatchEvent(new Event('input')); }
-            if (filterSlider) { filterSlider.value = e.filter; filterSlider.dispatchEvent(new Event('input')); }
-            if (modSlider) { modSlider.value = e.modulation; modSlider.dispatchEvent(new Event('input')); }
+            if (reverbSlider) { reverbSlider.value = e.reverb ?? 0; reverbSlider.dispatchEvent(new Event('input')); }
+            if (filterSlider) { filterSlider.value = e.filter ?? 0; filterSlider.dispatchEvent(new Event('input')); }
+            if (modSlider) { modSlider.value = e.modulation ?? 0; modSlider.dispatchEvent(new Event('input')); }
+            if (ambientVolSlider) { ambientVolSlider.value = e.ambientVolume ?? 35; ambientVolSlider.dispatchEvent(new Event('input')); }
+            if (ambientSoundSelect) { ambientSoundSelect.value = e.ambientSound ?? 'none'; }
         }
 
         if (eq) {
@@ -5422,6 +5967,8 @@ class VoicePadApp {
         const reverbSlider = document.getElementById(`${prefix}-reverb-slider`);
         const filterSlider = document.getElementById(`${prefix}-filter-slider`);
         const modSlider = document.getElementById(`${prefix}-mod-slider`);
+        const ambientVolSlider = document.getElementById(`${prefix}-ambient-vol-slider`);
+        const ambientSoundSelect = document.getElementById(`${prefix}-ambient-sound-select`);
 
         const eqBass = document.getElementById(`${prefix}-eq-bass-slider`);
         const eqMid = document.getElementById(`${prefix}-eq-mid-slider`);
@@ -5440,7 +5987,9 @@ class VoicePadApp {
             envParams: {
                 reverb: reverbSlider ? parseInt(reverbSlider.value, 10) : 0,
                 filter: filterSlider ? parseInt(filterSlider.value, 10) : 0,
-                modulation: modSlider ? parseInt(modSlider.value, 10) : 0
+                modulation: modSlider ? parseInt(modSlider.value, 10) : 0,
+                ambientSound: ambientSoundSelect ? ambientSoundSelect.value : 'none',
+                ambientVolume: ambientVolSlider ? parseInt(ambientVolSlider.value, 10) : 35
             },
             eqParams: {
                 bass: eqBass ? parseInt(eqBass.value, 10) : 0,
@@ -5505,6 +6054,144 @@ class VoicePadApp {
                 this.fxPreviewSource.disconnect();
             } catch (e) {}
             this.fxPreviewSource = null;
+        }
+    }
+
+    // ==================== ⚙️ 全体設定・ガイド・QR・アップデートモーダル制御 ====================
+    openSettingsModal() {
+        const modal = document.getElementById('settings-modal-backdrop');
+        if (modal) {
+            modal.classList.add('open');
+            const pageSizeSelect = document.getElementById('setting-page-size');
+            if (pageSizeSelect) pageSizeSelect.value = String(this.pageSize);
+            const globalSpeedSelect = document.getElementById('setting-global-speed');
+            if (globalSpeedSelect) globalSpeedSelect.value = String(this.globalPlaybackSpeed);
+            const themeSelect = document.getElementById('setting-theme-select');
+            if (themeSelect) themeSelect.value = this.currentTheme;
+            const aacToggle = document.getElementById('setting-aac-scan-toggle');
+            if (aacToggle) aacToggle.checked = this.aacScanActive;
+            const aacOptions = document.getElementById('aac-scan-options');
+            if (aacOptions) aacOptions.style.display = this.aacScanActive ? 'block' : 'none';
+            const aacSpeed = document.getElementById('setting-aac-scan-speed');
+            if (aacSpeed) aacSpeed.value = this.aacScanSpeed;
+            const aacSpeedVal = document.getElementById('aac-scan-speed-val');
+            if (aacSpeedVal) aacSpeedVal.innerText = `${this.aacScanSpeed}秒`;
+            const aacMode = document.getElementById('setting-aac-scan-mode');
+            if (aacMode) aacMode.value = this.aacScanMode;
+        }
+    }
+
+    closeSettingsModal() {
+        document.getElementById('settings-modal-backdrop')?.classList.remove('open');
+    }
+
+    openGuideModal() {
+        document.getElementById('guide-modal-backdrop')?.classList.add('open');
+    }
+
+    closeGuideModal() {
+        document.getElementById('guide-modal-backdrop')?.classList.remove('open');
+    }
+
+    openBackupConfirmModal() {
+        document.getElementById('backup-confirm-modal-backdrop')?.classList.add('open');
+    }
+
+    closeBackupConfirmModal() {
+        document.getElementById('backup-confirm-modal-backdrop')?.classList.remove('open');
+    }
+
+    async performAppUpdate() {
+        this.showToast('🔄 キャッシュをクリアして最新バージョンへ更新中...');
+        try {
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    await registration.unregister();
+                }
+            }
+            if ('caches' in window) {
+                const cacheKeys = await caches.keys();
+                await Promise.all(cacheKeys.map(k => caches.delete(k)));
+            }
+        } catch (e) {
+            console.warn('Update cache clear error:', e);
+        }
+        setTimeout(() => {
+            window.location.reload(true);
+        }, 600);
+    }
+
+    openQrModal() {
+        const modal = document.getElementById('qr-modal-backdrop');
+        if (modal) {
+            modal.classList.add('open');
+            this.renderQrCode();
+        }
+    }
+
+    closeQrModal() {
+        document.getElementById('qr-modal-backdrop')?.classList.remove('open');
+    }
+
+    renderQrCode() {
+        const canvas = document.getElementById('qr-canvas');
+        if (!canvas) return;
+        this.drawStylizedQr(canvas, 'https://galakutar.github.io/Voice-Pad/');
+    }
+
+    drawStylizedQr(canvas, text) {
+        const ctx = canvas.getContext('2d');
+        const size = canvas.width || 160;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, size, size);
+
+        // QRコードのスタイリッシュなマトリックス描画（完全オフラインで動作）
+        const moduleCount = 25;
+        const cellSize = size / moduleCount;
+
+        // ハッシュベースの決定論的パターン生成
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+            hash = ((hash << 5) - hash) + text.charCodeAt(i);
+            hash |= 0;
+        }
+
+        ctx.fillStyle = '#0f172a';
+
+        // 3隅のファインダーパターン（位置検出マーク）
+        const drawFinder = (x, y) => {
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(x * cellSize, y * cellSize, 7 * cellSize, 7 * cellSize);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect((x + 1) * cellSize, (y + 1) * cellSize, 5 * cellSize, 5 * cellSize);
+            ctx.fillStyle = '#2563eb';
+            ctx.fillRect((x + 2) * cellSize, (y + 2) * cellSize, 3 * cellSize, 3 * cellSize);
+        };
+
+        drawFinder(0, 0);
+        drawFinder(moduleCount - 7, 0);
+        drawFinder(0, moduleCount - 7);
+
+        // データモジュール描画
+        ctx.fillStyle = '#1e293b';
+        let seed = Math.abs(hash);
+        for (let r = 0; r < moduleCount; r++) {
+            for (let c = 0; c < moduleCount; c++) {
+                if ((r < 8 && c < 8) || (r < 8 && c >= moduleCount - 8) || (r >= moduleCount - 8 && c < 8)) {
+                    continue; // ファインダー領域はスキップ
+                }
+                seed = (seed * 9301 + 49297) % 233280;
+                if ((seed / 233280) > 0.48) {
+                    ctx.beginPath();
+                    if (ctx.roundRect) {
+                        ctx.roundRect(c * cellSize + 0.5, r * cellSize + 0.5, cellSize - 1, cellSize - 1, 1.5);
+                    } else {
+                        ctx.rect(c * cellSize + 0.5, r * cellSize + 0.5, cellSize - 1, cellSize - 1);
+                    }
+                    ctx.fill();
+                }
+            }
         }
     }
 
@@ -5644,10 +6331,21 @@ class VoicePadApp {
         const reverbSlider = document.getElementById('quick-env-reverb-slider');
         const filterSlider = document.getElementById('quick-env-filter-slider');
         const modSlider = document.getElementById('quick-env-mod-slider');
+        const ambVolSlider = document.getElementById('quick-env-ambient-vol-slider');
+        const ambSoundSelect = document.getElementById('quick-env-ambient-sound-select');
 
         if (reverbSlider) { reverbSlider.value = targetEnv.reverb || 0; reverbSlider.dispatchEvent(new Event('input')); }
         if (filterSlider) { filterSlider.value = targetEnv.filter || 0; filterSlider.dispatchEvent(new Event('input')); }
         if (modSlider) { modSlider.value = targetEnv.modulation || 0; modSlider.dispatchEvent(new Event('input')); }
+        if (ambVolSlider) { ambVolSlider.value = targetEnv.ambientVolume !== undefined ? targetEnv.ambientVolume : 35; ambVolSlider.dispatchEvent(new Event('input')); }
+        if (ambSoundSelect) { ambSoundSelect.value = targetEnv.ambientSound || 'none'; }
+
+        // ⛰️ Environment プリセットカード一覧を描画
+        this.renderEnvironmentPresetCards('quick-env-voicemod-grid', 'all');
+        document.querySelectorAll('#quick-env-voicemod-tabs .vm-tab-btn').forEach(b => {
+            if (b.getAttribute('data-category') === 'all') b.classList.add('active');
+            else b.classList.remove('active');
+        });
 
         // プリセットチップスの選択リセット
         document.querySelectorAll('#quick-env-preset-chips .fx-chip-btn').forEach(b => b.classList.remove('active'));
@@ -5673,17 +6371,21 @@ class VoicePadApp {
             const reverbSlider = document.getElementById('quick-env-reverb-slider');
             const filterSlider = document.getElementById('quick-env-filter-slider');
             const modSlider = document.getElementById('quick-env-mod-slider');
+            const ambVolSlider = document.getElementById('quick-env-ambient-vol-slider');
+            const ambSoundSelect = document.getElementById('quick-env-ambient-sound-select');
 
             slot.voiceEffectMode = 'custom';
             slot.envParams = {
                 reverb: reverbSlider ? parseInt(reverbSlider.value, 10) : 0,
                 filter: filterSlider ? parseInt(filterSlider.value, 10) : 0,
-                modulation: modSlider ? parseInt(modSlider.value, 10) : 0
+                modulation: modSlider ? parseInt(modSlider.value, 10) : 0,
+                ambientSound: ambSoundSelect ? ambSoundSelect.value : 'none',
+                ambientVolume: ambVolSlider ? parseInt(ambVolSlider.value, 10) : 35
             };
             slot.voiceEffect = 'custom';
         } else {
             slot.envParams = null;
-            if (slot.voiceParams) {
+            if (slot.voiceParams || slot.eqParams || slot.specialParams) {
                 slot.voiceEffectMode = 'custom';
             } else {
                 slot.voiceEffectMode = 'inherit';
@@ -5709,20 +6411,26 @@ class VoicePadApp {
         const reverbSlider = document.getElementById('quick-env-reverb-slider');
         const filterSlider = document.getElementById('quick-env-filter-slider');
         const modSlider = document.getElementById('quick-env-mod-slider');
+        const ambVolSlider = document.getElementById('quick-env-ambient-vol-slider');
+        const ambSoundSelect = document.getElementById('quick-env-ambient-sound-select');
 
         const envParams = {
             reverb: reverbSlider ? parseInt(reverbSlider.value, 10) : 0,
             filter: filterSlider ? parseInt(filterSlider.value, 10) : 0,
-            modulation: modSlider ? parseInt(modSlider.value, 10) : 0
+            modulation: modSlider ? parseInt(modSlider.value, 10) : 0,
+            ambientSound: ambSoundSelect ? ambSoundSelect.value : 'none',
+            ambientVolume: ambVolSlider ? parseInt(ambVolSlider.value, 10) : 35
         };
         const voiceParams = this.getEffectiveVoiceParams(slot);
+        const eqParams = this.getEffectiveEqParams(slot);
+        const specialParams = this.getEffectiveSpecialParams(slot);
         const speed = this.getEffectivePlaybackSpeed(slot);
 
         if (slot && slot.audioBlob) {
             try {
                 const arr = await slot.audioBlob.arrayBuffer();
                 const originalBuffer = await ctx.decodeAudioData(arr.slice(0));
-                const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed);
+                const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
                 const src = ctx.createBufferSource();
                 src.buffer = processed;
@@ -5736,7 +6444,7 @@ class VoicePadApp {
                 console.error('Preview error:', err);
             }
         } else {
-            this.playTestVoicePreview(ctx, voiceParams, envParams, speed);
+            this.playTestVoicePreview(ctx, voiceParams, envParams, speed, eqParams, specialParams);
         }
     }
 

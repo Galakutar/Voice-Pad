@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260917_7">
+    <link rel="stylesheet" href="style.css?v=20260917_9">
 </head>
 <body>
     <div id="app-container">
@@ -219,22 +219,22 @@
                         <!-- ステージ2: 環境フィルターパラメータ -->
                         <div class="fx-stage-card stage-env">
                             <div class="fx-stage-header">
-                                <span class="fx-stage-title">⛰️ ステージ2: 環境フィルター（空間・機材）</span>
+                                <span class="fx-stage-title">⛰️ ステージ2: 環境フィルター（空間・機材・背景音）</span>
                                 <span class="fx-stage-badge">Environment & FX</span>
                             </div>
 
                             <div class="fx-slider-list">
-                                <!-- ① リバーブ・残響 -->
+                                <!-- ① リバーブ・やまびこエコー -->
                                 <div class="fx-slider-item">
                                     <div class="fx-slider-top">
-                                        <span class="fx-slider-label">🌊 リバーブ・残響サイズ</span>
+                                        <span class="fx-slider-label">🌊 リバーブ・やまびこエコー</span>
                                         <span id="slot-reverb-val" class="fx-slider-val">0% (ドライ)</span>
                                     </div>
                                     <input type="range" id="slot-reverb-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
                                     <div class="fx-slider-hints">
                                         <span>0% (なし)</span>
                                         <span>50% (お風呂)</span>
-                                        <span>100% (大ホール/洞窟)</span>
+                                        <span>100% (大聖堂/洞窟)</span>
                                     </div>
                                 </div>
 
@@ -264,6 +264,40 @@
                                         <span>50% (宇宙人)</span>
                                         <span>100% (金属ロボット)</span>
                                     </div>
+                                </div>
+
+                                <!-- ④ 環境背景音の音量 -->
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">🔊 環境背景音の音量</span>
+                                        <span id="slot-ambient-vol-val" class="fx-slider-val">35%</span>
+                                    </div>
+                                    <input type="range" id="slot-ambient-vol-slider" min="0" max="100" step="5" value="35" class="adjust-slider fx-slider-track">
+                                    <div class="fx-slider-hints">
+                                        <span>0% (消音)</span>
+                                        <span>50% (適度)</span>
+                                        <span>100% (大音量)</span>
+                                    </div>
+                                </div>
+
+                                <!-- ⑤ 環境背景音の選択 -->
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">🎵 環境背景音の選択</span>
+                                    </div>
+                                    <select id="slot-ambient-sound-select" class="form-input" style="font-size: 11.5px; padding: 5px 8px; margin-top: 4px;">
+                                        <option value="none">🔇 背景音なし</option>
+                                        <option value="underwater">🫧 水の中（深海・気泡音）</option>
+                                        <option value="birds">🐦 鳥の声（爽やかなさえずり・微風）</option>
+                                        <option value="forest">🌲 森の音（木々のざわめき・風）</option>
+                                        <option value="city">🏙️ 街の喧騒（都市の雑踏・車の走行音）</option>
+                                        <option value="train">🚃 電車の中（ガタゴト線路音・モーター）</option>
+                                        <option value="rain">🌧️ 雨と雷（しとしと雨音・遠雷）</option>
+                                        <option value="cafe">☕ カフェ（店内の賑わい・カップ音）</option>
+                                        <option value="cave_drip">⛰️ 洞窟の滴（空間ドローン・水滴音）</option>
+                                        <option value="cathedral">⛪ 大聖堂（荘厳な聖歌コードドローン）</option>
+                                        <option value="space">🌌 宇宙（無重力サブベース・うねり）</option>
+                                    </select>
                                 </div>
                             </div>
                         </div>
@@ -599,10 +633,11 @@
                         </div>
                         <div class="voicemod-category-tabs" id="quick-voice-voicemod-tabs">
                             <button type="button" class="vm-tab-btn active" data-category="all">すべて</button>
-                            <button type="button" class="vm-tab-btn" data-category="device">🎙️ 通信・機材</button>
+                            <button type="button" class="vm-tab-btn" data-category="device">🎙️ 機材・通信</button>
                             <button type="button" class="vm-tab-btn" data-category="character">🎭 キャラクター</button>
                             <button type="button" class="vm-tab-btn" data-category="horror">👻 ホラー・SF</button>
-                            <button type="button" class="vm-tab-btn" data-category="music">👥 空間・音楽</button>
+                            <button type="button" class="vm-tab-btn" data-category="music">👥 分身・合唱</button>
+                            <button type="button" class="vm-tab-btn" data-category="meme">🤪 面白・ミーム</button>
                         </div>
                         <div class="voicemod-grid" id="quick-voice-voicemod-grid"></div>
                     </div>
@@ -782,69 +817,106 @@
                     </select>
                 </div>
 
-                <div id="slot-quick-env-panel" class="fx-stage-card stage-env" style="margin-top: 6px;">
-                    <div class="fx-stage-header">
-                        <span class="fx-stage-title">⛰️ 環境・空間エフェクト（外側）</span>
-                        <span class="fx-stage-badge">Environment & FX</span>
+                <div id="slot-quick-env-panel" style="margin-top: 6px;">
+                    <!-- ⛰️ Environment プリセットカード一覧 -->
+                    <div class="voicemod-section" style="margin-bottom: 10px; border-color: rgba(16, 185, 129, 0.35);">
+                        <div class="voicemod-header">
+                            <span class="voicemod-title" style="color: #34d399;">⛰️ 環境プリセット (Environment Cards)</span>
+                            <span class="voicemod-badge" style="background: linear-gradient(135deg, #059669, #10b981);">SCENE FX</span>
+                        </div>
+                        <div class="voicemod-category-tabs" id="quick-env-voicemod-tabs">
+                            <button type="button" class="vm-tab-btn active" data-category="all">すべて</button>
+                            <button type="button" class="vm-tab-btn" data-category="spatial">🏛️ 空間・反響</button>
+                            <button type="button" class="vm-tab-btn" data-category="nature">🌿 自然・風景</button>
+                            <button type="button" class="vm-tab-btn" data-category="daily">🏙️ 日常・生活</button>
+                            <button type="button" class="vm-tab-btn" data-category="special">📡 機材・特殊</button>
+                        </div>
+                        <div class="voicemod-grid" id="quick-env-voicemod-grid"></div>
                     </div>
 
-                    <div class="fx-slider-list">
-                        <!-- ① リバーブ -->
-                        <div class="fx-slider-item">
-                            <div class="fx-slider-top">
-                                <span class="fx-slider-label">🌊 リバーブ・残響（空間の広がり）</span>
-                                <span id="quick-env-reverb-val" class="fx-slider-val">0% (ドライ)</span>
-                            </div>
-                            <input type="range" id="quick-env-reverb-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                            <div class="fx-slider-hints">
-                                <span>0% (反響なし)</span>
-                                <span>50% (お風呂)</span>
-                                <span>100% (大聖堂/洞窟)</span>
-                            </div>
+                    <!-- パラメータ微調整シークバー（常に表示・即座に調整可能） -->
+                    <div class="fx-stage-card stage-env">
+                        <div class="fx-stage-header">
+                            <span class="fx-stage-title">⛰️ 環境パラメータ微調整（外側）</span>
+                            <span class="fx-stage-badge">Fine Tuning</span>
                         </div>
 
-                        <!-- ② フィルター -->
-                        <div class="fx-slider-item">
-                            <div class="fx-slider-top">
-                                <span class="fx-slider-label">📻 音響フィルター（こもり・電話・メガホン）</span>
-                                <span id="quick-env-filter-val" class="fx-slider-val">0% (オフ)</span>
+                        <div class="fx-slider-list">
+                            <!-- ① リバーブ・やまびこエコー -->
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">🌊 リバーブ・やまびこエコー（空間残響）</span>
+                                    <span id="quick-env-reverb-val" class="fx-slider-val">0% (ドライ)</span>
+                                </div>
+                                <input type="range" id="quick-env-reverb-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                                <div class="fx-slider-hints">
+                                    <span>0% (反響なし)</span>
+                                    <span>50% (お風呂)</span>
+                                    <span>100% (大聖堂/洞窟)</span>
+                                </div>
                             </div>
-                            <input type="range" id="quick-env-filter-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                            <div class="fx-slider-hints">
-                                <span>0% (原音)</span>
-                                <span>50% (ラジオ/こもり)</span>
-                                <span>100% (メガホン/電話)</span>
-                            </div>
-                        </div>
 
-                        <!-- ③ モジュレーション -->
-                        <div class="fx-slider-item">
-                            <div class="fx-slider-top">
-                                <span class="fx-slider-label">🤖 特殊モジュレーション（ロボット・宇宙人）</span>
-                                <span id="quick-env-mod-val" class="fx-slider-val">0% (オフ)</span>
+                            <!-- ② フィルター -->
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">📻 音響フィルター（こもり・電話・メガホン）</span>
+                                    <span id="quick-env-filter-val" class="fx-slider-val">0% (オフ)</span>
+                                </div>
+                                <input type="range" id="quick-env-filter-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                                <div class="fx-slider-hints">
+                                    <span>0% (原音)</span>
+                                    <span>50% (ラジオ/こもり)</span>
+                                    <span>100% (メガホン/電話)</span>
+                                </div>
                             </div>
-                            <input type="range" id="quick-env-mod-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                            <div class="fx-slider-hints">
-                                <span>0% (オフ)</span>
-                                <span>50% (宇宙人/うねり)</span>
-                                <span>100% (金属ロボット)</span>
-                            </div>
-                        </div>
-                    </div>
 
-                    <!-- 環境クイックプリセット -->
-                    <div class="fx-preset-row">
-                        <span class="fx-preset-label">クイック選択:</span>
-                        <div class="fx-preset-chips" id="quick-env-preset-chips">
-                            <button type="button" class="fx-chip-btn" data-preset="none">✨ なし (標準)</button>
-                            <button type="button" class="fx-chip-btn" data-preset="cave">⛰️ 洞窟 (エコー)</button>
-                            <button type="button" class="fx-chip-btn" data-preset="hall">🏛️ 大ホール</button>
-                            <button type="button" class="fx-chip-btn" data-preset="telephone">📱 電話</button>
-                            <button type="button" class="fx-chip-btn" data-preset="radio">📻 古いラジオ</button>
-                            <button type="button" class="fx-chip-btn" data-preset="megaphone">📢 メガホン</button>
-                            <button type="button" class="fx-chip-btn" data-preset="robot">🤖 ロボット</button>
-                            <button type="button" class="fx-chip-btn" data-preset="alien">👽 宇宙人</button>
-                            <button type="button" class="fx-chip-btn" data-preset="underwater">🫧 水の中</button>
+                            <!-- ③ モジュレーション -->
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">🤖 特殊モジュレーション（ロボット・宇宙人）</span>
+                                    <span id="quick-env-mod-val" class="fx-slider-val">0% (オフ)</span>
+                                </div>
+                                <input type="range" id="quick-env-mod-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
+                                <div class="fx-slider-hints">
+                                    <span>0% (オフ)</span>
+                                    <span>50% (宇宙人/うねり)</span>
+                                    <span>100% (金属ロボット)</span>
+                                </div>
+                            </div>
+
+                            <!-- ④ 環境背景音の音量 -->
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">🔊 環境背景音の音量</span>
+                                    <span id="quick-env-ambient-vol-val" class="fx-slider-val">35%</span>
+                                </div>
+                                <input type="range" id="quick-env-ambient-vol-slider" min="0" max="100" step="5" value="35" class="adjust-slider fx-slider-track">
+                                <div class="fx-slider-hints">
+                                    <span>0% (消音)</span>
+                                    <span>50% (適度)</span>
+                                    <span>100% (大音量)</span>
+                                </div>
+                            </div>
+
+                            <!-- ⑤ 環境背景音の選択 -->
+                            <div class="fx-slider-item">
+                                <div class="fx-slider-top">
+                                    <span class="fx-slider-label">🎵 環境背景音の選択</span>
+                                </div>
+                                <select id="quick-env-ambient-sound-select" class="form-input" style="font-size: 11.5px; padding: 5px 8px; margin-top: 4px;">
+                                    <option value="none">🔇 背景音なし</option>
+                                    <option value="underwater">🫧 水の中（深海・気泡音）</option>
+                                    <option value="birds">🐦 鳥の声（爽やかなさえずり・微風）</option>
+                                    <option value="forest">🌲 森の音（木々のざわめき・風）</option>
+                                    <option value="city">🏙️ 街の喧騒（都市の雑踏・車の走行音）</option>
+                                    <option value="train">🚃 電車の中（ガタゴト線路音・モーター）</option>
+                                    <option value="rain">🌧️ 雨と雷（しとしと雨音・遠雷）</option>
+                                    <option value="cafe">☕ カフェ（店内の賑わい・カップ音）</option>
+                                    <option value="cave_drip">⛰️ 洞窟の滴（空間ドローン・水滴音）</option>
+                                    <option value="cathedral">⛪ 大聖堂（荘厳な聖歌コードドローン）</option>
+                                    <option value="space">🌌 宇宙（無重力サブベース・うねり）</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -896,10 +968,11 @@
                             </div>
                             <div class="voicemod-category-tabs" id="scroll-voicemod-tabs">
                                 <button type="button" class="vm-tab-btn active" data-category="all">すべて</button>
-                                <button type="button" class="vm-tab-btn" data-category="device">🎙️ 通信・機材</button>
+                                <button type="button" class="vm-tab-btn" data-category="device">🎙️ 機材・通信</button>
                                 <button type="button" class="vm-tab-btn" data-category="character">🎭 キャラクター</button>
                                 <button type="button" class="vm-tab-btn" data-category="horror">👻 ホラー・SF</button>
-                                <button type="button" class="vm-tab-btn" data-category="music">👥 空間・音楽</button>
+                                <button type="button" class="vm-tab-btn" data-category="music">👥 分身・合唱</button>
+                                <button type="button" class="vm-tab-btn" data-category="meme">🤪 面白・ミーム</button>
                             </div>
                             <div class="voicemod-grid" id="scroll-voicemod-grid"></div>
                         </div>
@@ -957,13 +1030,13 @@
 
                         <div class="fx-stage-card stage-env">
                             <div class="fx-stage-header">
-                                <span class="fx-stage-title">⛰️ ステージ2: 環境フィルター</span>
+                                <span class="fx-stage-title">⛰️ ステージ2: 環境フィルター（空間・背景音）</span>
                                 <span class="fx-stage-badge">Environment & FX</span>
                             </div>
                             <div class="fx-slider-list">
                                 <div class="fx-slider-item">
                                     <div class="fx-slider-top">
-                                        <span class="fx-slider-label">🌊 リバーブ・残響</span>
+                                        <span class="fx-slider-label">🌊 リバーブ・やまびこエコー</span>
                                         <span id="scroll-reverb-val" class="fx-slider-val">0% (ドライ)</span>
                                     </div>
                                     <input type="range" id="scroll-reverb-slider" min="0" max="100" step="5" value="0" class="adjust-slider fx-slider-track">
@@ -981,6 +1054,31 @@
                                         <span id="scroll-mod-val" class="fx-slider-val">0% (オフ)</span>
                                     </div>
                                     <input type="range" id="scroll-mod-slider" min="0" max="100" step="5" value="0" class="adjust-slider fx-slider-track">
+                                </div>
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">🔊 環境背景音の音量</span>
+                                        <span id="scroll-ambient-vol-val" class="fx-slider-val">35%</span>
+                                    </div>
+                                    <input type="range" id="scroll-ambient-vol-slider" min="0" max="100" step="5" value="35" class="adjust-slider fx-slider-track">
+                                </div>
+                                <div class="fx-slider-item">
+                                    <div class="fx-slider-top">
+                                        <span class="fx-slider-label">🎵 環境背景音の選択</span>
+                                    </div>
+                                    <select id="scroll-ambient-sound-select" class="form-input" style="font-size: 11.5px; padding: 5px 8px; margin-top: 4px;">
+                                        <option value="none">🔇 背景音なし</option>
+                                        <option value="underwater">🫧 水の中（深海・気泡音）</option>
+                                        <option value="birds">🐦 鳥の声（爽やかなさえずり・微風）</option>
+                                        <option value="forest">🌲 森の音（木々のざわめき・風）</option>
+                                        <option value="city">🏙️ 街の喧騒（都市の雑踏・車の走行音）</option>
+                                        <option value="train">🚃 電車の中（ガタゴト線路音・モーター）</option>
+                                        <option value="rain">🌧️ 雨と雷（しとしと雨音・遠雷）</option>
+                                        <option value="cafe">☕ カフェ（店内の賑わい・カップ音）</option>
+                                        <option value="cave_drip">⛰️ 洞窟の滴（空間ドローン・水滴音）</option>
+                                        <option value="cathedral">⛪ 大聖堂（荘厳な聖歌コードドローン）</option>
+                                        <option value="space">🌌 宇宙（無重力サブベース・うねり）</option>
+                                    </select>
                                 </div>
                             </div>
                             <div class="fx-preset-row">
@@ -1577,6 +1675,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260917_7"></script>
+    <script src="app.js?v=20260917_9"></script>
 </body>
 </html>
