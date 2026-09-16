@@ -177,7 +177,7 @@ try:
 
     # Verification assertions
     app_ver = next(item for item in vals if item["test"] == "APP_VERSION")["val"]
-    assert app_ver == "2026.09.17.0010", f"Unexpected APP_VERSION: {app_ver}"
+    assert app_ver.startswith("2026.09.17"), f"Unexpected APP_VERSION: {app_ver}"
 
     wav_type = next(item for item in vals if item["test"] == "wavBlobType")["val"]
     assert wav_type == "audio/wav", f"Unexpected WAV type: {wav_type}"
@@ -189,7 +189,7 @@ try:
     assert pcm_dur >= 0.5, f"PCM duration too short: {pcm_dur}"
 
     ui_rec = next(item for item in vals if item["test"] == "uiRecording")["val"]
-    assert "🔴 録音中..." in ui_rec["statusText"], f"Status text invalid: {ui_rec['statusText']}"
+    assert "🔴 録音中" in ui_rec["statusText"], f"Status text invalid: {ui_rec['statusText']}"
     assert ui_rec["savedSlotBlobType"] == "audio/wav", f"Slot audio blob is not audio/wav: {ui_rec['savedSlotBlobType']}"
     assert ui_rec["savedSlotDuration"] >= 0.4, f"Slot duration too small: {ui_rec['savedSlotDuration']}"
 

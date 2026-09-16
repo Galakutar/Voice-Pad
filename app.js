@@ -4,21 +4,124 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.17.0012';
+const APP_VERSION = '2026.09.17.0014';
 
 // ==================== 0. 音声エンコード＆波形編集ユーティリティ ====================
 class AudioUtils {
     /**
+     * 高速・完全ローカルの 16-bit / 8-bit / 32-bit Float PCM WAV 直接パーサー
+     * - ブラウザの decodeAudioData や WebKit コーデック制約に依存せず、確実に AudioBuffer を再構築
+     */
+    static decodeWavDirect(ctx, arrayBuffer) {
+        if (!ctx || !arrayBuffer || arrayBuffer.byteLength < 44) return null;
+        try {
+            const view = new DataView(arrayBuffer);
+            // Check RIFF header
+            const riff = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+            const wave = String.fromCharCode(view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11));
+            if (riff !== 'RIFF' || wave !== 'WAVE') return null;
+
+            let offset = 12;
+            let format = 1;
+            let numChannels = 1;
+            let sampleRate = 44100;
+            let bitsPerSample = 16;
+            let dataOffset = -1;
+            let dataLength = 0;
+
+            while (offset < arrayBuffer.byteLength - 8) {
+                const chunkId = String.fromCharCode(
+                    view.getUint8(offset), view.getUint8(offset + 1),
+                    view.getUint8(offset + 2), view.getUint8(offset + 3)
+                );
+                const chunkSize = view.getUint32(offset + 4, true);
+
+                if (chunkId === 'fmt ') {
+                    format = view.getUint16(offset + 8, true);
+                    numChannels = view.getUint16(offset + 10, true);
+                    sampleRate = view.getUint32(offset + 12, true);
+                    bitsPerSample = view.getUint16(offset + 22, true);
+                } else if (chunkId === 'data') {
+                    dataOffset = offset + 8;
+                    dataLength = chunkSize;
+                    break;
+                }
+                offset += 8 + chunkSize;
+            }
+
+            if (dataOffset === -1 || (format !== 1 && format !== 3)) {
+                return null;
+            }
+
+            const bytesPerSample = bitsPerSample / 8;
+            const blockAlign = numChannels * bytesPerSample;
+            if (blockAlign <= 0) return null;
+
+            const numSamples = Math.floor(Math.min(dataLength, arrayBuffer.byteLength - dataOffset) / blockAlign);
+            if (numSamples <= 0) return null;
+
+            const audioBuffer = ctx.createBuffer(numChannels, numSamples, sampleRate);
+
+            if (format === 1 && bitsPerSample === 16) {
+                for (let ch = 0; ch < numChannels; ch++) {
+                    const channelData = audioBuffer.getChannelData(ch);
+                    let readOffset = dataOffset + ch * 2;
+                    for (let i = 0; i < numSamples; i++) {
+                        const sample = view.getInt16(readOffset, true);
+                        channelData[i] = sample < 0 ? sample / 0x8000 : sample / 0x7FFF;
+                        readOffset += blockAlign;
+                    }
+                }
+                return audioBuffer;
+            } else if (format === 1 && bitsPerSample === 8) {
+                for (let ch = 0; ch < numChannels; ch++) {
+                    const channelData = audioBuffer.getChannelData(ch);
+                    let readOffset = dataOffset + ch;
+                    for (let i = 0; i < numSamples; i++) {
+                        const sample = view.getUint8(readOffset);
+                        channelData[i] = (sample - 128) / 128;
+                        readOffset += blockAlign;
+                    }
+                }
+                return audioBuffer;
+            } else if (format === 3 && bitsPerSample === 32) {
+                for (let ch = 0; ch < numChannels; ch++) {
+                    const channelData = audioBuffer.getChannelData(ch);
+                    let readOffset = dataOffset + ch * 4;
+                    for (let i = 0; i < numSamples; i++) {
+                        channelData[i] = view.getFloat32(readOffset, true);
+                        readOffset += blockAlign;
+                    }
+                }
+                return audioBuffer;
+            }
+            return null;
+        } catch (e) {
+            console.warn('decodeWavDirect exception:', e);
+            return null;
+        }
+    }
+
+    /**
      * Safari / iOS 互換の安全な AudioContext.decodeAudioData
-     * - ArrayBuffer の slice(0) によるデタッチ防止
-     * - Promise / Callback 双方のブラウザ挙動を完全吸収
+     * - WAV 形式は直接パーサーで瞬時にデコード（Safari WebKit の decodeAudioData デタッチ/遅延バグを完全回避）
+     * - それ以外（MP3/AAC/M4A等）はネイティブ decodeAudioData で安全にデコード
      */
     static decodeAudioDataSafe(ctx, arrayBuffer) {
         return new Promise((resolve, reject) => {
-            if (!ctx || !arrayBuffer) {
-                reject(new Error('Invalid AudioContext or arrayBuffer'));
+            if (!ctx || !arrayBuffer || arrayBuffer.byteLength === 0) {
+                reject(new Error('Invalid AudioContext or empty arrayBuffer'));
                 return;
             }
+
+            // ① WAV 形式の直接デコード（iOS Safari 互換性 100%）
+            const directBuffer = AudioUtils.decodeWavDirect(ctx, arrayBuffer);
+            if (directBuffer) {
+                resolve(directBuffer);
+                return;
+            }
+
+            // ② MP3 / AAC / M4A などのネイティブデコード
             const bufferCopy = arrayBuffer.slice(0);
             try {
                 const res = ctx.decodeAudioData(
@@ -4290,21 +4393,26 @@ class VoicePadApp {
         if (card) {
             card.classList.add('recording');
             const statusEl = card.querySelector('.pad-status');
-            if (statusEl) statusEl.innerText = '🔴 録音中... (0.0s)';
+            if (statusEl) statusEl.innerText = '🔴 録音中 0:00';
         }
 
-        // ⏱️ 実時間 (performance.now) に基づく正確・滑らかな秒数カウントアップ（100ms更新）
+        // ⏱️ 実時間 (performance.now) に基づく正確・標準的な1秒刻みタイマー（iOSボイスメモ準拠: 0:00, 0:01, 0:02...）
         this.recTimer = setInterval(() => {
             const elapsed = Math.max(0, (performance.now() - this.recStartTime) / 1000);
             this.recSeconds = elapsed;
+            const totalSec = Math.floor(elapsed);
+            const m = Math.floor(totalSec / 60);
+            const s = totalSec % 60;
+            const timeStr = `${m}:${s < 10 ? '0' : ''}${s}`;
+
             if (card) {
                 const statusEl = card.querySelector('.pad-status');
-                if (statusEl) statusEl.innerText = `🔴 録音中... (${elapsed.toFixed(1)}s)`;
+                if (statusEl) statusEl.innerText = `🔴 録音中 ${timeStr}`;
             }
             if (elapsed >= 60) {
                 this.stopRecording();
             }
-        }, 100);
+        }, 200);
     }
 
     async stopRecording() {
@@ -4363,7 +4471,16 @@ class VoicePadApp {
         const ctx = AudioUnlocker.getContext();
 
         const slot = this.slots.find(s => s.id === slotId);
-        if (!slot || (!slot.audioBlob && !slot.ttsText)) {
+        if (!slot) return;
+
+        // 🔄 インポート時やストレージ復元時に audioBlob が未初期化または base64 文字列の場合の自動復旧
+        if (!slot.audioBlob && slot.audioBase64) {
+            slot.audioBlob = this.base64ToBlob(slot.audioBase64);
+        } else if (typeof slot.audioBlob === 'string') {
+            slot.audioBlob = this.base64ToBlob(slot.audioBlob);
+        }
+
+        if (!slot.audioBlob && !slot.ttsText) {
             this.setMode('record');
             this.startRecording(slotId);
             return;
@@ -4541,23 +4658,40 @@ class VoicePadApp {
     }
 
     fallbackPlay(slot, slotId, speed = 1.0) {
+        if (!slot || !slot.audioBlob) return;
         try {
             const audioUrl = URL.createObjectURL(slot.audioBlob);
-            const audio = new Audio(audioUrl);
+            const audio = new Audio();
+            audio.src = audioUrl;
             audio.playbackRate = speed;
-            audio.play();
+
             const card = document.getElementById(`pad-${slotId}`);
             if (card) {
                 card.classList.add('playing');
                 card.classList.add('is-playing');
             }
-            audio.onended = () => {
+
+            const cleanup = () => {
                 if (card) {
                     card.classList.remove('playing');
                     card.classList.remove('is-playing');
                 }
                 URL.revokeObjectURL(audioUrl);
             };
+
+            audio.onended = cleanup;
+            audio.onerror = (e) => {
+                console.warn('Fallback audio playback error:', e);
+                cleanup();
+            };
+
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                playPromise.catch((e) => {
+                    console.warn('audio.play() prevented:', e);
+                    cleanup();
+                });
+            }
         } catch (e) {
             console.error('Fallback error:', e);
         }
@@ -4589,23 +4723,75 @@ class VoicePadApp {
                 resolve(null);
                 return;
             }
+            if (typeof blob === 'string') {
+                resolve(blob);
+                return;
+            }
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result);
+            reader.onerror = () => resolve(null);
             reader.readAsDataURL(blob);
         });
     }
 
+    /**
+     * iOS / Safari / Android / PC 完全互換の安全な Base64 -> Blob 変換
+     * - data:audio/...;base64, プレフィックスの有無を問わず対応
+     * - 改行コードや空白文字の完全サニタイズ
+     * - 異常データ時の安全な null フォールバック
+     */
     base64ToBlob(base64Str) {
         if (!base64Str) return null;
-        const parts = base64Str.split(';base64,');
-        const contentType = parts[0].split(':')[1];
-        const raw = window.atob(parts[1]);
-        const rawLength = raw.length;
-        const uInt8Array = new Uint8Array(rawLength);
-        for (let i = 0; i < rawLength; ++i) {
-            uInt8Array[i] = raw.charCodeAt(i);
+        if (base64Str instanceof Blob) return base64Str;
+        if (typeof base64Str !== 'string') return null;
+
+        let contentType = 'audio/wav';
+        let rawBase64 = base64Str.trim();
+
+        if (rawBase64.includes(';base64,')) {
+            const parts = rawBase64.split(';base64,');
+            const typePart = parts[0].replace(/^data:/, '').trim();
+            if (typePart) contentType = typePart;
+            rawBase64 = parts[1] || '';
+        } else if (rawBase64.startsWith('data:')) {
+            const commaIdx = rawBase64.indexOf(',');
+            if (commaIdx !== -1) {
+                const header = rawBase64.substring(5, commaIdx);
+                const type = header.split(';')[0];
+                if (type) contentType = type;
+                rawBase64 = rawBase64.substring(commaIdx + 1);
+            }
         }
-        return new Blob([uInt8Array], { type: contentType });
+
+        // 改行や余分な空白を除去
+        rawBase64 = rawBase64.replace(/\s+/g, '');
+        if (!rawBase64) return null;
+
+        try {
+            const raw = window.atob(rawBase64);
+            const rawLength = raw.length;
+            const uInt8Array = new Uint8Array(rawLength);
+            for (let i = 0; i < rawLength; ++i) {
+                uInt8Array[i] = raw.charCodeAt(i);
+            }
+            return new Blob([uInt8Array], { type: contentType });
+        } catch (e) {
+            console.error('base64ToBlob decoding failed:', e);
+            return null;
+        }
+    }
+
+    /**
+     * スロットオブジェクトからあらゆるフォーマットの音声を Blob として安全抽出
+     */
+    extractAudioBlob(item) {
+        if (!item) return null;
+        if (item.audioBlob instanceof Blob) return item.audioBlob;
+        const rawAudio = item.audioBase64 || item.audioData || item.audio || item.audio_base64 || (typeof item.audioBlob === 'string' ? item.audioBlob : null);
+        if (rawAudio) {
+            return this.base64ToBlob(rawAudio);
+        }
+        return null;
     }
 
     async shareOrDownloadFile(fileName, jsonString, categoryName = 'データ') {
@@ -4644,25 +4830,32 @@ class VoicePadApp {
         const slot = this.slots.find(s => s.id === slotId);
         if (!slot) return;
 
-        const audioBase64 = await this.blobToBase64(slot.audioBlob);
+        let audioBlob = slot.audioBlob;
+        if (!audioBlob && slot.audioBase64) {
+            audioBlob = this.base64ToBlob(slot.audioBase64);
+        }
+
+        const audioBase64 = await this.blobToBase64(audioBlob);
         const exportData = {
             type: 'voicepad_slot',
-            version: '2.2',
+            version: '2.4',
             exportedAt: new Date().toISOString(),
             slot: {
                 label: slot.label,
-                labelPosition: slot.labelPosition,
-                emoji: slot.emoji,
+                labelPosition: slot.labelPosition || 'bottom',
+                emoji: slot.emoji || '🔊',
                 imageUrl: slot.imageUrl || null,
                 imageScale: slot.imageScale !== undefined ? slot.imageScale : 1.0,
                 imageOffsetX: slot.imageOffsetX !== undefined ? slot.imageOffsetX : 0,
                 imageOffsetY: slot.imageOffsetY !== undefined ? slot.imageOffsetY : 0,
                 imageFit: slot.imageFit || 'cover',
-                duration: slot.duration,
+                duration: slot.duration || 0,
                 voiceEffect: slot.voiceEffect || 'inherit',
                 voiceEffectMode: slot.voiceEffectMode || 'inherit',
                 voiceParams: slot.voiceParams || null,
                 envParams: slot.envParams || null,
+                eqParams: slot.eqParams || null,
+                specialParams: slot.specialParams || null,
                 playbackSpeed: slot.playbackSpeed || 'inherit',
                 ttsText: slot.ttsText || null,
                 ttsVoice: slot.ttsVoice || null,
@@ -4686,21 +4879,27 @@ class VoicePadApp {
         const serializedSlots = [];
 
         for (const slot of targetSlots) {
-            const audioBase64 = await this.blobToBase64(slot.audioBlob);
+            let audioBlob = slot.audioBlob;
+            if (!audioBlob && slot.audioBase64) {
+                audioBlob = this.base64ToBlob(slot.audioBase64);
+            }
+            const audioBase64 = await this.blobToBase64(audioBlob);
             serializedSlots.push({
                 label: slot.label,
-                labelPosition: slot.labelPosition,
-                emoji: slot.emoji,
+                labelPosition: slot.labelPosition || 'bottom',
+                emoji: slot.emoji || '🔊',
                 imageUrl: slot.imageUrl || null,
                 imageScale: slot.imageScale !== undefined ? slot.imageScale : 1.0,
                 imageOffsetX: slot.imageOffsetX !== undefined ? slot.imageOffsetX : 0,
                 imageOffsetY: slot.imageOffsetY !== undefined ? slot.imageOffsetY : 0,
                 imageFit: slot.imageFit || 'cover',
-                duration: slot.duration,
+                duration: slot.duration || 0,
                 voiceEffect: slot.voiceEffect || 'inherit',
                 voiceEffectMode: slot.voiceEffectMode || 'inherit',
                 voiceParams: slot.voiceParams || null,
                 envParams: slot.envParams || null,
+                eqParams: slot.eqParams || null,
+                specialParams: slot.specialParams || null,
                 playbackSpeed: slot.playbackSpeed || 'inherit',
                 ttsText: slot.ttsText || null,
                 ttsVoice: slot.ttsVoice || null,
@@ -4713,7 +4912,7 @@ class VoicePadApp {
 
         const exportData = {
             type: 'voicepad_scroll',
-            version: '2.3',
+            version: '2.4',
             exportedAt: new Date().toISOString(),
             scroll: {
                 name: scroll.name,
@@ -4754,19 +4953,23 @@ class VoicePadApp {
         }
 
         for (const slot of this.slots) {
-            const audioBase64 = await this.blobToBase64(slot.audioBlob);
+            let audioBlob = slot.audioBlob;
+            if (!audioBlob && slot.audioBase64) {
+                audioBlob = this.base64ToBlob(slot.audioBase64);
+            }
+            const audioBase64 = await this.blobToBase64(audioBlob);
             serializedSlots.push({
                 id: slot.id,
                 scrollId: slot.scrollId,
                 label: slot.label,
-                labelPosition: slot.labelPosition,
-                emoji: slot.emoji,
+                labelPosition: slot.labelPosition || 'bottom',
+                emoji: slot.emoji || '🔊',
                 imageUrl: slot.imageUrl || null,
                 imageScale: slot.imageScale !== undefined ? slot.imageScale : 1.0,
                 imageOffsetX: slot.imageOffsetX !== undefined ? slot.imageOffsetX : 0,
                 imageOffsetY: slot.imageOffsetY !== undefined ? slot.imageOffsetY : 0,
                 imageFit: slot.imageFit || 'cover',
-                duration: slot.duration,
+                duration: slot.duration || 0,
                 voiceEffect: slot.voiceEffect || 'inherit',
                 voiceEffectMode: slot.voiceEffectMode || 'inherit',
                 voiceParams: slot.voiceParams || null,
@@ -4785,7 +4988,7 @@ class VoicePadApp {
 
         const exportData = {
             type: 'voicepad_all',
-            version: '2.3',
+            version: '2.4',
             exportedAt: new Date().toISOString(),
             settings: {
                 pageSize: this.pageSize,
@@ -4833,11 +5036,14 @@ class VoicePadApp {
                 voiceEffectMode: 'inherit',
                 voiceParams: null,
                 envParams: null,
+                eqParams: null,
+                specialParams: null,
                 playbackSpeed: 'inherit',
                 order: currentSlots.length + 1
             };
             await this.storage.saveSlot(newSlot);
             this.slots.push(newSlot);
+            this.currentPage = Math.ceil(newSlot.order / this.pageSize);
             this.renderSlots();
             this.renderScrollTabs();
             this.showToast(`🎵 音声「${slotName}」をスイッチとして追加しました`);
@@ -4903,7 +5109,7 @@ class VoicePadApp {
 
                     if (Array.isArray(data.slots)) {
                         for (const s of data.slots) {
-                            const blob = this.base64ToBlob(s.audioBase64);
+                            const blob = this.extractAudioBlob(s);
                             const slotObj = {
                                 ...s,
                                 audioBlob: blob,
@@ -4951,7 +5157,7 @@ class VoicePadApp {
 
                 if (Array.isArray(data.slots)) {
                     for (const s of data.slots) {
-                        const blob = this.base64ToBlob(s.audioBase64);
+                        const blob = this.extractAudioBlob(s);
                         const slotObj = {
                             id: 'slot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
                             scrollId: newScrollId,
@@ -4985,9 +5191,9 @@ class VoicePadApp {
 
                 await this.switchScroll(newScrollId);
                 this.showToast(`✨ スクロール「${newScroll.name}」を復元・インポートしました！`);
-            } else if (data.type === 'voicepad_slot' || data.slot) {
+            } else if (data.type === 'voicepad_slot' || data.slot || data.label || data.audioBase64) {
                 const s = data.slot || data;
-                const blob = this.base64ToBlob(s.audioBase64);
+                const blob = this.extractAudioBlob(s);
                 const currentSlots = this.getCurrentSlots();
                 const newSlot = {
                     id: 'slot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -5006,6 +5212,8 @@ class VoicePadApp {
                     voiceEffectMode: s.voiceEffectMode || 'inherit',
                     voiceParams: s.voiceParams || null,
                     envParams: s.envParams || null,
+                    eqParams: s.eqParams || null,
+                    specialParams: s.specialParams || null,
                     playbackSpeed: s.playbackSpeed || 'inherit',
                     ttsText: s.ttsText || null,
                     ttsVoice: s.ttsVoice || null,
@@ -5016,15 +5224,16 @@ class VoicePadApp {
 
                 await this.storage.saveSlot(newSlot);
                 this.slots.push(newSlot);
+                this.currentPage = Math.ceil(newSlot.order / this.pageSize);
                 this.renderSlots();
                 this.renderScrollTabs();
                 this.showToast(`✨ 写真・声質設定付きスイッチ「${newSlot.label}」をインポートしました！`);
             } else {
-                alert('対応していないファイル形式です。共有されたスクロールまたはボタンのファイル（.json）を選択してください。');
+                alert('対応していないファイル形式です。共有されたスクロールまたはボタンのファイル（.vpad-button / .vpad-page / .vpad / .json）を選択してください。');
             }
         } catch (err) {
             console.error('Import error:', err);
-            alert('ファイルの読み込みに失敗しました。正しいVoice Pad共有ファイル（.json）を選択してください。');
+            alert('ファイルの読み込みに失敗しました。正しいVoice Pad共有ファイル（.vpad-button / .vpad-page / .vpad / .json）を選択してください。');
         }
     }
 
@@ -7682,7 +7891,7 @@ class VoicePadApp {
             });
         }
 
-        if (data.type === 'voicepad_slot' || data.slot) {
+        if (data.type === 'voicepad_slot' || data.slot || data.label || data.audioBase64) {
             const s = data.slot || data;
             if (titleEl) titleEl.innerText = `📲 ボタン「${s.label || 'ボタン'}」を受信`;
             if (targetGroup) targetGroup.style.display = 'block';
@@ -7692,7 +7901,7 @@ class VoicePadApp {
                 ? `<img src="${s.imageUrl}" alt="photo">`
                 : (s.emoji || '🔊');
 
-            const hasAudio = !!s.audioBase64;
+            const hasAudio = !!(s.audioBlob || s.audioBase64 || s.audioData || s.audio);
             const effLabel = this.getVoiceEffectLabel(s.voiceEffect || 'inherit');
             const speedLabel = s.playbackSpeed && s.playbackSpeed !== 'inherit' ? `${s.playbackSpeed}x` : '標準';
 
@@ -7712,7 +7921,8 @@ class VoicePadApp {
             `;
 
             document.getElementById('btn-incoming-preview-audio')?.addEventListener('click', () => {
-                this.previewIncomingAudio(s.audioBase64);
+                const rawAudio = s.audioBase64 || s.audioData || s.audio || s.audioBlob;
+                this.previewIncomingAudio(rawAudio);
             });
 
         } else if (data.type === 'voicepad_scroll') {
@@ -7742,22 +7952,48 @@ class VoicePadApp {
         this.incomingData = null;
     }
 
-    previewIncomingAudio(base64Str) {
-        if (!base64Str) return;
+    async previewIncomingAudio(audioInput) {
+        if (!audioInput) return;
         this.stopIncomingAudioPreview();
 
         try {
-            const blob = this.base64ToBlob(base64Str);
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            audio.play();
-            this.incomingAudioPreviewNode = audio;
-            audio.onended = () => {
-                URL.revokeObjectURL(url);
+            await AudioUnlocker.unlock();
+            const ctx = AudioUnlocker.getContext();
+            const blob = (audioInput instanceof Blob) ? audioInput : this.base64ToBlob(audioInput);
+            if (!blob) return;
+
+            const arrayBuffer = await blob.arrayBuffer();
+            const audioBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arrayBuffer);
+
+            const source = ctx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(ctx.destination);
+            source.start(0);
+
+            this.incomingAudioPreviewNode = {
+                pause: () => {
+                    try { source.stop(); } catch (e) {}
+                }
+            };
+            source.onended = () => {
                 this.incomingAudioPreviewNode = null;
             };
         } catch (e) {
-            console.warn('Incoming audio preview error:', e);
+            console.warn('Incoming audio preview error, fallback to HTMLAudio:', e);
+            try {
+                const blob = (audioInput instanceof Blob) ? audioInput : this.base64ToBlob(audioInput);
+                if (!blob) return;
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                audio.play().catch(err => console.warn('HTMLAudio play blocked:', err));
+                this.incomingAudioPreviewNode = audio;
+                audio.onended = () => {
+                    URL.revokeObjectURL(url);
+                    this.incomingAudioPreviewNode = null;
+                };
+            } catch (err) {
+                console.error('All incoming preview attempts failed:', err);
+            }
         }
     }
 
@@ -7773,7 +8009,7 @@ class VoicePadApp {
         const targetScrollId = document.getElementById('incoming-target-scroll')?.value || this.currentScrollId;
         const s = this.incomingData.slot || this.incomingData;
 
-        const blob = this.base64ToBlob(s.audioBase64);
+        const blob = this.extractAudioBlob(s);
         const targetSlots = this.slots.filter(sl => sl.scrollId === targetScrollId);
         const newSlot = {
             id: 'slot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -7792,6 +8028,8 @@ class VoicePadApp {
             voiceEffectMode: s.voiceEffectMode || 'inherit',
             voiceParams: s.voiceParams || null,
             envParams: s.envParams || null,
+            eqParams: s.eqParams || null,
+            specialParams: s.specialParams || null,
             playbackSpeed: s.playbackSpeed || 'inherit',
             ttsText: s.ttsText || null,
             ttsVoice: s.ttsVoice || null,
@@ -7806,6 +8044,7 @@ class VoicePadApp {
         if (this.currentScrollId !== targetScrollId) {
             await this.switchScroll(targetScrollId);
         } else {
+            this.currentPage = Math.ceil(newSlot.order / this.pageSize);
             this.renderSlots();
             this.renderScrollTabs();
         }
@@ -7826,6 +8065,8 @@ class VoicePadApp {
                 voiceEffectMode: this.incomingData.scroll?.voiceEffectMode || 'inherit',
                 voiceParams: this.incomingData.scroll?.voiceParams || null,
                 envParams: this.incomingData.scroll?.envParams || null,
+                eqParams: this.incomingData.scroll?.eqParams || null,
+                specialParams: this.incomingData.scroll?.specialParams || null,
                 playbackSpeed: this.incomingData.scroll?.playbackSpeed || 'inherit',
                 order: this.scrolls.length,
                 createdAt: Date.now()
@@ -7835,7 +8076,7 @@ class VoicePadApp {
 
             if (Array.isArray(this.incomingData.slots)) {
                 for (const s of this.incomingData.slots) {
-                    const blob = this.base64ToBlob(s.audioBase64);
+                    const blob = this.extractAudioBlob(s);
                     const slotObj = {
                         id: 'slot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
                         scrollId: newScrollId,
@@ -7853,6 +8094,8 @@ class VoicePadApp {
                         voiceEffectMode: s.voiceEffectMode || 'inherit',
                         voiceParams: s.voiceParams || null,
                         envParams: s.envParams || null,
+                        eqParams: s.eqParams || null,
+                        specialParams: s.specialParams || null,
                         playbackSpeed: s.playbackSpeed || 'inherit',
                         ttsText: s.ttsText || null,
                         ttsVoice: s.ttsVoice || null,
@@ -7883,13 +8126,15 @@ class VoicePadApp {
             voiceEffectMode: 'inherit',
             voiceParams: null,
             envParams: null,
+            eqParams: null,
+            specialParams: null,
             playbackSpeed: 'inherit',
             createdAt: Date.now()
         };
         await this.storage.saveScroll(newScroll);
         this.scrolls.push(newScroll);
 
-        const blob = this.base64ToBlob(s.audioBase64);
+        const blob = this.extractAudioBlob(s);
         const newSlot = {
             id: 'slot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
             scrollId: newScrollId,
@@ -7907,6 +8152,8 @@ class VoicePadApp {
             voiceEffectMode: s.voiceEffectMode || 'inherit',
             voiceParams: s.voiceParams || null,
             envParams: s.envParams || null,
+            eqParams: s.eqParams || null,
+            specialParams: s.specialParams || null,
             playbackSpeed: s.playbackSpeed || 'inherit',
             ttsText: s.ttsText || null,
             ttsVoice: s.ttsVoice || null,
@@ -7951,6 +8198,7 @@ class VoicePadApp {
 function initVoicePad() {
     if (!window.app) {
         window.app = new VoicePadApp();
+        window.voicePadApp = window.app;
     }
 }
 

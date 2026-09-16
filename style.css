@@ -849,13 +849,13 @@ body, html {
 .pad-card.recording {
     border-color: var(--color-rec) !important;
     background: rgba(239, 68, 68, 0.18) !important;
-    animation: recCardPulse 0.8s infinite alternate ease-in-out;
+    animation: recCardPulse 1.2s infinite alternate ease-in-out;
     box-shadow: 0 0 16px rgba(239, 68, 68, 0.5) !important;
 }
 
 @keyframes recCardPulse {
-    0% { transform: scale(0.98); }
-    100% { transform: scale(1.02); }
+    0% { transform: scale(0.99); opacity: 0.92; }
+    100% { transform: scale(1.01); opacity: 1; }
 }
 
 /* 再生中スタイル */
