@@ -148,6 +148,12 @@
                             <div class="voicemod-grid" id="slot-voicemod-grid">
                                 <!-- JavaScriptで動的生成されます -->
                             </div>
+                            <!-- 🎙️ Voicemodカード直下 試聴バー -->
+                            <div class="section-inline-preview">
+                                <button type="button" class="inline-preview-btn btn-inline-slot-preview">
+                                    <span class="btn-icon">▶️</span> 選択したボイスプリセットで試聴
+                                </button>
+                            </div>
                         </div>
 
                         <!-- ステージ1: 人の声質パラメータ -->
@@ -213,6 +219,13 @@
                                         <span>2.0x (倍速)</span>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- 🗣️ 人の声質パラメータ直下 試聴バー -->
+                            <div class="section-inline-preview">
+                                <button type="button" class="inline-preview-btn btn-inline-slot-preview">
+                                    <span class="btn-icon">▶️</span> この声質パラメータで試聴
+                                </button>
                             </div>
                         </div>
 
@@ -300,6 +313,13 @@
                                     </select>
                                 </div>
                             </div>
+
+                            <!-- ⛰️ 環境パラメータ直下 試聴バー -->
+                            <div class="section-inline-preview">
+                                <button type="button" class="inline-preview-btn btn-inline-slot-preview">
+                                    <span class="btn-icon">▶️</span> この環境設定で試聴
+                                </button>
+                            </div>
                         </div>
 
                         <!-- ステージ3: 3バンドEQ（Bass / Mid / Treble） -->
@@ -331,6 +351,13 @@
                                     </div>
                                     <input type="range" id="slot-eq-treble-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
                                 </div>
+                            </div>
+
+                            <!-- 🎚️ 3バンドEQ直下 試聴バー -->
+                            <div class="section-inline-preview">
+                                <button type="button" class="inline-preview-btn btn-inline-slot-preview">
+                                    <span class="btn-icon">▶️</span> この3バンドEQ音質で試聴
+                                </button>
                             </div>
                         </div>
 
@@ -380,6 +407,13 @@
                                         <span>100% (爆音ミーム)</span>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- ✨ 特殊エフェクト直下 試聴バー -->
+                            <div class="section-inline-preview">
+                                <button type="button" class="inline-preview-btn btn-inline-slot-preview">
+                                    <span class="btn-icon">▶️</span> この特殊エフェクトで試聴
+                                </button>
                             </div>
                         </div>
 
@@ -640,6 +674,12 @@
                             <button type="button" class="vm-tab-btn" data-category="meme">🤪 面白・ミーム</button>
                         </div>
                         <div class="voicemod-grid" id="quick-voice-voicemod-grid"></div>
+                        <!-- 🎙️ Voicemodカード直下 試聴バー -->
+                        <div class="section-inline-preview">
+                            <button type="button" class="inline-preview-btn btn-inline-voice-preview">
+                                <span class="btn-icon">▶️</span> 選択したボイスプリセットで試聴
+                            </button>
+                        </div>
                     </div>
 
                     <div class="fx-stage-card stage-voice">
@@ -722,6 +762,13 @@
                                 <button type="button" class="fx-chip-btn" data-preset="monster">👹 怪獣</button>
                             </div>
                         </div>
+
+                        <!-- 🗣️ 人の声質パラメータ直下 試聴バー -->
+                        <div class="section-inline-preview">
+                            <button type="button" class="inline-preview-btn btn-inline-voice-preview">
+                                <span class="btn-icon">▶️</span> この声質パラメータで試聴
+                            </button>
+                        </div>
                     </div>
 
                     <!-- ステージ3: 3バンドEQ -->
@@ -752,6 +799,13 @@
                                 </div>
                                 <input type="range" id="quick-voice-eq-treble-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
                             </div>
+                        </div>
+
+                        <!-- 🎚️ 3バンドEQ直下 試聴バー -->
+                        <div class="section-inline-preview">
+                            <button type="button" class="inline-preview-btn btn-inline-voice-preview">
+                                <span class="btn-icon">▶️</span> この3バンドEQ音質で試聴
+                            </button>
                         </div>
                     </div>
 
@@ -784,11 +838,18 @@
                                 <input type="range" id="quick-voice-special-trash-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
                             </div>
                         </div>
+
+                        <!-- ✨ 特殊エフェクト直下 試聴バー -->
+                        <div class="section-inline-preview">
+                            <button type="button" class="inline-preview-btn btn-inline-voice-preview">
+                                <span class="btn-icon">▶️</span> この特殊エフェクトで試聴
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="modal-actions" style="margin-top: 12px;">
-                    <button type="button" id="btn-quick-voice-preview" class="action-btn download-btn">▶️ 声質を試聴する</button>
+                    <button type="button" id="btn-quick-voice-preview" class="action-btn download-btn">▶️ 声質全体を試聴する</button>
                     <button type="button" id="save-slot-voice-btn" class="action-btn save-btn">💾 このボタンの声質を保存</button>
                 </div>
             </div>
@@ -832,6 +893,13 @@
                             <button type="button" class="vm-tab-btn" data-category="special">📡 機材・特殊</button>
                         </div>
                         <div class="voicemod-grid" id="quick-env-voicemod-grid"></div>
+
+                        <!-- ⛰️ 環境プリセットカード直下 試聴バー -->
+                        <div class="section-inline-preview">
+                            <button type="button" class="inline-preview-btn btn-inline-env-preview">
+                                <span class="btn-icon">▶️</span> 選択した環境プリセットで試聴
+                            </button>
+                        </div>
                     </div>
 
                     <!-- パラメータ微調整シークバー（常に表示・即座に調整可能） -->
@@ -918,11 +986,18 @@
                                 </select>
                             </div>
                         </div>
+
+                        <!-- ⛰️ 環境微調整シークバー直下 試聴バー -->
+                        <div class="section-inline-preview">
+                            <button type="button" class="inline-preview-btn btn-inline-env-preview">
+                                <span class="btn-icon">▶️</span> この環境・背景音設定で試聴
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="modal-actions" style="margin-top: 12px;">
-                    <button type="button" id="btn-quick-env-preview" class="action-btn download-btn">▶️ 環境エフェクトを試聴する</button>
+                    <button type="button" id="btn-quick-env-preview" class="action-btn download-btn">▶️ 環境エフェクト全体を試聴する</button>
                     <button type="button" id="save-slot-env-btn" class="action-btn save-btn">💾 このボタンの環境を保存</button>
                 </div>
             </div>
@@ -975,6 +1050,12 @@
                                 <button type="button" class="vm-tab-btn" data-category="meme">🤪 面白・ミーム</button>
                             </div>
                             <div class="voicemod-grid" id="scroll-voicemod-grid"></div>
+                            <!-- 🎙️ Voicemodカード直下 試聴バー -->
+                            <div class="section-inline-preview">
+                                <button type="button" class="inline-preview-btn btn-inline-scroll-preview">
+                                    <span class="btn-icon">▶️</span> 選択したボイスプリセットで試聴
+                                </button>
+                            </div>
                         </div>
 
                         <div class="fx-stage-card stage-voice">
@@ -1025,6 +1106,12 @@
                                     <button type="button" class="fx-chip-btn" data-preset="old_woman">👵 おばあさん</button>
                                     <button type="button" class="fx-chip-btn" data-preset="monster">👹 怪獣</button>
                                 </div>
+                            </div>
+                            <!-- 🗣️ 人の声質パラメータ直下 試聴バー -->
+                            <div class="section-inline-preview">
+                                <button type="button" class="inline-preview-btn btn-inline-scroll-preview">
+                                    <span class="btn-icon">▶️</span> この声質パラメータで試聴
+                                </button>
                             </div>
                         </div>
 
@@ -1090,6 +1177,12 @@
                                     <button type="button" class="fx-chip-btn" data-preset="robot">🤖 ロボット</button>
                                 </div>
                             </div>
+                            <!-- ⛰️ 環境パラメータ直下 試聴バー -->
+                            <div class="section-inline-preview">
+                                <button type="button" class="inline-preview-btn btn-inline-scroll-preview">
+                                    <span class="btn-icon">▶️</span> この環境設定で試聴
+                                </button>
+                            </div>
                         </div>
 
                         <!-- ステージ3: 3バンドEQ -->
@@ -1121,6 +1214,12 @@
                                     <input type="range" id="scroll-eq-treble-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
                                 </div>
                             </div>
+                            <!-- 🎚️ 3バンドEQ直下 試聴バー -->
+                            <div class="section-inline-preview">
+                                <button type="button" class="inline-preview-btn btn-inline-scroll-preview">
+                                    <span class="btn-icon">▶️</span> この3バンドEQ音質で試聴
+                                </button>
+                            </div>
                         </div>
 
                         <!-- ステージ4: 特殊エフェクト -->
@@ -1151,6 +1250,12 @@
                                     </div>
                                     <input type="range" id="scroll-special-trash-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
                                 </div>
+                            </div>
+                            <!-- ✨ 特殊エフェクト直下 試聴バー -->
+                            <div class="section-inline-preview">
+                                <button type="button" class="inline-preview-btn btn-inline-scroll-preview">
+                                    <span class="btn-icon">▶️</span> この特殊エフェクトで試聴
+                                </button>
                             </div>
                         </div>
 
@@ -1666,15 +1771,15 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
         </div>
     </div>
 
-    <!-- 隠しファイルインプット -->
-    <input type="file" id="global-import-input" accept=".json,.vpad,.vpad-button,.vpad-page,.vpadbtn,.vpadpage,application/json" style="display: none;">
-    <input type="file" id="slot-audio-input" accept="audio/*" style="display: none;">
+    <!-- 隠しファイルインプット (iOSのファイル選択でグレーアウト・黒フィルター無効化を防ぐためaccept制限を完全撤廃) -->
+    <input type="file" id="global-import-input" style="display: none;">
+    <input type="file" id="slot-audio-input" style="display: none;">
     <input type="file" id="photo-file-input" accept="image/*" style="display: none;">
 
     <!-- トースト通知コンテナ -->
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260917_9"></script>
+    <script src="app.js?v=20260917_12"></script>
 </body>
 </html>

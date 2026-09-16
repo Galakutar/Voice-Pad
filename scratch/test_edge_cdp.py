@@ -17,14 +17,14 @@ edge_proc = subprocess.Popen([
     "--disable-gpu",
     "--no-first-run",
     "--no-default-browser-check",
-    "http://localhost:8080/index.html"
+    "http://127.0.0.1:8080/index.html"
 ])
 
 time.sleep(2)
 
 try:
     # Get WebSocket Debugger URL
-    with urllib.request.urlopen("http://localhost:9222/json") as res:
+    with urllib.request.urlopen("http://127.0.0.1:9222/json") as res:
         tabs = json.loads(res.read().decode('utf-8'))
     ws_url = tabs[0]["webSocketDebuggerUrl"]
     print("[OK] Connected to Edge CDP:", ws_url)

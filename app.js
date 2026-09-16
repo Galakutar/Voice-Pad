@@ -4,10 +4,37 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.17.0009';
+const APP_VERSION = '2026.09.17.0012';
 
 // ==================== 0. 音声エンコード＆波形編集ユーティリティ ====================
 class AudioUtils {
+    /**
+     * Safari / iOS 互換の安全な AudioContext.decodeAudioData
+     * - ArrayBuffer の slice(0) によるデタッチ防止
+     * - Promise / Callback 双方のブラウザ挙動を完全吸収
+     */
+    static decodeAudioDataSafe(ctx, arrayBuffer) {
+        return new Promise((resolve, reject) => {
+            if (!ctx || !arrayBuffer) {
+                reject(new Error('Invalid AudioContext or arrayBuffer'));
+                return;
+            }
+            const bufferCopy = arrayBuffer.slice(0);
+            try {
+                const res = ctx.decodeAudioData(
+                    bufferCopy,
+                    (decoded) => resolve(decoded),
+                    (err) => reject(err || new Error('decodeAudioData failed'))
+                );
+                if (res && typeof res.then === 'function') {
+                    res.then(resolve).catch(reject);
+                }
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+
     /**
      * AudioBuffer を 16-bit PCM WAV Blob へ高速エンコード
      */
@@ -135,6 +162,94 @@ class AudioUtils {
     }
 }
 
+// ==================== 0.5 🎙️ Web Audio PCM 高精度レコーダー（iOS / iPadOS 100% 互換） ====================
+class PcmAudioRecorder {
+    constructor(audioCtx, stream) {
+        this.ctx = audioCtx;
+        this.stream = stream;
+        this.source = null;
+        this.processor = null;
+        this.muteGain = null;
+        this.buffers = [];
+        this.totalSamples = 0;
+        this.isRecording = false;
+        this.sampleRate = this.ctx.sampleRate;
+    }
+
+    start() {
+        this.buffers = [];
+        this.totalSamples = 0;
+        this.isRecording = true;
+
+        this.source = this.ctx.createMediaStreamSource(this.stream);
+        const bufferSize = 4096;
+        if (this.ctx.createScriptProcessor) {
+            this.processor = this.ctx.createScriptProcessor(bufferSize, 1, 1);
+        } else if (this.ctx.createJavaScriptNode) {
+            this.processor = this.ctx.createJavaScriptNode(bufferSize, 1, 1);
+        }
+
+        if (this.processor) {
+            this.processor.onaudioprocess = (e) => {
+                if (!this.isRecording) return;
+                const inputData = e.inputBuffer.getChannelData(0);
+                const copy = new Float32Array(inputData.length);
+                copy.set(inputData);
+                this.buffers.push(copy);
+                this.totalSamples += copy.length;
+            };
+
+            this.source.connect(this.processor);
+            this.muteGain = this.ctx.createGain();
+            this.muteGain.gain.value = 0;
+            this.processor.connect(this.muteGain);
+            this.muteGain.connect(this.ctx.destination);
+        }
+    }
+
+    stop() {
+        this.isRecording = false;
+        if (this.processor) {
+            try {
+                this.processor.disconnect();
+                this.processor.onaudioprocess = null;
+            } catch (e) {}
+            this.processor = null;
+        }
+        if (this.source) {
+            try {
+                this.source.disconnect();
+            } catch (e) {}
+            this.source = null;
+        }
+        if (this.muteGain) {
+            try {
+                this.muteGain.disconnect();
+            } catch (e) {}
+            this.muteGain = null;
+        }
+
+        if (this.totalSamples === 0) {
+            return null;
+        }
+
+        const finalBuffer = this.ctx.createBuffer(1, this.totalSamples, this.sampleRate);
+        const channelData = finalBuffer.getChannelData(0);
+        let offset = 0;
+        for (const buf of this.buffers) {
+            channelData.set(buf, offset);
+            offset += buf.length;
+        }
+
+        const wavBlob = AudioUtils.audioBufferToWav(finalBuffer);
+        return {
+            buffer: finalBuffer,
+            blob: wavBlob,
+            duration: finalBuffer.duration
+        };
+    }
+}
+
 // ==================== 1. Web Audio API / AudioContext 覚醒ユーティリティ ====================
 class AudioUnlocker {
     static audioCtx = null;
@@ -191,6 +306,15 @@ class AudioUnlocker {
 
 // ==================== 1.8 🌲 プロシージャル環境背景音 (Ambient Audio) エンジン ====================
 class AmbientAudioEngine {
+    /**
+     * ctx, type, durationSec によるバッファ生成ヘルパー
+     */
+    static generateAmbientBuffer(ctx, type, durationSec) {
+        if (!ctx || !type || type === 'none') return null;
+        const sampleRate = ctx.sampleRate || 44100;
+        return this.generateAmbientTrack(type, durationSec, sampleRate, ctx);
+    }
+
     /**
      * サウンドタイプに応じたプロシージャル環境背景音の生成（完全ローカル・外部依存ゼロ）
      * @param {string} type - 'underwater'|'birds'|'forest'|'city'|'train'|'rain'|'cafe'|'cave_drip'|'cathedral'|'space'
@@ -1677,6 +1801,94 @@ class VoiceEngine {
     }
 
     /**
+     * 自然な日本語母音（「あー」）を音響モデル（声門波＋4バンド・フォルマント共鳴）で完全合成
+     * 220Hz矩形波/正弦波ビープ音の不快音を完全撤廃し、温かみのある肉声サンプルを生成する
+     */
+    static generateNaturalVowelBuffer(ctx, duration = 1.0) {
+        const sampleRate = ctx.sampleRate || 44100;
+        const totalSamples = Math.floor(sampleRate * duration);
+        const buffer = ctx.createBuffer(1, totalSamples, sampleRate);
+        const out = buffer.getChannelData(0);
+
+        // 基本周波数 F0 = 160Hz（自然な話し声基音）+ 5.5Hzビブラート + 微小な声門ジッター
+        const baseF0 = 160.0;
+        let phase = 0;
+        const excitation = new Float32Array(totalSamples);
+
+        for (let i = 0; i < totalSamples; i++) {
+            const t = i / sampleRate;
+            // 自然なピッチ輪郭（出だしの微小アクセント + 自然な5.5Hzビブラート）
+            const pitchEnv = 1.0 + 0.03 * Math.exp(-t / 0.3) + 0.015 * Math.sin(2 * Math.PI * 5.5 * t);
+            const currentF0 = baseF0 * pitchEnv;
+            const periodSamples = sampleRate / currentF0;
+
+            // 声門開放率 Oq = 0.65 (Rosenberg Glottal Flow Model)
+            const posInPeriod = (phase % periodSamples) / periodSamples;
+            let glottalPulse = 0;
+            if (posInPeriod < 0.65) {
+                const x = posInPeriod / 0.65;
+                glottalPulse = (3 * x * x - 2 * x * x * x);
+            }
+            // 声門気流微分（-12dB/octの自然な声帯振動特性）+ 息成分ノイズ (1.5%)
+            const breath = (Math.random() * 2 - 1) * 0.02;
+            excitation[i] = (glottalPulse * 0.95 + breath);
+
+            phase++;
+        }
+
+        // 日本語「あ」のフォルマント定義 (F1, F2, F3, F4)
+        const formants = [
+            { freq: 800, bw: 80, gain: 1.0 },    // F1: 咽頭腔
+            { freq: 1250, bw: 90, gain: 0.7 },   // F2: 口腔
+            { freq: 2600, bw: 120, gain: 0.35 }, // F3: 声道共鳴
+            { freq: 3500, bw: 180, gain: 0.18 }  // F4: 高域シンガーズフォルマント
+        ];
+
+        // 4バンド並列共鳴フィルター (2nd Order Resonator Filter)
+        const resOutputs = formants.map(() => new Float32Array(totalSamples));
+
+        formants.forEach((f, fIdx) => {
+            const R = Math.exp(-Math.PI * f.bw / sampleRate);
+            const theta = 2 * Math.PI * f.freq / sampleRate;
+            const a1 = -2 * R * Math.cos(theta);
+            const a2 = R * R;
+            const b0 = (1 - R) * Math.sqrt(1 - 2 * R * Math.cos(2 * theta) + R * R) * f.gain;
+
+            let y1 = 0, y2 = 0;
+            const resOut = resOutputs[fIdx];
+            for (let i = 0; i < totalSamples; i++) {
+                const x0 = excitation[i];
+                const y0 = b0 * x0 - a1 * y1 - a2 * y2;
+                resOut[i] = y0;
+                y2 = y1;
+                y1 = y0;
+            }
+        });
+
+        // フォルマント合成 + 自然な発話音量エンベロープ（アタック0.06s、サステイン、ディケイ0.25s）
+        for (let i = 0; i < totalSamples; i++) {
+            const t = i / sampleRate;
+            let sum = 0;
+            for (let fIdx = 0; fIdx < formants.length; fIdx++) {
+                sum += resOutputs[fIdx][i];
+            }
+
+            // 包絡線エンベロープ
+            let env = 1.0;
+            if (t < 0.06) {
+                env = Math.sin((t / 0.06) * (Math.PI / 2));
+            } else if (t > duration - 0.25) {
+                const fadeT = (t - (duration - 0.25)) / 0.25;
+                env = Math.cos(fadeT * (Math.PI / 2));
+            }
+
+            out[i] = sum * env * 2.2;
+        }
+
+        return buffer;
+    }
+
+    /**
      * 直列フルチェーン実行（声質 -> 環境 -> 3バンドEQ -> スペシャルエフェクト）
      */
     static processFull(buffer, ctx, voiceParams, envParams, speed = 1.0, eqParams = null, specialParams = null) {
@@ -2252,13 +2464,16 @@ class VoicePadApp {
         this.storage = new StorageManager();
         this.audioCtx = null;
         this.mediaRecorder = null;
+        this.pcmRecorder = null;
         this.audioStream = null;
 
         this.currentMode = 'play';
         this.recordingSlotId = null;
         this.recordedChunks = [];
         this.recTimer = null;
+        this.recStartTime = 0;
         this.recSeconds = 0;
+        this.pcmRecorderHandled = false;
 
         // 🎙️ Voicemod / 2ステージ直列DSP & EQパラメータ（全体基本）
         this.globalVoiceParams = VoiceEngine.defaultVoiceParams();
@@ -4009,6 +4224,13 @@ class VoicePadApp {
 
     async startRecording(slotId) {
         await AudioUnlocker.unlock();
+        const ctx = AudioUnlocker.getContext();
+
+        // 既存タイマーの二重起動防止
+        if (this.recTimer) {
+            clearInterval(this.recTimer);
+            this.recTimer = null;
+        }
 
         try {
             await this.getAudioStream();
@@ -4019,58 +4241,101 @@ class VoicePadApp {
 
         this.recordingSlotId = slotId;
         this.recordedChunks = [];
+        this.recStartTime = performance.now();
         this.recSeconds = 0;
+        this.pcmRecorderHandled = false;
 
-        let mimeType = '';
-        if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
-        else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
-        else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
-
+        // 🎙️ 高音質 PCM レコーダーの起動（Web Audio 直結・iOS / iPadOS 100% 互換＆劣化ゼロ）
         try {
-            this.mediaRecorder = mimeType ? new MediaRecorder(this.audioStream, { mimeType }) : new MediaRecorder(this.audioStream);
+            if (ctx && (ctx.createScriptProcessor || ctx.createJavaScriptNode)) {
+                this.pcmRecorder = new PcmAudioRecorder(ctx, this.audioStream);
+                this.pcmRecorder.start();
+            }
         } catch (e) {
-            this.mediaRecorder = new MediaRecorder(this.audioStream);
+            console.warn('PcmAudioRecorder start error, fallback to MediaRecorder:', e);
+            this.pcmRecorder = null;
         }
 
-        this.mediaRecorder.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) this.recordedChunks.push(e.data);
-        };
+        // 🔄 フォールバック兼用の MediaRecorder（timeslice なしで起動して WebKit の MP4 破損バグを回避）
+        let mimeType = '';
+        if (typeof MediaRecorder !== 'undefined') {
+            if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+            else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+            else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
 
-        this.mediaRecorder.onstop = async () => {
-            const finalType = this.mediaRecorder.mimeType || 'audio/mp4';
-            const blob = new Blob(this.recordedChunks, { type: finalType });
-            await this.saveRecordedAudio(this.recordingSlotId, blob, this.recSeconds);
-            this.cleanupRecording();
-        };
-
-        this.mediaRecorder.start(100);
+            try {
+                this.mediaRecorder = mimeType ? new MediaRecorder(this.audioStream, { mimeType }) : new MediaRecorder(this.audioStream);
+                this.mediaRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) this.recordedChunks.push(e.data);
+                };
+                this.mediaRecorder.onstop = async () => {
+                    // PCM レコーダーで保存されなかった場合のみ MediaRecorder から保存
+                    if (!this.pcmRecorderHandled && this.recordingSlotId !== null) {
+                        const finalType = this.mediaRecorder.mimeType || 'audio/mp4';
+                        const blob = new Blob(this.recordedChunks, { type: finalType });
+                        const elapsed = this.recStartTime > 0 ? (performance.now() - this.recStartTime) / 1000 : 0.5;
+                        await this.saveRecordedAudio(this.recordingSlotId, blob, elapsed);
+                    }
+                    this.cleanupRecording();
+                };
+                // timeslice 引数なしで起動（WebKit / Safari での 0.5秒破損を完全防止）
+                this.mediaRecorder.start();
+            } catch (e) {
+                console.warn('MediaRecorder start failed:', e);
+                this.mediaRecorder = null;
+            }
+        }
 
         const card = document.getElementById(`pad-${slotId}`);
         if (card) {
             card.classList.add('recording');
             const statusEl = card.querySelector('.pad-status');
-            if (statusEl) statusEl.innerText = '🔴 録音中... (0s)';
+            if (statusEl) statusEl.innerText = '🔴 録音中... (0.0s)';
         }
 
+        // ⏱️ 実時間 (performance.now) に基づく正確・滑らかな秒数カウントアップ（100ms更新）
         this.recTimer = setInterval(() => {
-            this.recSeconds += 0.5;
+            const elapsed = Math.max(0, (performance.now() - this.recStartTime) / 1000);
+            this.recSeconds = elapsed;
             if (card) {
                 const statusEl = card.querySelector('.pad-status');
-                if (statusEl) statusEl.innerText = `🔴 録音中... (${this.recSeconds.toFixed(0)}s)`;
+                if (statusEl) statusEl.innerText = `🔴 録音中... (${elapsed.toFixed(1)}s)`;
             }
-            if (this.recSeconds >= 60) {
+            if (elapsed >= 60) {
                 this.stopRecording();
             }
-        }, 500);
+        }, 100);
     }
 
-    stopRecording() {
-        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-            this.mediaRecorder.stop();
-        }
+    async stopRecording() {
         if (this.recTimer) {
             clearInterval(this.recTimer);
             this.recTimer = null;
+        }
+
+        const targetSlotId = this.recordingSlotId;
+
+        // ① PCM レコーダーからの直接 WAV 保存（劣化ゼロ・iPad 100% 互換）
+        if (this.pcmRecorder && targetSlotId !== null) {
+            try {
+                const pcmResult = this.pcmRecorder.stop();
+                this.pcmRecorder = null;
+                if (pcmResult && pcmResult.blob && pcmResult.duration > 0.05) {
+                    this.pcmRecorderHandled = true;
+                    await this.saveRecordedAudio(targetSlotId, pcmResult.blob, pcmResult.duration);
+                }
+            } catch (err) {
+                console.error('PCM recorder stop error:', err);
+            }
+        }
+
+        // ② MediaRecorder 停止
+        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+            try {
+                this.mediaRecorder.stop();
+            } catch (e) {}
+        } else if (this.pcmRecorderHandled) {
+            this.cleanupRecording();
         }
     }
 
@@ -4087,6 +4352,9 @@ class VoicePadApp {
 
     cleanupRecording() {
         this.recordingSlotId = null;
+        this.pcmRecorderHandled = false;
+        this.recStartTime = 0;
+        this.recSeconds = 0;
     }
 
     // ==================== 音声再生制御（階層エフェクト＆スピード反映） ====================
@@ -4122,7 +4390,7 @@ class VoicePadApp {
         // ② 録音・取り込み音声の場合
         try {
             const arrayBuffer = await slot.audioBlob.arrayBuffer();
-            const originalBuffer = await ctx.decodeAudioData(arrayBuffer);
+            const originalBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arrayBuffer);
 
             // フルDSPエフェクト適用（声質 -> 環境 -> 3-Band EQ -> Special FX）
             const finalBuffer = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, effectiveSpeed, eqParams, specialParams);
@@ -4804,6 +5072,39 @@ class VoicePadApp {
         });
         document.getElementById('save-slot-env-btn')?.addEventListener('click', () => this.saveSlotEnvModal());
         document.getElementById('btn-quick-env-preview')?.addEventListener('click', () => this.previewQuickEnvEffect());
+
+        // 🎛️ パラメータ調整直下のインライン試聴ボタン一括バインド
+        document.querySelectorAll('.btn-inline-voice-preview').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.previewQuickVoiceEffect();
+            });
+        });
+
+        document.querySelectorAll('.btn-inline-env-preview').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.previewQuickEnvEffect();
+            });
+        });
+
+        document.querySelectorAll('.btn-inline-slot-preview').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.previewSlotEffect();
+            });
+        });
+
+        document.querySelectorAll('.btn-inline-scroll-preview').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.previewScrollEffect();
+            });
+        });
 
         // スクロールモーダル
         document.getElementById('close-scroll-modal-btn')?.addEventListener('click', () => this.closeScrollModal());
@@ -6028,7 +6329,7 @@ class VoicePadApp {
         if (slot && slot.audioBlob) {
             try {
                 const arr = await slot.audioBlob.arrayBuffer();
-                const originalBuffer = await ctx.decodeAudioData(arr.slice(0));
+                const originalBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arr);
                 const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
                 const src = ctx.createBufferSource();
@@ -6291,7 +6592,7 @@ class VoicePadApp {
         if (slot && slot.audioBlob) {
             try {
                 const arr = await slot.audioBlob.arrayBuffer();
-                const originalBuffer = await ctx.decodeAudioData(arr.slice(0));
+                const originalBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arr);
                 const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
                 const src = ctx.createBufferSource();
@@ -6429,7 +6730,7 @@ class VoicePadApp {
         if (slot && slot.audioBlob) {
             try {
                 const arr = await slot.audioBlob.arrayBuffer();
-                const originalBuffer = await ctx.decodeAudioData(arr.slice(0));
+                const originalBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arr);
                 const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
                 const src = ctx.createBufferSource();
@@ -6449,20 +6750,8 @@ class VoicePadApp {
     }
 
     playTestVoicePreview(ctx, voiceParams, envParams, speed = 1.0, eqParams = null, specialParams = null) {
-        const dur = 0.85;
-        const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        const freq = 220;
-        for (let i = 0; i < data.length; i++) {
-            const t = i / ctx.sampleRate;
-            const env = Math.sin((t / dur) * Math.PI);
-            const harm = Math.sin(2 * Math.PI * freq * t) 
-                       + 0.65 * Math.sin(4 * Math.PI * freq * t) 
-                       + 0.45 * Math.sin(6 * Math.PI * freq * t)
-                       + 0.30 * Math.sin(8 * Math.PI * freq * t)
-                       + 0.20 * Math.sin(10 * Math.PI * freq * t);
-            data[i] = harm * env * 0.3;
-        }
+        this.stopFxPreview();
+        const buffer = VoiceEngine.generateNaturalVowelBuffer(ctx, 1.1);
         const processed = VoiceEngine.processFull(buffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
         const src = ctx.createBufferSource();
         src.buffer = processed;
@@ -6470,7 +6759,7 @@ class VoicePadApp {
         src.connect(ctx.destination);
         src.start(0);
         this.fxPreviewSource = src;
-        this.showToast('▶️ サンプル音でエフェクトを試聴中...');
+        this.showToast('▶️ 自然な肉声サンプル（あー）でエフェクトを試聴中...');
         src.onended = () => { this.fxPreviewSource = null; };
     }
 
@@ -6880,7 +7169,7 @@ class VoicePadApp {
 
         try {
             const arr = await slot.audioBlob.arrayBuffer();
-            this.waveformAudioBuffer = await ctx.decodeAudioData(arr.slice(0));
+            this.waveformAudioBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arr);
             const duration = this.waveformAudioBuffer.duration;
 
             this.trimStartSec = 0;
