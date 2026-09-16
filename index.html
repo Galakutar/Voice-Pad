@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260916_9">
+    <link rel="stylesheet" href="style.css?v=20260917_3">
 </head>
 <body>
     <div id="app-container">
@@ -127,6 +127,29 @@
 
                     <!-- 個別設定コンテナ -->
                     <div id="slot-fx-custom-panel" class="fx-engine-container" style="display: none; margin-top: 6px;">
+                        <!-- 🎛️ Voicemod スタイル 統合ボイスセレクター -->
+                        <div class="voicemod-section">
+                            <div class="voicemod-header">
+                                <span class="voicemod-title">🎛️ Voice Lab プリセット</span>
+                                <span class="voicemod-badge">VOICEMOD FX</span>
+                            </div>
+
+                            <!-- カテゴリタブ -->
+                            <div class="voicemod-category-tabs" id="slot-voicemod-tabs">
+                                <button type="button" class="vm-tab-btn active" data-category="all">すべて</button>
+                                <button type="button" class="vm-tab-btn" data-category="device">🎙️ 機材・通信</button>
+                                <button type="button" class="vm-tab-btn" data-category="character">🎭 キャラクター</button>
+                                <button type="button" class="vm-tab-btn" data-category="horror">👻 ホラー・SF</button>
+                                <button type="button" class="vm-tab-btn" data-category="music">🏛️ 空間・音楽</button>
+                                <button type="button" class="vm-tab-btn" data-category="meme">🤪 面白・ミーム</button>
+                            </div>
+
+                            <!-- ボイスカードグリッド（JavaScriptで動的生成またはHTML定義） -->
+                            <div class="voicemod-grid" id="slot-voicemod-grid">
+                                <!-- JavaScriptで動的生成されます -->
+                            </div>
+                        </div>
+
                         <!-- ステージ1: 人の声質パラメータ -->
                         <div class="fx-stage-card stage-voice">
                             <div class="fx-stage-header">
@@ -155,7 +178,7 @@
                                         <span class="fx-slider-label">🗣️ フォルマント（声帯・喉の太さ）</span>
                                         <span id="slot-formant-val" class="fx-slider-val">1.0x (標準)</span>
                                     </div>
-                                    <input type="range" id="slot-formant-slider" min="0.5" max="1.8" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
+                                    <input type="range" id="slot-formant-slider" min="0.5" max="1.8" step="0.01" value="1.0" class="adjust-slider fx-slider-track">
                                     <div class="fx-slider-hints">
                                         <span>0.5x (巨漢・太声)</span>
                                         <span>1.0x (標準)</span>
@@ -169,27 +192,12 @@
                                         <span class="fx-slider-label">🌾 声の質感・ざらつき（倍音・ハスキー）</span>
                                         <span id="slot-rough-val" class="fx-slider-val">0% (クリア)</span>
                                     </div>
-                                    <input type="range" id="slot-rough-slider" min="0" max="100" step="5" value="0" class="adjust-slider fx-slider-track">
+                                    <input type="range" id="slot-rough-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
                                     <div class="fx-slider-hints">
                                         <span>0% (クリア)</span>
                                         <span>50% (ハスキー)</span>
                                         <span>100% (かすれ・歪み)</span>
                                     </div>
-                                </div>
-                            </div>
-
-                            <!-- 声質クイックプリセット -->
-                            <div class="fx-preset-row">
-                                <span class="fx-preset-label">クイック声質:</span>
-                                <div class="fx-preset-chips" id="slot-voice-preset-chips">
-                                    <button type="button" class="fx-chip-btn" data-preset="normal">🎙️ 標準</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="baby">👶 赤ちゃん</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="girl">👧 女の子</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="boy">👦 男の子</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="man">👨 男の人</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="woman">👩 女の人</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="old_man">👴 おじいさん</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="monster">👹 怪獣</button>
                                 </div>
                             </div>
                         </div>
@@ -208,7 +216,7 @@
                                         <span class="fx-slider-label">🌊 リバーブ・残響サイズ</span>
                                         <span id="slot-reverb-val" class="fx-slider-val">0% (ドライ)</span>
                                     </div>
-                                    <input type="range" id="slot-reverb-slider" min="0" max="100" step="5" value="0" class="adjust-slider fx-slider-track">
+                                    <input type="range" id="slot-reverb-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
                                     <div class="fx-slider-hints">
                                         <span>0% (なし)</span>
                                         <span>50% (お風呂)</span>
@@ -219,13 +227,13 @@
                                 <!-- ② フィルター -->
                                 <div class="fx-slider-item">
                                     <div class="fx-slider-top">
-                                        <span class="fx-slider-label">📻 フィルター（こもり・電話・ラジオ感）</span>
+                                        <span class="fx-slider-label">📻 フィルター（こもり・電話・メガホン）</span>
                                         <span id="slot-filter-val" class="fx-slider-val">0% (オフ)</span>
                                     </div>
-                                    <input type="range" id="slot-filter-slider" min="0" max="100" step="5" value="0" class="adjust-slider fx-slider-track">
+                                    <input type="range" id="slot-filter-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
                                     <div class="fx-slider-hints">
                                         <span>0% (クリア)</span>
-                                        <span>50% (ラジオ)</span>
+                                        <span>50% (水の中/こもり)</span>
                                         <span>100% (メガホン/電話)</span>
                                     </div>
                                 </div>
@@ -236,7 +244,7 @@
                                         <span class="fx-slider-label">🤖 モジュレーション（ロボット・宇宙人感）</span>
                                         <span id="slot-mod-val" class="fx-slider-val">0% (オフ)</span>
                                     </div>
-                                    <input type="range" id="slot-mod-slider" min="0" max="100" step="5" value="0" class="adjust-slider fx-slider-track">
+                                    <input type="range" id="slot-mod-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
                                     <div class="fx-slider-hints">
                                         <span>0% (なし)</span>
                                         <span>50% (宇宙人)</span>
@@ -244,19 +252,36 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
-                            <!-- 環境クイックプリセット -->
-                            <div class="fx-preset-row">
-                                <span class="fx-preset-label">クイック環境:</span>
-                                <div class="fx-preset-chips" id="slot-env-preset-chips">
-                                    <button type="button" class="fx-chip-btn" data-preset="none">✨ なし</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="cave">⛰️ 洞窟</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="hall">🏛️ 大ホール</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="telephone">📱 電話</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="radio">📻 ラジオ</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="megaphone">📢 メガホン</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="robot">🤖 ロボット</button>
-                                    <button type="button" class="fx-chip-btn" data-preset="alien">👽 宇宙人</button>
+                        <!-- ステージ3: 3バンドEQ（Bass / Mid / Treble） -->
+                        <div class="eq-stage-card">
+                            <div class="fx-stage-header">
+                                <span class="fx-stage-title" style="color: #c084fc;">🎚️ ステージ3: 3バンドEQ (音質イコライザー)</span>
+                                <span class="fx-stage-badge" style="background: rgba(139, 92, 246, 0.4); border-color: #c084fc;">3-Band EQ</span>
+                            </div>
+
+                            <div class="eq-grid">
+                                <div class="eq-item">
+                                    <div class="eq-label-row">
+                                        <span class="eq-label">低音 (Bass)</span>
+                                        <span id="slot-eq-bass-val" class="eq-val">±0 dB</span>
+                                    </div>
+                                    <input type="range" id="slot-eq-bass-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
+                                </div>
+                                <div class="eq-item">
+                                    <div class="eq-label-row">
+                                        <span class="eq-label">中音 (Mid)</span>
+                                        <span id="slot-eq-mid-val" class="eq-val">±0 dB</span>
+                                    </div>
+                                    <input type="range" id="slot-eq-mid-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
+                                </div>
+                                <div class="eq-item">
+                                    <div class="eq-label-row">
+                                        <span class="eq-label">高音 (Treble)</span>
+                                        <span id="slot-eq-treble-val" class="eq-val">±0 dB</span>
+                                    </div>
+                                    <input type="range" id="slot-eq-treble-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
                                 </div>
                             </div>
                         </div>
@@ -557,6 +582,7 @@
                         <span class="fx-preset-label">クイック選択:</span>
                         <div class="fx-preset-chips" id="quick-voice-preset-chips">
                             <button type="button" class="fx-chip-btn" data-preset="normal">🎙️ 標準</button>
+                            <button type="button" class="fx-chip-btn" data-preset="helium">🎈 ヘリウム</button>
                             <button type="button" class="fx-chip-btn" data-preset="baby">👶 赤ちゃん</button>
                             <button type="button" class="fx-chip-btn" data-preset="girl">👧 女の子</button>
                             <button type="button" class="fx-chip-btn" data-preset="boy">👦 男の子</button>
@@ -736,10 +762,14 @@
                             <div class="fx-preset-row">
                                 <div class="fx-preset-chips" id="scroll-voice-preset-chips">
                                     <button type="button" class="fx-chip-btn" data-preset="normal">🎙️ 標準</button>
+                                    <button type="button" class="fx-chip-btn" data-preset="helium">🎈 ヘリウム</button>
                                     <button type="button" class="fx-chip-btn" data-preset="baby">👶 赤ちゃん</button>
                                     <button type="button" class="fx-chip-btn" data-preset="girl">👧 女の子</button>
                                     <button type="button" class="fx-chip-btn" data-preset="boy">👦 男の子</button>
                                     <button type="button" class="fx-chip-btn" data-preset="man">👨 男の人</button>
+                                    <button type="button" class="fx-chip-btn" data-preset="woman">👩 女の人</button>
+                                    <button type="button" class="fx-chip-btn" data-preset="old_man">👴 おじいさん</button>
+                                    <button type="button" class="fx-chip-btn" data-preset="old_woman">👵 おばあさん</button>
                                     <button type="button" class="fx-chip-btn" data-preset="monster">👹 怪獣</button>
                                 </div>
                             </div>
@@ -1300,6 +1330,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260916_10"></script>
+    <script src="app.js?v=20260917_3"></script>
 </body>
 </html>
