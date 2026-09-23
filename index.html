@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260924_0555">
+    <link rel="stylesheet" href="style.css?v=20260924_0625">
 </head>
 <body>
     <div id="app-container">
@@ -1614,11 +1614,15 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                     </div>
 
                     <div class="p2p-qr-wrapper">
-                        <canvas id="p2p-send-qr-canvas" width="280" height="280" style="display: block; width: 220px; height: 220px; border-radius: 12px;"></canvas>
+                        <canvas id="p2p-send-qr-canvas" width="320" height="320" style="display: block; width: 250px; height: 250px; max-width: 80vw; max-height: 80vw; border-radius: 12px;"></canvas>
                         <div id="p2p-send-qr-loading" class="p2p-qr-spinner" style="display: none;">
                             <div class="spinner"></div>
                             <div style="font-size: 11px; color: #38bdf8; margin-top: 6px;">WebRTC待受準備中...</div>
                         </div>
+                    </div>
+
+                    <div style="font-size: 11.5px; color: #38bdf8;">
+                        💡 iPhoneのカメラは <strong>15〜25cm</strong> ほど離して中央にかざしてください
                     </div>
 
                     <!-- 先生がスキャンした後のステップ2へ進むボタン -->
@@ -1639,6 +1643,10 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                         <div class="p2p-scan-reticle">
                             <div class="p2p-scan-laser"></div>
                         </div>
+                    </div>
+
+                    <div style="font-size: 11.5px; color: #38bdf8;">
+                        💡 <strong>15〜25cm</strong> ほど離して枠の中央に収めると瞬時にピントが合います
                     </div>
 
                     <button type="button" id="btn-p2p-back-step1" class="action-btn download-btn" style="padding: 6px 14px; font-size: 12px;">
@@ -1698,6 +1706,10 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                             <div class="p2p-scan-laser"></div>
                         </div>
                     </div>
+
+                    <div style="font-size: 11.5px; color: #34d399;">
+                        💡 <strong>15〜25cm</strong> ほど離して中央に収めるとピントが合って即認識されます
+                    </div>
                 </div>
 
                 <!-- ステップ2: 受信側（先生）返信用QR表示コンテナ -->
@@ -1707,7 +1719,11 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                     </div>
 
                     <div class="p2p-qr-wrapper">
-                        <canvas id="p2p-receive-qr-canvas" width="280" height="280" style="display: block; width: 220px; height: 220px; border-radius: 12px;"></canvas>
+                        <canvas id="p2p-receive-qr-canvas" width="320" height="320" style="display: block; width: 250px; height: 250px; max-width: 80vw; max-height: 80vw; border-radius: 12px;"></canvas>
+                    </div>
+
+                    <div style="font-size: 11.5px; color: #34d399;">
+                        💡 生徒の端末を <strong>15〜25cm</strong> 離してかざしてもらってください
                     </div>
 
                     <button type="button" id="btn-p2p-receive-rescan" class="action-btn download-btn" style="padding: 6px 14px; font-size: 12px;">
@@ -1757,6 +1773,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <script src="jsqr.min.js"></script>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260924_0555"></script>
+    <script src="app.js?v=20260924_0625"></script>
 </body>
 </html>

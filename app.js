@@ -3010,8 +3010,8 @@ class QrEngine {
         if (typeof window.QRCode !== 'undefined') {
             try {
                 const tempContainer = document.createElement('div');
-                const level = (window.QRCode && window.QRCode.CorrectLevel && window.QRCode.CorrectLevel.M !== undefined) 
-                    ? window.QRCode.CorrectLevel.M : 0;
+                const level = (window.QRCode && window.QRCode.CorrectLevel && window.QRCode.CorrectLevel.L !== undefined) 
+                    ? window.QRCode.CorrectLevel.L : (window.QRCode?.CorrectLevel?.M || 0);
                 new window.QRCode(tempContainer, {
                     text: String(text),
                     width: drawSize,
@@ -3270,49 +3270,110 @@ class WebRtcEngine {
     };
 
     /**
-     * WebRTC SDP を超軽量・QRコード格納用フォーマットに圧縮
-     * （不要なTCP候補・重複候補をフィルタしてQRモジュール密度を大幅削減）
+     * WebRTC SDP を超軽量・大粒QRコード格納用フォーマットに極限圧縮
+     * （不要候補の完全除去 & FingerprintのバイナリBase64化によりQRドット数を激減）
      */
     static compressSdp(sdpStr, sdpType) {
         const ufrag = (sdpStr.match(/a=ice-ufrag:(.+)/) || [])[1] || '';
         const pwd = (sdpStr.match(/a=ice-pwd:(.+)/) || [])[1] || '';
         const fp = ((sdpStr.match(/a=fingerprint:sha-256 (.+)/) || [])[1] || '').replace(/:/g, '').trim();
         const setup = (sdpStr.match(/a=setup:(.+)/) || [])[1] || 'actpass';
+        
         const cands = [];
         const seen = new Set();
-        const candMatches = sdpStr.matchAll(/a=candidate:(\S+ \d+ (\S+) \d+ (\S+) \d+ typ (\S+)(?: raddr \S+ rport \d+)?)/gi);
+        const candMatches = sdpStr.matchAll(/a=candidate:(\S+ \d+ (udp|TCP) \d+ (\S+) (\d+) typ (\S+)(?: raddr \S+ rport \d+)?)/gi);
         for (const m of candMatches) {
             const proto = (m[2] || '').toLowerCase();
             const ip = m[3];
-            const typ = (m[4] || '').toLowerCase();
-            // Wi-FiローカルP2Pでは不要なTCP候補（ポート9）を除外してQRコードを極限まで軽量化
+            const port = parseInt(m[4], 10);
+            const typ = (m[5] || '').toLowerCase();
+            // Wi-FiローカルP2Pでは不要なTCP候補（ポート9）を除外
             if (proto === 'tcp') continue;
-            const key = `${ip}:${typ}`;
+            const key = `${ip}:${port}`;
             if (!seen.has(key)) {
                 seen.add(key);
-                cands.push(m[1]);
+                cands.push([ip, port, typ === 'srflx' ? 1 : 0]);
             }
         }
-        const compact = { t: sdpType, u: ufrag.trim(), p: pwd.trim(), f: fp, s: setup.trim(), c: cands };
-        return 'vpad_rtc_' + sdpType + ':' + btoa(JSON.stringify(compact));
+
+        // 64文字のHexフィンガープリントを32バイトBase64（44文字）に超圧縮
+        let fpB64 = '';
+        try {
+            const bytes = new Uint8Array(32);
+            for (let i = 0; i < 32; i++) {
+                bytes[i] = parseInt(fp.substr(i * 2, 2), 16);
+            }
+            fpB64 = btoa(String.fromCharCode.apply(null, bytes));
+        } catch (e) {
+            fpB64 = fp;
+        }
+
+        const compactArr = [
+            sdpType === 'offer' ? 'o' : 'a',
+            ufrag.trim(),
+            pwd.trim(),
+            fpB64,
+            setup === 'actpass' ? 'p' : 'a',
+            cands
+        ];
+
+        return 'vpad_rtc_' + (sdpType === 'offer' ? 'o' : 'a') + ':' + btoa(JSON.stringify(compactArr));
     }
 
     /**
-     * 圧縮されたQRコード文字列から WebRTC SDP を完全復元
+     * 圧縮された超軽量QRコード文字列から WebRTC SDP を完全復元
      */
     static decompressSdp(payload) {
-        const prefix = payload.startsWith('vpad_rtc_offer:') ? 'vpad_rtc_offer:' : 'vpad_rtc_answer:';
+        const isOffer = payload.startsWith('vpad_rtc_o:') || payload.startsWith('vpad_rtc_offer:');
+        const prefix = payload.startsWith('vpad_rtc_o:') ? 'vpad_rtc_o:' :
+                       payload.startsWith('vpad_rtc_a:') ? 'vpad_rtc_a:' :
+                       payload.startsWith('vpad_rtc_offer:') ? 'vpad_rtc_offer:' : 'vpad_rtc_answer:';
         const b64 = payload.slice(prefix.length);
-        const compact = JSON.parse(atob(b64));
-        const sdpType = compact.t || (prefix.includes('offer') ? 'offer' : 'answer');
-        const u = compact.u || '';
-        const p = compact.p || '';
-        const rawFp = compact.f || '';
-        let fp = '';
-        for (let i = 0; i < rawFp.length; i += 2) {
-            fp += (i > 0 ? ':' : '') + rawFp.substr(i, 2);
+        const data = JSON.parse(atob(b64));
+
+        let sdpType = 'offer';
+        let u = '', p = '', fp = '', s = 'actpass';
+        let cands = [];
+
+        if (Array.isArray(data)) {
+            // 超軽量配列フォーマット
+            sdpType = data[0] === 'o' ? 'offer' : 'answer';
+            u = data[1] || '';
+            p = data[2] || '';
+            const rawFpB64 = data[3] || '';
+            if (rawFpB64.length === 44) {
+                const bin = atob(rawFpB64);
+                const hexArr = [];
+                for (let i = 0; i < bin.length; i++) {
+                    hexArr.push(('0' + bin.charCodeAt(i).toString(16).toUpperCase()).slice(-2));
+                }
+                fp = hexArr.join(':');
+            } else {
+                fp = rawFpB64;
+            }
+            s = data[4] === 'p' ? 'actpass' : 'active';
+            const rawCands = data[5] || [];
+            for (let i = 0; i < rawCands.length; i++) {
+                const [cIp, cPort, cTypeFlag] = rawCands[i];
+                const typ = cTypeFlag === 1 ? 'srflx' : 'host';
+                const prio = typ === 'host' ? 2122260223 : 1686052607;
+                cands.push(`1 1 udp ${prio} ${cIp} ${cPort} typ ${typ}`);
+            }
+        } else {
+            // 後方互換オブジェクトフォーマット
+            sdpType = data.t || (isOffer ? 'offer' : 'answer');
+            u = data.u || '';
+            p = data.p || '';
+            const rawFp = data.f || '';
+            let fpParts = [];
+            for (let i = 0; i < rawFp.length; i += 2) {
+                fpParts.push(rawFp.substr(i, 2));
+            }
+            fp = fpParts.join(':');
+            s = data.s || (sdpType === 'offer' ? 'actpass' : 'active');
+            cands = data.c || [];
         }
-        const s = compact.s || (sdpType === 'offer' ? 'actpass' : 'active');
+
         const lines = [
             "v=0",
             "o=- " + Date.now() + " 2 IN IP4 127.0.0.1",
@@ -3323,8 +3384,8 @@ class WebRtcEngine {
             "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
             "c=IN IP4 0.0.0.0"
         ];
-        for (const cand of (compact.c || [])) {
-            lines.push(`a=candidate:${cand}`);
+        for (const cand of cands) {
+            lines.push(cand.startsWith('a=candidate:') ? cand : `a=candidate:${cand}`);
         }
         lines.push(
             `a=ice-ufrag:${u}`,
@@ -6531,7 +6592,7 @@ class VoicePadApp {
                     video,
                     canvas,
                     async (qrPayload) => {
-                        if (qrPayload && qrPayload.startsWith('vpad_rtc_answer:')) {
+                        if (qrPayload && (qrPayload.startsWith('vpad_rtc_answer:') || qrPayload.startsWith('vpad_rtc_a:'))) {
                             QrEngine.stopCameraScanner();
                             try {
                                 await WebRtcEngine.applyAnswerToSender(
@@ -6655,7 +6716,7 @@ class VoicePadApp {
         if (!qrText || typeof qrText !== 'string') return;
 
         // ① WebRTC SDP Offer の場合
-        if (qrText.startsWith('vpad_rtc_offer:')) {
+        if (qrText.startsWith('vpad_rtc_offer:') || qrText.startsWith('vpad_rtc_o:')) {
             QrEngine.stopCameraScanner();
             if (statusText) statusText.innerText = '⚡ 接続要求を確認しました。返信用QRコードを生成中...';
 
