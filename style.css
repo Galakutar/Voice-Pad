@@ -58,14 +58,12 @@ body, html {
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    padding-top: max(4px, env(safe-area-inset-top, 4px));
-    padding-bottom: max(4px, env(safe-area-inset-bottom, 4px));
-    padding-left: max(6px, env(safe-area-inset-left, 6px));
-    padding-right: max(6px, env(safe-area-inset-right, 6px));
-    gap: 4px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
+    padding-top: max(2px, env(safe-area-inset-top, 2px));
+    padding-bottom: max(2px, env(safe-area-inset-bottom, 2px));
+    padding-left: max(4px, env(safe-area-inset-left, 4px));
+    padding-right: max(4px, env(safe-area-inset-right, 4px));
+    gap: 2px;
+    overflow: hidden;
 }
 
 /* ==================== 1段目：ヘッダー（横スクロール対応） ==================== */
@@ -73,12 +71,12 @@ body, html {
     display: flex;
     justify-content: flex-start;
     align-items: center;
-    padding: 6px 4px;
+    padding: 2px 4px;
     background: transparent;
     flex-shrink: 0;
-    gap: 8px;
+    gap: 6px;
     width: 100%;
-    min-height: 52px;
+    min-height: 42px;
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
@@ -104,9 +102,9 @@ body, html {
     gap: 6px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    padding: 6px 14px;
-    min-height: 42px;
+    border-radius: 10px;
+    padding: 3px 10px;
+    min-height: 34px;
     cursor: pointer;
     outline: none;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -152,24 +150,24 @@ body, html {
     background: rgba(0, 0, 0, 0.6);
     border: 1.5px solid var(--border-color);
     border-radius: 9999px;
-    padding: 3px;
-    gap: 4px;
+    padding: 2px;
+    gap: 2px;
     flex-shrink: 0;
-    min-height: 44px;
+    min-height: 34px;
 }
 
 .mode-toggle-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 8px 18px;
-    min-height: 38px;
+    gap: 4px;
+    padding: 3px 12px;
+    min-height: 30px;
     border-radius: 9999px;
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 800;
     font-family: inherit;
     cursor: pointer;
@@ -212,14 +210,14 @@ body, html {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 5px;
     background: rgba(255, 255, 255, 0.08);
     border: 1.5px solid var(--border-color);
     color: var(--text-primary);
-    padding: 8px 14px;
-    min-height: 42px;
-    border-radius: 12px;
-    font-size: 13.5px;
+    padding: 4px 10px;
+    min-height: 34px;
+    border-radius: 10px;
+    font-size: 12.5px;
     font-weight: 800;
     font-family: inherit;
     cursor: pointer;
@@ -228,9 +226,9 @@ body, html {
 }
 
 .header-action-btn.icon-only {
-    padding: 8px 12px;
-    font-size: 18px;
-    min-height: 42px;
+    padding: 4px 8px;
+    font-size: 15px;
+    min-height: 34px;
 }
 
 .header-action-btn:hover {
@@ -340,23 +338,24 @@ body, html {
 .scroll-tabs-bar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     width: 100%;
     flex-shrink: 0;
-    padding: 6px 0;
-    min-height: 52px;
+    padding: 2px 0;
+    min-height: 36px;
+    margin: 0;
 }
 
 .scroll-tabs-container {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     overflow-x: auto;
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
     flex: 1;
-    padding: 4px 2px;
+    padding: 2px 1px;
 }
 
 .scroll-tabs-container::-webkit-scrollbar {
@@ -366,14 +365,14 @@ body, html {
 .scroll-tab-item {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-    min-height: 44px;
+    gap: 6px;
+    padding: 4px 12px;
+    min-height: 32px;
     border-radius: 9999px;
     background: rgba(255, 255, 255, 0.06);
     border: 1.5px solid var(--border-color);
     color: var(--text-secondary);
-    font-size: 13.5px;
+    font-size: 13px;
     font-weight: 800;
     cursor: pointer;
     white-space: nowrap;
@@ -481,14 +480,14 @@ body, html {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 8px 14px;
-    min-width: 44px;
-    min-height: 44px;
+    padding: 4px 10px;
+    min-width: 32px;
+    min-height: 32px;
     border-radius: 9999px;
     background: rgba(59, 130, 246, 0.14);
     border: 1.5px dashed rgba(59, 130, 246, 0.5);
     color: #93c5fd;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 900;
     font-family: inherit;
     cursor: pointer;
@@ -517,9 +516,19 @@ body, html {
     align-items: center;
     width: 100%;
     flex-shrink: 0;
-    padding: 2px 2px;
-    gap: 8px;
-    flex-wrap: wrap;
+    padding: 1px 2px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    margin-top: 0;
+    margin-bottom: 1px;
+    min-height: 30px;
+}
+
+.sub-toolbar::-webkit-scrollbar {
+    display: none;
 }
 
 .pagination-controls {
@@ -680,6 +689,7 @@ body, html {
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
+    contain: layout;
 }
 
 /* ==================== 表示数別のグリッド最適化（縦向き・デフォルト） ==================== */

@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260924_25">
+    <link rel="stylesheet" href="style.css?v=20260924_0335">
 </head>
 <body>
     <div id="app-container">
@@ -129,6 +129,28 @@
                 <div class="form-group">
                     <label class="form-label" for="edit-label">スイッチの名前（ラベル）</label>
                     <input type="text" id="edit-label" class="form-input" placeholder="例: こんにちは、拍手、効果音..." maxlength="24">
+                </div>
+
+                <!-- 🔊 スイッチ個別の音量（ボリューム）スライダー -->
+                <div class="form-group" style="background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label class="form-label" for="edit-slot-volume" style="margin-bottom: 0; font-weight: 700; font-size: 13px;">
+                            🔊 このスイッチの音量（ボリューム）
+                        </label>
+                        <span id="edit-slot-volume-val" class="volume-val-badge" style="font-size: 12.5px; font-weight: 800; color: #38bdf8; background: rgba(14, 165, 233, 0.15); padding: 2px 8px; border-radius: 12px;">100% (標準)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 14px; opacity: 0.7;">🔈</span>
+                        <input type="range" id="edit-slot-volume" class="adjust-slider" min="0.0" max="2.0" step="0.05" value="1.0" aria-label="このスイッチの音量">
+                        <span style="font-size: 14px; opacity: 0.7;">📢</span>
+                    </div>
+                    <div class="slider-ticks" style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-top: 4px; padding: 0 4px;">
+                        <span>0% (消音)</span>
+                        <span>50%</span>
+                        <span>100% (標準)</span>
+                        <span>150%</span>
+                        <span>200% (大音量)</span>
+                    </div>
                 </div>
 
                 <!-- スイッチ個別の再生スピード設定 -->
@@ -1673,6 +1695,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260924_0250"></script>
+    <script src="app.js?v=20260924_0335"></script>
 </body>
 </html>

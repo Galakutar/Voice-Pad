@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.24.0250';
+const APP_VERSION = '2026.09.24.0335';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -487,6 +487,17 @@ class AudioUnlocker {
                     try { source.disconnect(); } catch (e) {}
                 };
                 source.start(0);
+
+                // 📱 iOS / iPhone 向けメディアオーディオセッションの覚醒（マナーモード貫通＆スピーカー出力確保）
+                const silentAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
+                silentAudio.volume = 0.01;
+                const p = silentAudio.play();
+                if (p !== undefined) {
+                    p.then(() => {
+                        silentAudio.pause();
+                    }).catch(() => {});
+                }
+
                 this.isUnlocked = true;
             } catch (e) {}
         }
@@ -3774,6 +3785,14 @@ class VoicePadApp {
         return parseFloat(this.globalPlaybackSpeed) || 1.0;
     }
 
+    getEffectiveSlotVolume(slot) {
+        if (slot && slot.volume !== undefined && slot.volume !== null && slot.volume !== '') {
+            const parsed = parseFloat(slot.volume);
+            return isNaN(parsed) ? 1.0 : Math.max(0.0, Math.min(3.0, parsed));
+        }
+        return 1.0;
+    }
+
     getVoiceEffectLabel(effectVal) {
         const names = {
             'normal': '🎙️ 通常',
@@ -4313,8 +4332,10 @@ class VoicePadApp {
             if (hasAudio) {
                 const speed = this.getEffectivePlaybackSpeed(slot);
                 const speedLabel = speed !== 1.0 ? ` (${speed}x)` : '';
+                const vol = this.getEffectiveSlotVolume(slot);
+                const volLabel = vol === 0 ? ' [消音]' : (vol !== 1.0 ? ` [${Math.round(vol * 100)}%]` : '');
                 const tag = (slot.ttsText && !slot.audioBlob) ? '🤖 ' : '';
-                statusText = `${tag}${(slot.duration || 1.0).toFixed(1)}s${speedLabel}`;
+                statusText = `${tag}${(slot.duration || 1.0).toFixed(1)}s${speedLabel}${volLabel}`;
             }
 
             const labelHtml = `<div class="pad-label">${this.escapeHtml(slot.label)}</div>`;
@@ -4828,6 +4849,7 @@ class VoicePadApp {
                 duration: 0,
                 voiceEffect: 'inherit',
                 playbackSpeed: 'inherit',
+                volume: 1.0,
                 order: i
             };
             await this.storage.saveSlot(newSlot);
@@ -5022,6 +5044,7 @@ class VoicePadApp {
             duration: 0,
             voiceEffect: 'inherit',
             playbackSpeed: 'inherit',
+            volume: 1.0,
             order: nextOrder
         };
 
@@ -5355,66 +5378,33 @@ class VoicePadApp {
             // フルDSPエフェクト適用（声質 -> 環境 -> 3-Band EQ -> Special FX）
             const finalBuffer = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, effectiveSpeed, eqParams, specialParams);
 
-            const source = ctx.createBufferSource();
-            source.buffer = finalBuffer;
-
-            // 再生スピード設定
-            source.playbackRate.value = effectiveSpeed;
-
-            const gainNode = ctx.createGain();
-            const vol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
-            gainNode.gain.value = vol;
-
-            let shaperNode = null;
-            if (this.globalSoftClip) {
-                shaperNode = ctx.createWaveShaper();
-                shaperNode.curve = AudioUtils.getSoftClipCurve();
-                shaperNode.oversample = '2x';
-                source.connect(gainNode);
-                gainNode.connect(shaperNode);
-                shaperNode.connect(ctx.destination);
-            } else {
-                source.connect(gainNode);
-                gainNode.connect(ctx.destination);
-            }
-
-            source.start(0);
-
             const card = document.getElementById(`pad-${slotId}`);
             if (card) {
                 card.classList.add('playing');
                 card.classList.add('is-playing');
             }
 
-            const activeHandle = {
-                source,
-                gainNode,
-                shaperNode,
-                stop: () => {
-                    try { source.stop(); } catch (e) {}
-                    try { source.disconnect(); } catch (e) {}
-                    try { gainNode.disconnect(); } catch (e) {}
-                    if (shaperNode) { try { shaperNode.disconnect(); } catch (e) {} }
+            // 📱 iPhone / iPad / 全ブラウザ互換の HTML5 Audio ハイブリッド再生
+            // （iPhoneのマナーモード/消音スイッチ時でも本体スピーカーからクリアかつ大音量で確実に再生）
+            const slotVol = this.getEffectiveSlotVolume(slot);
+            const controller = this.playBufferViaHtmlAudio(
+                finalBuffer,
+                effectiveSpeed,
+                () => {
+                    this.stopSlot(slotId);
                 },
-                pause: () => {
-                    try { source.stop(); } catch (e) {}
-                    try { source.disconnect(); } catch (e) {}
-                    try { gainNode.disconnect(); } catch (e) {}
-                    if (shaperNode) { try { shaperNode.disconnect(); } catch (e) {} }
+                (err) => {
+                    console.error('Audio playback error, trying fallback:', err);
+                    this.stopSlot(slotId);
                 },
-                disconnect: () => {
-                    try { source.disconnect(); } catch (e) {}
-                    try { gainNode.disconnect(); } catch (e) {}
-                    if (shaperNode) { try { shaperNode.disconnect(); } catch (e) {} }
-                }
-            };
+                slotVol
+            );
 
-            this.activeSources.set(slotId, activeHandle);
-
-            source.onended = () => {
-                activeHandle.disconnect();
+            if (controller) {
+                this.activeSources.set(slotId, controller);
+            } else {
                 this.stopSlot(slotId);
-            };
+            }
         } catch (err) {
             console.error('Audio play error, using fallback:', err);
             this.fallbackPlay(slot, slotId, effectiveSpeed);
@@ -5453,6 +5443,7 @@ class VoicePadApp {
             const rawBuffer = TtsEngine.synthesizeToBuffer(slot.ttsText, ctx, voiceType, rate, pitch);
             const finalBuffer = VoiceEngine.processFull(rawBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
+            const slotVol = this.getEffectiveSlotVolume(slot);
             const controller = this.playBufferViaHtmlAudio(
                 finalBuffer,
                 speed,
@@ -5460,7 +5451,8 @@ class VoicePadApp {
                 (err) => {
                     console.error('HTML5 Audio TTS playback error:', err);
                     this.stopSlot(slot.id);
-                }
+                },
+                slotVol
             );
 
             if (controller) {
@@ -5521,8 +5513,9 @@ class VoicePadApp {
         utter.pitch = calculatedPitch;
         utter.rate = Math.max(0.5, Math.min(2.0, calculatedRate));
 
-        const vol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
-        utter.volume = Math.max(0.1, Math.min(1.0, vol));
+        const slotVol = this.getEffectiveSlotVolume(slot);
+        const gVol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
+        utter.volume = Math.max(0.0, Math.min(1.0, slotVol * gVol));
 
         const ttsController = {
             stop: () => {
@@ -5561,12 +5554,14 @@ class VoicePadApp {
     fallbackPlay(slot, slotId, speed = 1.0) {
         if (!slot || !slot.audioBlob) return;
         try {
-            const vol = (this.globalVolume !== undefined && this.globalVolume !== null) ? Math.min(1.0, this.globalVolume) : 1.0;
+            const slotVol = this.getEffectiveSlotVolume(slot);
+            const gVol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
+            const vol = Math.max(0.0, Math.min(1.0, slotVol * gVol));
             const audioUrl = BlobUrlTracker.create(slot.audioBlob, 'playback');
             const audio = new Audio();
             audio.src = audioUrl;
             audio.playbackRate = speed;
-            audio.volume = Math.max(0.1, Math.min(1.0, vol));
+            audio.volume = vol;
 
             const card = document.getElementById(`pad-${slotId}`);
             if (card) {
@@ -5628,10 +5623,12 @@ class VoicePadApp {
      * （iPad/iOS Safari における Web Audio API 音量ダッキング・抑制を回避）
      * グローバル音量（0.1x〜3.0x）およびソフトクリッピング（音割れ防止）を適用
      */
-    playBufferViaHtmlAudio(buffer, speed = 1.0, onEnded = null, onError = null) {
+    playBufferViaHtmlAudio(buffer, speed = 1.0, onEnded = null, onError = null, customVolume = null) {
         if (!buffer) return null;
         try {
-            const vol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
+            const slotVol = (customVolume !== null && customVolume !== undefined) ? customVolume : 1.0;
+            const gVol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
+            const vol = Math.max(0.0, Math.min(3.0, slotVol * gVol));
             const softClip = (this.globalSoftClip !== undefined) ? this.globalSoftClip : true;
 
             const numChannels = buffer.numberOfChannels;
@@ -5661,6 +5658,7 @@ class VoicePadApp {
             const audio = new Audio();
             audio.src = url;
             audio.playbackRate = Math.max(0.5, Math.min(2.0, speed || 1.0));
+            audio.volume = Math.max(0.0, Math.min(1.0, Math.min(vol, 1.0)));
 
             let isCleanedUp = false;
             const cleanup = () => {
@@ -5936,6 +5934,7 @@ class VoicePadApp {
                 eqParams: slot.eqParams || null,
                 specialParams: slot.specialParams || null,
                 playbackSpeed: slot.playbackSpeed || 'inherit',
+                volume: (slot.volume !== undefined && slot.volume !== null) ? parseFloat(slot.volume) : 1.0,
                 ttsText: slot.ttsText || null,
                 ttsVoice: slot.ttsVoice || null,
                 ttsRate: slot.ttsRate || 1.0,
@@ -6556,6 +6555,31 @@ class VoicePadApp {
             });
         });
 
+        // 🔊 スイッチ個別音量スライダーのイベントリスナー
+        const editSlotVolume = document.getElementById('edit-slot-volume');
+        const editSlotVolumeVal = document.getElementById('edit-slot-volume-val');
+        if (editSlotVolume) {
+            editSlotVolume.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                const percent = Math.round(val * 100);
+                if (editSlotVolumeVal) {
+                    if (val === 0) {
+                        editSlotVolumeVal.innerText = '0% (消音)';
+                        editSlotVolumeVal.style.color = '#ef4444';
+                    } else if (val === 1.0) {
+                        editSlotVolumeVal.innerText = '100% (標準)';
+                        editSlotVolumeVal.style.color = '#38bdf8';
+                    } else if (val > 1.0) {
+                        editSlotVolumeVal.innerText = `${percent}% (ブースト)`;
+                        editSlotVolumeVal.style.color = '#f59e0b';
+                    } else {
+                        editSlotVolumeVal.innerText = `${percent}%`;
+                        editSlotVolumeVal.style.color = '#38bdf8';
+                    }
+                }
+            });
+        }
+
         // スクロールモーダル
         document.getElementById('close-scroll-modal-btn')?.addEventListener('click', () => this.closeScrollModal());
         document.getElementById('scroll-modal-backdrop')?.addEventListener('click', (e) => {
@@ -6743,6 +6767,30 @@ class VoicePadApp {
             speedSelect.options[0].text = `🔄 スクロール設定に従う (現在: ${parentSpeed}x)`;
         }
 
+        // 🔊 スイッチ個別音量スライダー初期化
+        const slotVol = this.getEffectiveSlotVolume(slot);
+        const slotVolSlider = document.getElementById('edit-slot-volume');
+        const slotVolBadge = document.getElementById('edit-slot-volume-val');
+        if (slotVolSlider) {
+            slotVolSlider.value = slotVol;
+        }
+        if (slotVolBadge) {
+            const percent = Math.round(slotVol * 100);
+            if (slotVol === 0) {
+                slotVolBadge.innerText = '0% (消音)';
+                slotVolBadge.style.color = '#ef4444';
+            } else if (slotVol === 1.0) {
+                slotVolBadge.innerText = '100% (標準)';
+                slotVolBadge.style.color = '#38bdf8';
+            } else if (slotVol > 1.0) {
+                slotVolBadge.innerText = `${percent}% (ブースト)`;
+                slotVolBadge.style.color = '#f59e0b';
+            } else {
+                slotVolBadge.innerText = `${percent}%`;
+                slotVolBadge.style.color = '#38bdf8';
+            }
+        }
+
         const emojiInput = document.getElementById('edit-emoji');
         if (emojiInput) emojiInput.value = slot.emoji || '🔊';
 
@@ -6838,6 +6886,12 @@ class VoicePadApp {
 
         if (speedSelect) {
             slot.playbackSpeed = speedSelect.value;
+        }
+
+        const volSlider = document.getElementById('edit-slot-volume');
+        if (volSlider) {
+            const v = parseFloat(volSlider.value);
+            slot.volume = isNaN(v) ? 1.0 : Math.max(0.0, Math.min(2.0, v));
         }
 
         await this.storage.saveSlot(slot);
@@ -7705,6 +7759,7 @@ class VoicePadApp {
                 const originalBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arr);
                 const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
+                const slotVol = this.getEffectiveSlotVolume(slot);
                 const controller = this.playBufferViaHtmlAudio(
                     processed,
                     speed,
@@ -7712,7 +7767,8 @@ class VoicePadApp {
                     (err) => {
                         console.error('Preview error:', err);
                         this.fxPreviewSource = null;
-                    }
+                    },
+                    slotVol
                 );
                 this.fxPreviewSource = controller;
                 this.showToast('▶️ 設定した声質・スピードで音声を試聴中...');
@@ -8784,6 +8840,10 @@ class VoicePadApp {
         source.buffer = this.waveformAudioBuffer;
 
         const gainNode = ctx.createGain();
+        const slot = this.editingSlotId ? this.slots.find(s => s.id === this.editingSlotId) : null;
+        const slotVol = this.getEffectiveSlotVolume(slot);
+        const gVol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
+        gainNode.gain.value = Math.max(0.0, Math.min(3.0, slotVol * gVol));
         source.connect(gainNode);
         gainNode.connect(ctx.destination);
 
@@ -9355,6 +9415,7 @@ class VoicePadApp {
             eqParams: s.eqParams || null,
             specialParams: s.specialParams || null,
             playbackSpeed: s.playbackSpeed || 'inherit',
+            volume: (s.volume !== undefined && s.volume !== null) ? parseFloat(s.volume) : 1.0,
             ttsText: s.ttsText || null,
             ttsVoice: s.ttsVoice || null,
             ttsRate: s.ttsRate || 1.0,
@@ -9479,6 +9540,7 @@ class VoicePadApp {
             eqParams: s.eqParams || null,
             specialParams: s.specialParams || null,
             playbackSpeed: s.playbackSpeed || 'inherit',
+            volume: (s.volume !== undefined && s.volume !== null) ? parseFloat(s.volume) : 1.0,
             ttsText: s.ttsText || null,
             ttsVoice: s.ttsVoice || null,
             ttsRate: s.ttsRate || 1.0,
