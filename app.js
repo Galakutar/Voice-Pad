@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.17.0014';
+const APP_VERSION = '2026.09.23.0015';
 
 // ==================== 0. 音声エンコード＆波形編集ユーティリティ ====================
 class AudioUtils {
@@ -7248,13 +7248,20 @@ class VoicePadApp {
     }
 
     async applyTtsToSlot() {
-        if (!this.editingSlotId) return;
-        const slot = this.slots.find(s => s.id === this.editingSlotId);
-        if (!slot) return;
-
         const text = document.getElementById('tts-input-text')?.value.trim();
         if (!text) {
             this.showToast('⚠️ 読み上げるテキストを入力してください');
+            return;
+        }
+
+        if (!this.editingSlotId) {
+            this.showToast('⚠️ 登録先のスロットが見つかりません');
+            return;
+        }
+
+        const slot = this.slots.find(s => s.id === this.editingSlotId);
+        if (!slot) {
+            this.showToast('⚠️ 登録先のスロットが見つかりません');
             return;
         }
 
@@ -7262,16 +7269,20 @@ class VoicePadApp {
         const ctx = AudioUnlocker.getContext();
         if (!ctx) return;
 
+        // スライダーやプリセットから値を取得
         const rate = parseFloat(document.getElementById('tts-rate-slider')?.value || '1.0');
         const pitch = parseFloat(document.getElementById('tts-pitch-slider')?.value || '1.0');
-        const voiceType = this._selectedTtsPresetKey || 'girl';
+        const voiceType = this._selectedTtsPresetKey || 'woman';
 
         try {
             this.showToast('🎙️ AI音声データを生成＆保存中...');
+
+            // 音声バッファの合成とWAV化
             const rawBuffer = TtsEngine.synthesizeToBuffer(text, ctx, voiceType, rate, pitch);
             const normalizedBuffer = AudioUtils.normalizeAudioBuffer(rawBuffer);
             const wavBlob = AudioUtils.audioBufferToWav(normalizedBuffer);
 
+            // スロットにWAV BlobとTTS情報を保存
             slot.ttsText = text;
             slot.ttsVoice = voiceType;
             slot.ttsRate = rate;
@@ -7314,7 +7325,7 @@ class VoicePadApp {
 
             this.initWaveformForSlot(slot);
             this.previewTts();
-            this.showToast(`✨ Voicemodエフェクト＆波形を「${slot.label}」に登録しました！`);
+            this.showToast(`✨ 音声合成データを「${slot.label}」に登録しました！`);
         } catch (err) {
             console.error('Apply TTS error:', err);
             this.showToast('⚠️ 音声の生成・保存に失敗しました');
