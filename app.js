@@ -3057,18 +3057,20 @@ class QrEngine {
     }
 
     // カメラQRスキャナー管理
+    // カメラQRスキャナー管理
     static scannerStream = null;
     static scannerAnimId = null;
     static isScanning = false;
 
     /**
-     * カメラ起動＆QRコードのリアルタイム検出 (iOS Safari / iPad / iPhone 完全対応)
+     * カメラ起動＆QRコードのリアルタイム検出 (iOS Safari / iPad / iPhone / Android 完全対応)
+     * BarcodeDetector (高速ネイティブ) 優先 + 高解像度 jsQR フォールバック
      */
     static async startCameraScanner(videoEl, canvasEl, onResult, onStatus) {
         this.stopCameraScanner();
         this.isScanning = true;
 
-        if (onStatus) onStatus('カメラを起動中...');
+        if (onStatus) onStatus('📷 カメラを起動中...');
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -3087,54 +3089,69 @@ class QrEngine {
             videoEl.setAttribute('muted', 'true');
             await videoEl.play();
 
-            if (onStatus) onStatus('QRコードを探しています...');
+            if (onStatus) onStatus('🔍 QRコードを枠内に映してください...');
 
             const scanCanvas = canvasEl || document.createElement('canvas');
             const scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
 
             let lastScanTime = 0;
-            const scanInterval = 80; // 80ms間隔（約12fps）でスキャンしCPU負荷を抑えつつ高速反応
+            const scanInterval = 60; // 60ms間隔（約16fps）で高レスポンススキャン
+            const hasBarcodeDetector = ('BarcodeDetector' in window);
+            let nativeDetector = null;
+            if (hasBarcodeDetector) {
+                try {
+                    nativeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+                } catch (e) {
+                    nativeDetector = null;
+                }
+            }
 
-            const scanLoop = () => {
+            const scanLoop = async () => {
                 if (!this.isScanning) return;
 
                 const now = performance.now();
                 if (now - lastScanTime >= scanInterval && videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
                     lastScanTime = now;
-                    try {
-                        const vw = videoEl.videoWidth;
-                        const vh = videoEl.videoHeight;
-                        const scale = Math.min(1, 640 / Math.max(vw, vh));
-                        const sw = Math.round(vw * scale);
-                        const sh = Math.round(vh * scale);
+                    let detected = false;
 
-                        if (scanCanvas.width !== sw || scanCanvas.height !== sh) {
-                            scanCanvas.width = sw;
-                            scanCanvas.height = sh;
-                        }
+                    // ① ネイティブ BarcodeDetector (iOS 17+ / Chrome / Edge 最速検出)
+                    if (nativeDetector) {
+                        try {
+                            const barcodes = await nativeDetector.detect(videoEl);
+                            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                                detected = true;
+                                try { navigator.vibrate?.([40]); } catch (v) {}
+                                onResult(barcodes[0].rawValue);
+                            }
+                        } catch (bdErr) {}
+                    }
 
-                        scanCtx.drawImage(videoEl, 0, 0, sw, sh);
-                        const imgData = scanCtx.getImageData(0, 0, sw, sh);
+                    // ② jsQR (全環境 100% 互換フォールバック)
+                    if (!detected && typeof window.jsQR === 'function') {
+                        try {
+                            const vw = videoEl.videoWidth;
+                            const vh = videoEl.videoHeight;
+                            const scale = Math.min(1, 800 / Math.max(vw, vh));
+                            const sw = Math.round(vw * scale);
+                            const sh = Math.round(vh * scale);
 
-                        // ① jsQR (iOS Safari / 全ブラウザ 100% 安定動作)
-                        if (typeof window.jsQR === 'function') {
+                            if (scanCanvas.width !== sw || scanCanvas.height !== sh) {
+                                scanCanvas.width = sw;
+                                scanCanvas.height = sh;
+                            }
+
+                            scanCtx.drawImage(videoEl, 0, 0, sw, sh);
+                            const imgData = scanCtx.getImageData(0, 0, sw, sh);
+
                             const code = window.jsQR(imgData.data, sw, sh, {
-                                inversionAttempts: 'dontInvert'
+                                inversionAttempts: 'attemptBoth'
                             });
                             if (code && code.data) {
+                                detected = true;
+                                try { navigator.vibrate?.([40]); } catch (v) {}
                                 onResult(code.data);
                             }
-                        } else if ('BarcodeDetector' in window) {
-                            // ② フォールバック：ネイティブ BarcodeDetector
-                            const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-                            detector.detect(videoEl).then(barcodes => {
-                                if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-                                    onResult(barcodes[0].rawValue);
-                                }
-                            }).catch(() => {});
-                        }
-                    } catch (e) {
-                        // フレームごとのパースエラーは無視
+                        } catch (e) {}
                     }
                 }
 
@@ -3148,7 +3165,7 @@ class QrEngine {
         } catch (err) {
             console.error('Camera access failed:', err);
             this.stopCameraScanner();
-            if (onStatus) onStatus('⚠️ カメラの起動に失敗しました（権限を確認してください）');
+            if (onStatus) onStatus('⚠️ カメラの起動に失敗しました（設定でカメラ許可を確認してください）');
             throw err;
         }
     }
@@ -3249,6 +3266,7 @@ class WebRtcEngine {
 
     /**
      * 生徒側：WebRTC 送信セッションの起動（SDP Offer 生成 & DataChannel 準備）
+     * 16KBチャンク分割送信により大容量音声データも安全・確実に転送
      */
     static async startSenderSession(exportObj, onOfferReady, onStatus, onComplete) {
         this.stopSenderSession();
@@ -3265,13 +3283,36 @@ class WebRtcEngine {
             isComplete: false
         };
 
-        dataChannel.onopen = () => {
+        dataChannel.onopen = async () => {
             if (onStatus) onStatus('⚡ WebRTC Wi-Fi接続完了！データを送信中...');
             try {
                 const jsonPayload = JSON.stringify(exportObj);
-                dataChannel.send(jsonPayload);
+                const CHUNK_SIZE = 16384; // 16KB (全ブラウザ安全サイズ)
+                const totalChunks = Math.ceil(jsonPayload.length / CHUNK_SIZE);
+                const msgId = 'msg_' + Date.now().toString(36);
+
+                for (let i = 0; i < totalChunks; i++) {
+                    const chunk = jsonPayload.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+                    const packet = JSON.stringify({
+                        type: 'vpad_rtc_chunk',
+                        id: msgId,
+                        idx: i,
+                        tot: totalChunks,
+                        data: chunk
+                    });
+
+                    while (dataChannel.bufferedAmount > 65536) {
+                        await new Promise(r => setTimeout(r, 10));
+                    }
+                    dataChannel.send(packet);
+
+                    if (onStatus && totalChunks > 1) {
+                        onStatus(`⚡ 送信中: ${Math.round(((i + 1) / totalChunks) * 100)}%...`);
+                    }
+                }
             } catch (err) {
                 console.error('DataChannel send error:', err);
+                if (onStatus) onStatus(`⚠️ 送信エラー: ${err.message}`);
             }
         };
 
@@ -3350,7 +3391,8 @@ class WebRtcEngine {
         const session = {
             pc,
             dataChannel: null,
-            isComplete: false
+            isComplete: false,
+            chunksBuffer: {}
         };
 
         pc.ondatachannel = (e) => {
@@ -3363,12 +3405,34 @@ class WebRtcEngine {
 
             channel.onmessage = (msgEvt) => {
                 try {
-                    const data = JSON.parse(msgEvt.data);
-                    // 送信元に ACK 返信
-                    try { channel.send(JSON.stringify({ type: 'ack', ok: true })); } catch (err) {}
-                    if (!session.isComplete) {
-                        session.isComplete = true;
-                        if (onDataReceived) onDataReceived(data);
+                    const packet = JSON.parse(msgEvt.data);
+                    if (packet.type === 'vpad_rtc_chunk') {
+                        if (!session.chunksBuffer[packet.id]) {
+                            session.chunksBuffer[packet.id] = new Array(packet.tot);
+                        }
+                        session.chunksBuffer[packet.id][packet.idx] = packet.data;
+                        const receivedCount = session.chunksBuffer[packet.id].filter(Boolean).length;
+
+                        if (onStatus && packet.tot > 1) {
+                            onStatus(`📥 受信中: ${Math.round((receivedCount / packet.tot) * 100)}%...`);
+                        }
+
+                        if (receivedCount === packet.tot) {
+                            const fullJson = session.chunksBuffer[packet.id].join('');
+                            delete session.chunksBuffer[packet.id];
+                            const data = JSON.parse(fullJson);
+                            try { channel.send(JSON.stringify({ type: 'ack', ok: true })); } catch (err) {}
+                            if (!session.isComplete) {
+                                session.isComplete = true;
+                                if (onDataReceived) onDataReceived(data);
+                            }
+                        }
+                    } else if (packet.slot || packet.type === 'voicepad_slot') {
+                        try { channel.send(JSON.stringify({ type: 'ack', ok: true })); } catch (err) {}
+                        if (!session.isComplete) {
+                            session.isComplete = true;
+                            if (onDataReceived) onDataReceived(packet);
+                        }
                     }
                 } catch (err) {
                     console.error('DataChannel message parse error:', err);
