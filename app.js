@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.23.0015';
+const APP_VERSION = '2026.09.24.0016';
 
 // ==================== 0. 音声エンコード＆波形編集ユーティリティ ====================
 class AudioUtils {
@@ -4543,8 +4543,6 @@ class VoicePadApp {
 
     async playTtsSlot(slot, voiceParams, envParams, speed = 1.0) {
         await AudioUnlocker.unlock();
-        const ctx = AudioUnlocker.getContext();
-        if (!ctx) return;
 
         this.stopSlot(slot.id);
 
@@ -4554,10 +4552,20 @@ class VoicePadApp {
             card.classList.add('is-playing');
         }
 
+        // ① ブラウザの高品質な日本語音声合成（SpeechSynthesis）を最優先
+        if ('speechSynthesis' in window) {
+            this.legacyPlayTts(slot, voiceParams, envParams, speed);
+            return;
+        }
+
+        // ② SpeechSynthesis 非対応時のみ Web Audio API フォールバック
+        const ctx = AudioUnlocker.getContext();
+        if (!ctx) return;
+
         try {
             const eqParams = this.getEffectiveEqParams(slot);
             const specialParams = this.getEffectiveSpecialParams(slot);
-            const voiceType = slot.ttsVoice || 'girl';
+            const voiceType = slot.ttsVoice || 'woman';
             const rate = slot.ttsRate || 1.0;
             const pitch = slot.ttsPitch || 1.0;
 
@@ -4579,8 +4587,8 @@ class VoicePadApp {
                 this.stopSlot(slot.id);
             };
         } catch (err) {
-            console.error('Web Audio TTS playback error, using legacy fallback:', err);
-            this.legacyPlayTts(slot, voiceParams, envParams, speed);
+            console.error('Web Audio TTS playback error:', err);
+            this.stopSlot(slot.id);
         }
     }
 
@@ -4640,12 +4648,21 @@ class VoicePadApp {
         const ttsController = {
             stop: () => {
                 window.speechSynthesis.cancel();
+                window._activeUtterance = null;
             }
         };
         this.activeSources.set(slot.id, ttsController);
 
-        utter.onend = () => { this.stopSlot(slot.id); };
-        utter.onerror = () => { this.stopSlot(slot.id); };
+        window._activeUtterance = utter;
+
+        utter.onend = () => {
+            window._activeUtterance = null;
+            this.stopSlot(slot.id);
+        };
+        utter.onerror = () => {
+            window._activeUtterance = null;
+            this.stopSlot(slot.id);
+        };
 
         VoiceEngine.playAcousticFilterOverlay(eParams);
 
@@ -7212,23 +7229,73 @@ class VoicePadApp {
         }
 
         await AudioUnlocker.unlock();
-        const ctx = AudioUnlocker.getContext();
-        if (!ctx) return;
 
         this.stopFxPreview();
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-        }
 
         const rate = parseFloat(document.getElementById('tts-rate-slider')?.value || '1.0');
         const pitch = parseFloat(document.getElementById('tts-pitch-slider')?.value || '1.0');
-        const voiceType = this._selectedTtsPresetKey || 'girl';
+        const voiceSelect = document.getElementById('tts-voice-select');
+        const selectedVoiceName = voiceSelect ? voiceSelect.value : null;
 
-        // スロットモーダルの声質・環境・3バンドEQ・特殊FX・スピードパラメータを取得
+        // ① ブラウザ標準 Web Speech API による高品位・自然な日本語読み上げ
+        if ('speechSynthesis' in window) {
+            try {
+                window.speechSynthesis.cancel();
+
+                const utter = new SpeechSynthesisUtterance(text);
+                const allVoices = window.speechSynthesis.getVoices();
+                if (allVoices.length > 0) this.ttsVoices = allVoices;
+
+                let selectedVoice = null;
+                if (selectedVoiceName && this.ttsVoices) {
+                    selectedVoice = this.ttsVoices.find(v => v.name === selectedVoiceName || v.voiceURI === selectedVoiceName);
+                }
+                if (!selectedVoice && this.ttsVoices) {
+                    selectedVoice = this.ttsVoices.find(v => v.lang.startsWith('ja')) || this.ttsVoices[0];
+                }
+
+                if (selectedVoice) {
+                    utter.voice = selectedVoice;
+                    utter.lang = selectedVoice.lang || 'ja-JP';
+                } else {
+                    utter.lang = 'ja-JP';
+                }
+
+                utter.rate = Math.max(0.5, Math.min(2.0, rate));
+                utter.pitch = Math.max(0.4, Math.min(1.8, pitch));
+                utter.volume = 1.0;
+
+                // ガベージコレクション防止
+                window._activeTtsPreviewUtterance = utter;
+
+                utter.onend = () => { window._activeTtsPreviewUtterance = null; };
+                utter.onerror = (e) => {
+                    console.warn('TTS preview utterance error:', e);
+                    window._activeTtsPreviewUtterance = null;
+                };
+
+                this.showToast(`🗣️ 「${text.slice(0, 15)}${text.length > 15 ? '...' : ''}」を試聴中...`);
+
+                setTimeout(() => {
+                    if (window.speechSynthesis.paused) {
+                        window.speechSynthesis.resume();
+                    }
+                    window.speechSynthesis.speak(utter);
+                }, 50);
+                return;
+            } catch (speechErr) {
+                console.warn('speechSynthesis preview fallback to WebAudio:', speechErr);
+            }
+        }
+
+        // ② Web Speech API 非対応環境向け Web Audio API フォールバック
+        const ctx = AudioUnlocker.getContext();
+        if (!ctx) return;
+        const voiceType = this._selectedTtsPresetKey || 'woman';
         const { voiceParams, envParams, eqParams, specialParams, speed } = this.getFxParamsFromUI('slot');
 
         try {
-            this.showToast(`🗣️ 「${text.slice(0, 15)}...」を合成＆エフェクト処理中...`);
+            this.showToast(`🗣️ 「${text.slice(0, 15)}...」を合成中...`);
             const rawBuffer = TtsEngine.synthesizeToBuffer(text, ctx, voiceType, rate, pitch);
             const finalBuffer = VoiceEngine.processFull(rawBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
@@ -7240,7 +7307,6 @@ class VoicePadApp {
 
             this.fxPreviewSource = src;
             src.onended = () => { this.fxPreviewSource = null; };
-            this.showToast(`✨ Voicemod＆DSPエフェクト付きで試聴中...`);
         } catch (err) {
             console.error('TTS preview error:', err);
             this.showToast('⚠️ 音声プレビューに失敗しました');
@@ -7266,29 +7332,22 @@ class VoicePadApp {
         }
 
         await AudioUnlocker.unlock();
-        const ctx = AudioUnlocker.getContext();
-        if (!ctx) return;
 
         // スライダーやプリセットから値を取得
         const rate = parseFloat(document.getElementById('tts-rate-slider')?.value || '1.0');
         const pitch = parseFloat(document.getElementById('tts-pitch-slider')?.value || '1.0');
-        const voiceType = this._selectedTtsPresetKey || 'woman';
+        const voiceSelect = document.getElementById('tts-voice-select');
+        const selectedVoiceName = voiceSelect ? voiceSelect.value : (this._selectedTtsPresetKey || 'woman');
 
         try {
-            this.showToast('🎙️ AI音声データを生成＆保存中...');
-
-            // 音声バッファの合成とWAV化
-            const rawBuffer = TtsEngine.synthesizeToBuffer(text, ctx, voiceType, rate, pitch);
-            const normalizedBuffer = AudioUtils.normalizeAudioBuffer(rawBuffer);
-            const wavBlob = AudioUtils.audioBufferToWav(normalizedBuffer);
-
-            // スロットにWAV BlobとTTS情報を保存
+            // スロットにTTSテキストとパラメータを登録（録音WAVはクリアしてTTS優先モードに）
             slot.ttsText = text;
-            slot.ttsVoice = voiceType;
+            slot.ttsVoice = selectedVoiceName;
             slot.ttsRate = rate;
             slot.ttsPitch = pitch;
-            slot.audioBlob = wavBlob;
-            slot.duration = normalizedBuffer.duration;
+            slot.audioBlob = null;
+            slot.audioBase64 = null;
+            slot.duration = Math.max(0.5, (text.length * 0.18) / rate);
 
             // ボタンのラベルが空または初期値ならテキストを反映
             const labelInput = document.getElementById('edit-label');
@@ -7317,18 +7376,18 @@ class VoicePadApp {
             await this.storage.saveSlot(slot);
             this.renderSlots();
 
-            // 波形エディターとダウンロードボタンを表示
+            // 削除ボタンを表示（音声削除可能に）
             const deleteAudioBtn = document.getElementById('delete-audio-btn');
             const downloadAudioBtn = document.getElementById('download-audio-btn');
             if (deleteAudioBtn) deleteAudioBtn.style.display = 'block';
-            if (downloadAudioBtn) downloadAudioBtn.style.display = 'block';
+            if (downloadAudioBtn) downloadAudioBtn.style.display = 'none';
 
-            this.initWaveformForSlot(slot);
+            // 試聴を発火して確認
             this.previewTts();
-            this.showToast(`✨ 音声合成データを「${slot.label}」に登録しました！`);
+            this.showToast(`✨ 「${slot.label}」に読み上げ音声を登録しました！`);
         } catch (err) {
             console.error('Apply TTS error:', err);
-            this.showToast('⚠️ 音声の生成・保存に失敗しました');
+            this.showToast('⚠️ 音声の登録に失敗しました');
         }
     }
 
