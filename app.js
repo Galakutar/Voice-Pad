@@ -2988,63 +2988,70 @@ class QrEngine {
 
     /**
      * Canvas要素へQRコードを高速・高精度描画 (QRCode.js / 純JavaScriptフォールバック)
+     * カメラ・jsQR認識に必須のクワイエットゾーン（白枠余白）を確実に確保
      */
     static renderToCanvas(canvas, text, options = {}) {
         if (!canvas) return null;
-        const size = options.size || canvas.width || 220;
+        const size = options.size || canvas.width || 260;
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext('2d');
+        const bgColor = options.bgColor || '#ffffff';
+        const fgColor = options.fgColor || '#000000';
 
-        // ① QRCode.js (100% ISO標準互換) がロードされている場合
+        // 必須のクワイエットゾーン（余白: QR規格で最低4モジュール、約16〜24px）
+        const margin = options.margin !== undefined ? options.margin : Math.max(16, Math.floor(size * 0.08));
+        const drawSize = size - margin * 2;
+
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, size, size);
+
+        // ① QRCode.js が利用可能な場合 (最優先・高精度)
         if (typeof window.QRCode !== 'undefined') {
             try {
                 const tempContainer = document.createElement('div');
+                const level = (window.QRCode && window.QRCode.CorrectLevel && window.QRCode.CorrectLevel.M !== undefined) 
+                    ? window.QRCode.CorrectLevel.M : 0;
                 new window.QRCode(tempContainer, {
                     text: String(text),
-                    width: size,
-                    height: size,
-                    correctLevel: window.QRCode.CorrectLevel.M
+                    width: drawSize,
+                    height: drawSize,
+                    colorDark: fgColor,
+                    colorLight: bgColor,
+                    correctLevel: level
                 });
 
                 const srcCanvas = tempContainer.querySelector('canvas');
                 if (srcCanvas) {
-                    ctx.fillStyle = options.bgColor || '#ffffff';
-                    ctx.fillRect(0, 0, size, size);
-                    ctx.drawImage(srcCanvas, 0, 0, size, size);
+                    ctx.drawImage(srcCanvas, margin, margin, drawSize, drawSize);
                     return { size, version: 1 };
                 }
                 const img = tempContainer.querySelector('img');
                 if (img) {
-                    if (img.complete) {
-                        ctx.drawImage(img, 0, 0, size, size);
+                    if (img.complete && img.naturalWidth > 0) {
+                        ctx.drawImage(img, margin, margin, drawSize, drawSize);
                     } else {
-                        img.onload = () => ctx.drawImage(img, 0, 0, size, size);
+                        img.onload = () => ctx.drawImage(img, margin, margin, drawSize, drawSize);
                     }
                     return { size, version: 1 };
                 }
             } catch (err) {
-                console.warn('QRCode.js render error, fallback to internal QrEngine:', err);
+                console.warn('QRCode.js render failed, fallback to internal engine:', err);
             }
         }
 
         // ② フォールバック：内蔵 QrEngine
         try {
             const qr = QrEngine.encode(text);
-            const margin = options.margin !== undefined ? options.margin : 4;
-            const fullSize = qr.size + margin * 2;
-
-            ctx.fillStyle = options.bgColor || '#ffffff';
-            ctx.fillRect(0, 0, size, size);
-
+            const fullSize = qr.size + 8; // 4モジュールのマージン
             const moduleSize = size / fullSize;
-            ctx.fillStyle = options.fgColor || '#0f172a';
+            ctx.fillStyle = fgColor;
 
             for (let r = 0; r < qr.size; r++) {
                 for (let c = 0; c < qr.size; c++) {
                     if (qr.matrix[r][c] === 1) {
-                        const x = (c + margin) * moduleSize;
-                        const y = (r + margin) * moduleSize;
+                        const x = (c + 4) * moduleSize;
+                        const y = (r + 4) * moduleSize;
                         ctx.fillRect(x, y, moduleSize + 0.35, moduleSize + 0.35);
                     }
                 }
@@ -3057,14 +3064,40 @@ class QrEngine {
     }
 
     // カメラQRスキャナー管理
-    // カメラQRスキャナー管理
     static scannerStream = null;
     static scannerAnimId = null;
     static isScanning = false;
 
     /**
+     * 🔊 QRコード認識成功時の快音ビープ音（880Hz -> 1760Hz 80ms）
+     */
+    static playSuccessBeep() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = (typeof AudioUnlocker !== 'undefined' && AudioUnlocker.getContext) 
+                ? AudioUnlocker.getContext() 
+                : new AudioCtx();
+            if (ctx.state === 'suspended') ctx.resume();
+
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            const now = ctx.currentTime;
+            osc.frequency.setValueAtTime(880, now);
+            osc.frequency.exponentialRampToValueAtTime(1760, now + 0.07);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.1);
+        } catch (e) {}
+    }
+
+    /**
      * カメラ起動＆QRコードのリアルタイム検出 (iOS Safari / iPad / iPhone / Android 完全対応)
-     * BarcodeDetector (高速ネイティブ) 優先 + 高解像度 jsQR フォールバック
+     * BarcodeDetector (最速ネイティブ) + jsQR マルチスケール（中央高解像度クロップ ＆ 全体フレーム）
      */
     static async startCameraScanner(videoEl, canvasEl, onResult, onStatus) {
         this.stopCameraScanner();
@@ -3095,7 +3128,9 @@ class QrEngine {
             const scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
 
             let lastScanTime = 0;
-            const scanInterval = 60; // 60ms間隔（約16fps）で高レスポンススキャン
+            const scanInterval = 45; // 45ms間隔（約22fps）で超高レスポンススキャン
+            let frameCount = 0;
+
             const hasBarcodeDetector = ('BarcodeDetector' in window);
             let nativeDetector = null;
             if (hasBarcodeDetector) {
@@ -3112,7 +3147,9 @@ class QrEngine {
                 const now = performance.now();
                 if (now - lastScanTime >= scanInterval && videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
                     lastScanTime = now;
+                    frameCount++;
                     let detected = false;
+                    let detectedData = null;
 
                     // ① ネイティブ BarcodeDetector (iOS 17+ / Chrome / Edge 最速検出)
                     if (nativeDetector) {
@@ -3120,38 +3157,67 @@ class QrEngine {
                             const barcodes = await nativeDetector.detect(videoEl);
                             if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
                                 detected = true;
-                                try { navigator.vibrate?.([40]); } catch (v) {}
-                                onResult(barcodes[0].rawValue);
+                                detectedData = barcodes[0].rawValue;
                             }
                         } catch (bdErr) {}
                     }
 
-                    // ② jsQR (全環境 100% 互換フォールバック)
+                    // ② jsQR デュアルスケール（中央高解像度クロップ ＆ 全体フレーム）
                     if (!detected && typeof window.jsQR === 'function') {
                         try {
                             const vw = videoEl.videoWidth;
                             const vh = videoEl.videoHeight;
-                            const scale = Math.min(1, 800 / Math.max(vw, vh));
-                            const sw = Math.round(vw * scale);
-                            const sh = Math.round(vh * scale);
 
-                            if (scanCanvas.width !== sw || scanCanvas.height !== sh) {
-                                scanCanvas.width = sw;
-                                scanCanvas.height = sh;
+                            // パスA: 中央レティクル領域の高解像度クロップ（手ブレや距離に強い）
+                            const cropSize = Math.min(vw, vh) * 0.75;
+                            const sx = (vw - cropSize) / 2;
+                            const sy = (vh - cropSize) / 2;
+                            const cropTargetSize = 512;
+
+                            if (scanCanvas.width !== cropTargetSize || scanCanvas.height !== cropTargetSize) {
+                                scanCanvas.width = cropTargetSize;
+                                scanCanvas.height = cropTargetSize;
                             }
 
-                            scanCtx.drawImage(videoEl, 0, 0, sw, sh);
-                            const imgData = scanCtx.getImageData(0, 0, sw, sh);
-
-                            const code = window.jsQR(imgData.data, sw, sh, {
+                            scanCtx.drawImage(videoEl, sx, sy, cropSize, cropSize, 0, 0, cropTargetSize, cropTargetSize);
+                            const cropImgData = scanCtx.getImageData(0, 0, cropTargetSize, cropTargetSize);
+                            const cropCode = window.jsQR(cropImgData.data, cropTargetSize, cropTargetSize, {
                                 inversionAttempts: 'attemptBoth'
                             });
-                            if (code && code.data) {
+
+                            if (cropCode && cropCode.data) {
                                 detected = true;
-                                try { navigator.vibrate?.([40]); } catch (v) {}
-                                onResult(code.data);
+                                detectedData = cropCode.data;
+                            } else if (frameCount % 2 === 0) {
+                                // パスB: 全体フレームスキャン（画面いっぱいに近づけた場合に対応）
+                                const scale = Math.min(1, 640 / Math.max(vw, vh));
+                                const sw = Math.round(vw * scale);
+                                const sh = Math.round(vh * scale);
+                                scanCanvas.width = sw;
+                                scanCanvas.height = sh;
+                                scanCtx.drawImage(videoEl, 0, 0, sw, sh);
+                                const fullImgData = scanCtx.getImageData(0, 0, sw, sh);
+                                const fullCode = window.jsQR(fullImgData.data, sw, sh, {
+                                    inversionAttempts: 'attemptBoth'
+                                });
+                                if (fullCode && fullCode.data) {
+                                    detected = true;
+                                    detectedData = fullCode.data;
+                                }
                             }
                         } catch (e) {}
+                    }
+
+                    if (detected && detectedData) {
+                        this.playSuccessBeep();
+                        try { navigator.vibrate?.([60, 40, 60]); } catch (v) {}
+                        
+                        // ファインダーのビジュアルフィードバック（緑色フラッシュ）
+                        const reticle = videoEl.parentElement?.querySelector('.p2p-scan-reticle');
+                        if (reticle) reticle.classList.add('detected');
+
+                        onResult(detectedData);
+                        return;
                     }
                 }
 
@@ -3187,6 +3253,8 @@ class QrEngine {
             });
             this.scannerStream = null;
         }
+        // レティクルの検出スタイルをリセット
+        document.querySelectorAll('.p2p-scan-reticle.detected').forEach(r => r.classList.remove('detected'));
     }
 }
 
@@ -3203,6 +3271,7 @@ class WebRtcEngine {
 
     /**
      * WebRTC SDP を超軽量・QRコード格納用フォーマットに圧縮
+     * （不要なTCP候補・重複候補をフィルタしてQRモジュール密度を大幅削減）
      */
     static compressSdp(sdpStr, sdpType) {
         const ufrag = (sdpStr.match(/a=ice-ufrag:(.+)/) || [])[1] || '';
@@ -3210,9 +3279,19 @@ class WebRtcEngine {
         const fp = ((sdpStr.match(/a=fingerprint:sha-256 (.+)/) || [])[1] || '').replace(/:/g, '').trim();
         const setup = (sdpStr.match(/a=setup:(.+)/) || [])[1] || 'actpass';
         const cands = [];
-        const candMatches = sdpStr.matchAll(/a=candidate:(\S+ \d+ \S+ \d+ \S+ \d+ typ \S+(?: raddr \S+ rport \d+)?)/g);
+        const seen = new Set();
+        const candMatches = sdpStr.matchAll(/a=candidate:(\S+ \d+ (\S+) \d+ (\S+) \d+ typ (\S+)(?: raddr \S+ rport \d+)?)/gi);
         for (const m of candMatches) {
-            cands.push(m[1]);
+            const proto = (m[2] || '').toLowerCase();
+            const ip = m[3];
+            const typ = (m[4] || '').toLowerCase();
+            // Wi-FiローカルP2Pでは不要なTCP候補（ポート9）を除外してQRコードを極限まで軽量化
+            if (proto === 'tcp') continue;
+            const key = `${ip}:${typ}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                cands.push(m[1]);
+            }
         }
         const compact = { t: sdpType, u: ufrag.trim(), p: pwd.trim(), f: fp, s: setup.trim(), c: cands };
         return 'vpad_rtc_' + sdpType + ':' + btoa(JSON.stringify(compact));
@@ -10082,6 +10161,7 @@ function initVoicePad() {
     window.VoiceEngine = VoiceEngine;
     window.TtsEngine = TtsEngine;
     window.QrEngine = QrEngine;
+    window.WebRtcEngine = WebRtcEngine;
     window.P2PDataEngine = P2PDataEngine;
     window.BlobUrlTracker = BlobUrlTracker;
 

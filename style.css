@@ -3244,6 +3244,12 @@ body.theme-mint {
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
     pointer-events: none;
     overflow: hidden;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.p2p-scan-reticle.detected {
+    border-color: #34d399 !important;
+    box-shadow: 0 0 35px rgba(52, 211, 153, 0.9), 0 0 0 9999px rgba(0, 0, 0, 0.4) !important;
 }
 
 .p2p-scan-laser {
