@@ -3304,3 +3304,44 @@ body.theme-mint {
     border-radius: 9999px;
     transition: width 0.15s ease;
 }
+
+/* ==================== 📡 WebRTC Wi-Fi ステップナビゲーション ==================== */
+.p2p-step-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+}
+
+.p2p-step-pill {
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.2s ease;
+}
+
+.p2p-step-pill.active {
+    background: linear-gradient(135deg, #0284c7, #2563eb);
+    color: #ffffff;
+    border-color: rgba(56, 189, 248, 0.6);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+.p2p-step-pill.done {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border-color: rgba(52, 211, 153, 0.5);
+}
+
+.p2p-step-arrow {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
