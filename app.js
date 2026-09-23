@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.24.0016';
+const APP_VERSION = '2026.09.24.0017';
 
 // ==================== 0. 音声エンコード＆波形編集ユーティリティ ====================
 class AudioUtils {
@@ -4498,14 +4498,15 @@ class VoicePadApp {
         const specialParams = this.getEffectiveSpecialParams(slot);
         const effectiveSpeed = this.getEffectivePlaybackSpeed(slot);
 
-        // ① AI音声合成 (TTS) スロットの場合
-        if (slot.ttsText && !slot.audioBlob) {
-            this.playTtsSlot(slot, voiceParams, envParams, effectiveSpeed);
+        // ① AI音声合成 (TTS) スロットの場合：自然な日本語音声で確実に発話
+        if (slot.ttsText) {
+            this.legacyPlayTts(slot, voiceParams, envParams, effectiveSpeed);
             return;
         }
 
         // ② 録音・取り込み音声の場合
         try {
+            if (!slot.audioBlob) return;
             const arrayBuffer = await slot.audioBlob.arrayBuffer();
             const originalBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arrayBuffer);
 
@@ -5677,8 +5678,18 @@ class VoicePadApp {
             slot.voiceEffect = 'inherit';
         }
 
-        if (speedSelect) {
-            slot.playbackSpeed = speedSelect.value;
+        // 🤖 AI TTSテキストの同期
+        const ttsInputText = document.getElementById('tts-input-text')?.value.trim();
+        if (ttsInputText) {
+            slot.ttsText = ttsInputText;
+            slot.ttsRate = parseFloat(document.getElementById('tts-rate-slider')?.value || '1.0');
+            slot.ttsPitch = parseFloat(document.getElementById('tts-pitch-slider')?.value || '1.0');
+            const voiceSelect = document.getElementById('tts-voice-select');
+            slot.ttsVoice = voiceSelect ? voiceSelect.value : (this._selectedTtsPresetKey || 'woman');
+            slot.duration = Math.max(0.5, (ttsInputText.length * 0.18) / slot.ttsRate);
+            // 以前の古いオシレーター録音Blobを消去して確実にTTS読み上げモードへ
+            slot.audioBlob = null;
+            slot.audioBase64 = null;
         }
 
         await this.storage.saveSlot(slot);
