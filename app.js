@@ -3097,16 +3097,27 @@ class QrEngine {
 
     /**
      * カメラ起動＆QRコードのリアルタイム検出 (iOS Safari / iPad / iPhone / Android 完全対応)
+    /**
+     * カメラ起動＆QRコードスキャン開始
+     * iOS Safari (WebKit) / Android / PC 完全対応
      * BarcodeDetector (最速ネイティブ) + jsQR マルチスケール（中央高解像度クロップ ＆ 全体フレーム）
      */
     static async startCameraScanner(videoEl, canvasEl, onResult, onStatus) {
+        // 既存のカメラセッションを完全停止＆iOSメディアパイプライン同期解放
         this.stopCameraScanner();
-        this.isScanning = true;
 
+        this.isScanning = true;
         if (onStatus) onStatus('📷 カメラを起動中...');
 
+        // マニュアル起動ボタンがあれば一旦非表示にする
+        const manualBtns = document.querySelectorAll('.btn-manual-camera-start');
+        manualBtns.forEach(btn => btn.style.display = 'none');
+
+        let stream = null;
+        // 4段階の即時フォールバックでカメラストリームを確実に取得（iOS Safariのユーザー操作トークンを逃さず即時実行）
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
+            // 第1希望: 背面カメラ 720p
+            stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: { ideal: 'environment' },
                     width: { ideal: 1280 },
@@ -3114,13 +3125,78 @@ class QrEngine {
                 },
                 audio: false
             });
+        } catch (err1) {
+            console.warn('Camera tier 1 failed, trying tier 2 (facingMode ideal environment):', err1);
+            try {
+                // 第2希望: 背面カメラ制約なし (ideal)
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'environment' } },
+                    audio: false
+                });
+            } catch (err2) {
+                console.warn('Camera tier 2 failed, trying tier 3 (facingMode string):', err2);
+                try {
+                    // 第3希望: 背面カメラ文字列
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'environment' },
+                        audio: false
+                    });
+                } catch (err3) {
+                    console.warn('Camera tier 3 failed, trying tier 4 (generic video):', err3);
+                    try {
+                        // 第4希望: 任意のカメラ (video: true)
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: true,
+                            audio: false
+                        });
+                    } catch (err4) {
+                        console.error('All camera attempts failed:', err4);
+                        this.stopCameraScanner();
+                        if (onStatus) onStatus('⚠️ カメラの起動に失敗しました。下の「📷 カメラを起動する」ボタンを押してください。');
+                        manualBtns.forEach(btn => btn.style.display = 'inline-flex');
+                        throw err4;
+                    }
+                }
+            }
+        }
 
+        try {
             this.scannerStream = stream;
-            videoEl.srcObject = stream;
+
+            // iOS WebKit 必須プロパティ＆属性の設定
+            videoEl.muted = true;
+            videoEl.playsInline = true;
+            videoEl.autoplay = true;
             videoEl.setAttribute('playsinline', 'true');
+            videoEl.setAttribute('webkit-playsinline', 'true');
             videoEl.setAttribute('autoplay', 'true');
             videoEl.setAttribute('muted', 'true');
-            await videoEl.play();
+            videoEl.srcObject = stream;
+
+            // iOS WebKit: メタデータ読み込みを待機してから再生
+            await new Promise((resolve) => {
+                if (videoEl.readyState >= 2) return resolve();
+                const onMeta = () => {
+                    videoEl.removeEventListener('loadedmetadata', onMeta);
+                    resolve();
+                };
+                videoEl.addEventListener('loadedmetadata', onMeta);
+                setTimeout(resolve, 300);
+            });
+
+            try {
+                await videoEl.play();
+            } catch (playErr) {
+                console.warn('Initial video play error, attaching touch trigger:', playErr);
+                manualBtns.forEach(btn => btn.style.display = 'inline-flex');
+                const resumeTouch = () => {
+                    videoEl.play().then(() => {
+                        manualBtns.forEach(btn => btn.style.display = 'none');
+                    }).catch(() => {});
+                };
+                videoEl.parentElement?.addEventListener('touchstart', resumeTouch, { once: true });
+                videoEl.parentElement?.addEventListener('click', resumeTouch, { once: true });
+            }
 
             if (onStatus) onStatus('🔍 QRコードを枠内に映してください...');
 
@@ -3229,15 +3305,17 @@ class QrEngine {
             this.scannerAnimId = requestAnimationFrame(scanLoop);
             return true;
         } catch (err) {
-            console.error('Camera access failed:', err);
+            console.error('Camera stream attachment failed:', err);
             this.stopCameraScanner();
-            if (onStatus) onStatus('⚠️ カメラの起動に失敗しました（設定でカメラ許可を確認してください）');
+            if (onStatus) onStatus('⚠️ カメラの起動に失敗しました。下の「📷 カメラを起動する」ボタンを押してください。');
+            manualBtns.forEach(btn => btn.style.display = 'inline-flex');
             throw err;
         }
     }
 
     /**
      * カメラの完全停止とMediaStreamハードウェア占有の確実な解放
+     * （iOS Safariでのモード切替時のカメラフリーズを完全防止）
      */
     static stopCameraScanner() {
         this.isScanning = false;
@@ -3253,6 +3331,19 @@ class QrEngine {
             });
             this.scannerStream = null;
         }
+
+        // iOS Safari対応: 全スキャナー用video要素のsrcObjectをクリア＆pause＆load
+        ['p2p-scanner-video', 'p2p-send-scanner-video'].forEach(id => {
+            const v = document.getElementById(id);
+            if (v) {
+                try {
+                    v.pause();
+                    v.srcObject = null;
+                    v.load();
+                } catch (e) {}
+            }
+        });
+
         // レティクルの検出スタイルをリセット
         document.querySelectorAll('.p2p-scan-reticle.detected').forEach(r => r.classList.remove('detected'));
     }
@@ -6504,6 +6595,9 @@ class VoicePadApp {
 
     // ==================== 📡 生徒側 WebRTC Wi-Fi データ送信モーダル ====================
     async openP2pSendModal(slotId) {
+        this.stopP2pScanner();
+        this.closeScrollModal();
+
         const slot = this.slots.find(s => s.id === slotId);
         if (!slot) return;
 
@@ -6647,6 +6741,8 @@ class VoicePadApp {
     // ==================== 📷 先生側 WebRTC Wi-Fi データ受信モーダル ====================
     async openP2pReceiveModal() {
         this.closeScrollModal();
+        this.closeEditModal();
+        this.cancelP2pSend();
 
         const modal = document.getElementById('p2p-receive-modal-backdrop');
         const step1 = document.getElementById('p2p-receive-step1-container');
@@ -6677,6 +6773,8 @@ class VoicePadApp {
                 }
             );
         } catch (e) {
+            window._lastCameraError = (e ? (e.name + ': ' + e.message) : 'Unknown') + '\n' + (e?.stack || '');
+            console.error('Camera start in receive modal error:', e);
             this.showToast('⚠️ カメラへのアクセスが拒否されたか利用できません');
         }
     }
@@ -7092,6 +7190,39 @@ class VoicePadApp {
         });
         document.getElementById('btn-p2p-goto-step2')?.addEventListener('click', () => this.switchP2pSendStep(2));
         document.getElementById('btn-p2p-back-step1')?.addEventListener('click', () => this.switchP2pSendStep(1));
+        document.getElementById('btn-p2p-send-manual-camera')?.addEventListener('click', async () => {
+            const video = document.getElementById('p2p-send-scanner-video');
+            const canvas = document.getElementById('p2p-send-scanner-canvas');
+            const statusText = document.getElementById('p2p-send-status-text');
+            if (video) {
+                try {
+                    await QrEngine.startCameraScanner(
+                        video,
+                        canvas,
+                        async (qrPayload) => {
+                            if (qrPayload && (qrPayload.startsWith('vpad_rtc_answer:') || qrPayload.startsWith('vpad_rtc_a:'))) {
+                                QrEngine.stopCameraScanner();
+                                try {
+                                    await WebRtcEngine.applyAnswerToSender(
+                                        qrPayload,
+                                        (statusMsg) => {
+                                            if (statusText) statusText.innerText = statusMsg;
+                                        }
+                                    );
+                                } catch (err) {
+                                    if (statusText) statusText.innerText = `⚠️ 応答エラー: ${err.message}`;
+                                }
+                            }
+                        },
+                        (statusMsg) => {
+                            if (statusText) statusText.innerText = statusMsg;
+                        }
+                    );
+                } catch (err) {
+                    this.showToast('⚠️ カメラへのアクセスが拒否されたか利用できません');
+                }
+            }
+        });
         document.getElementById('close-p2p-send-modal-btn')?.addEventListener('click', () => this.cancelP2pSend());
         document.getElementById('btn-cancel-p2p-send')?.addEventListener('click', () => this.cancelP2pSend());
         document.getElementById('p2p-send-modal-backdrop')?.addEventListener('click', (e) => {
@@ -7227,6 +7358,25 @@ class VoicePadApp {
         });
         document.getElementById('btn-p2p-receive-rescan')?.addEventListener('click', () => {
             this.openP2pReceiveModal();
+        });
+        document.getElementById('btn-p2p-receive-manual-camera')?.addEventListener('click', async () => {
+            const video = document.getElementById('p2p-scanner-video');
+            const canvas = document.getElementById('p2p-scanner-canvas');
+            const statusText = document.getElementById('p2p-receive-status-text');
+            if (video) {
+                try {
+                    await QrEngine.startCameraScanner(
+                        video,
+                        canvas,
+                        (qrPayload) => this.onP2pQrDetected(qrPayload),
+                        (statusMsg) => {
+                            if (statusText) statusText.innerText = statusMsg;
+                        }
+                    );
+                } catch (err) {
+                    this.showToast('⚠️ カメラへのアクセスが拒否されたか利用できません');
+                }
+            }
         });
         document.getElementById('close-p2p-receive-modal-btn')?.addEventListener('click', () => this.stopP2pScanner());
         document.getElementById('btn-cancel-p2p-receive')?.addEventListener('click', () => this.stopP2pScanner());

@@ -1645,6 +1645,11 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                         </div>
                     </div>
 
+                    <!-- 手動カメラ起動ボタン (iOSで自動起動がブロックされた場合の確実なフォールバック) -->
+                    <button type="button" id="btn-p2p-send-manual-camera" class="action-btn btn-manual-camera-start" style="display: none; background: linear-gradient(135deg, #0284c7, #2563eb); padding: 10px 18px; font-size: 13px; margin-top: 4px; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);">
+                        📷 カメラを起動する
+                    </button>
+
                     <div style="font-size: 11.5px; color: #38bdf8;">
                         💡 <strong>15〜25cm</strong> ほど離して枠の中央に収めると瞬時にピントが合います
                     </div>
@@ -1706,6 +1711,11 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                             <div class="p2p-scan-laser"></div>
                         </div>
                     </div>
+
+                    <!-- 手動カメラ起動ボタン (iOSで自動起動がブロックされた場合の確実なフォールバック) -->
+                    <button type="button" id="btn-p2p-receive-manual-camera" class="action-btn btn-manual-camera-start" style="display: none; background: linear-gradient(135deg, #059669, #10b981); padding: 10px 18px; font-size: 13px; margin-top: 4px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                        📷 カメラを起動する
+                    </button>
 
                     <div style="font-size: 11.5px; color: #34d399;">
                         💡 <strong>15〜25cm</strong> ほど離して中央に収めるとピントが合って即認識されます
@@ -1773,6 +1783,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <script src="jsqr.min.js"></script>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260924_0625"></script>
+    <script src="app.js?v=20260924_0635"></script>
 </body>
 </html>
