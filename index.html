@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260924_17">
+    <link rel="stylesheet" href="style.css?v=20260924_25">
 </head>
 <body>
     <div id="app-container">
@@ -79,12 +79,28 @@
             </button>
         </nav>
 
-        <!-- ３段目：ページネーションツールバー -->
+        <!-- ３段目：ページネーション ＆ グローバル音量・音割れ防止バー -->
         <div class="sub-toolbar">
             <div id="pagination-controls" class="pagination-controls">
                 <button id="prev-page-btn" class="page-nav-btn" title="前のページ" aria-label="前のページ">◀</button>
                 <span id="page-indicator" class="page-indicator">ページ 1 / 1 (0個)</span>
                 <button id="next-page-btn" class="page-nav-btn" title="次のページ" aria-label="次のページ">▶</button>
+            </div>
+
+            <!-- 🔊 グローバル音量＆ソフトクリッピングバー -->
+            <div id="global-audio-bar" class="global-audio-bar" title="全体の再生音量と音割れ防止（ソフトクリッピング）設定">
+                <div class="global-vol-control">
+                    <span class="global-vol-icon" aria-hidden="true">🔊</span>
+                    <input type="range" id="global-volume-slider" class="global-volume-slider" min="0.1" max="3.0" step="0.05" value="1.0" title="マスター音量（0.1x〜3.0x）" aria-label="マスター音量">
+                    <span id="global-volume-val" class="global-volume-val">1.00x</span>
+                </div>
+                <div class="global-softclip-control">
+                    <label class="softclip-toggle-label" for="global-softclip-toggle" title="デジタル上限を超えた音割れを滑らかに抑制（ソフトクリッピング）">
+                        <input type="checkbox" id="global-softclip-toggle" class="softclip-checkbox" checked>
+                        <span class="softclip-custom-check"></span>
+                        <span class="softclip-text">🛡️ 音割れ防止</span>
+                    </label>
+                </div>
             </div>
         </div>
 
@@ -115,315 +131,6 @@
                     <input type="text" id="edit-label" class="form-input" placeholder="例: こんにちは、拍手、効果音..." maxlength="24">
                 </div>
 
-                <!-- スイッチ個別のボイスチェンジャー設定（2ステージ直列DSP） -->
-                <div class="form-group">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                        <label class="form-label" style="margin-bottom:0;" for="edit-slot-effect-mode">🎙️ ボイスエフェクト設定（声質＆環境）</label>
-                        <select id="edit-slot-effect-mode" class="form-input" style="width: auto; padding: 4px 8px; font-size: 11px;">
-                            <option value="inherit">🔄 スクロール設定に従う</option>
-                            <option value="custom">🎛️ 個別に設定する</option>
-                        </select>
-                    </div>
-
-                    <!-- 個別設定コンテナ -->
-                    <div id="slot-fx-custom-panel" class="fx-engine-container" style="display: none; margin-top: 6px;">
-                        <!-- 🎛️ Voicemod スタイル 統合ボイスセレクター -->
-                        <div class="voicemod-section">
-                            <div class="voicemod-header">
-                                <span class="voicemod-title">🎛️ Voice Lab プリセット</span>
-                                <span class="voicemod-badge">VOICEMOD FX</span>
-                            </div>
-
-                            <!-- カテゴリタブ -->
-                            <div class="voicemod-category-tabs" id="slot-voicemod-tabs">
-                                <button type="button" class="vm-tab-btn active" data-category="all">すべて</button>
-                                <button type="button" class="vm-tab-btn" data-category="device">🎙️ 機材・通信</button>
-                                <button type="button" class="vm-tab-btn" data-category="character">🎭 キャラクター</button>
-                                <button type="button" class="vm-tab-btn" data-category="horror">👻 ホラー・SF</button>
-                                <button type="button" class="vm-tab-btn" data-category="music">🏛️ 空間・音楽</button>
-                                <button type="button" class="vm-tab-btn" data-category="meme">🤪 面白・ミーム</button>
-                            </div>
-
-                            <!-- ボイスカードグリッド（JavaScriptで動的生成またはHTML定義） -->
-                            <div class="voicemod-grid" id="slot-voicemod-grid">
-                                <!-- JavaScriptで動的生成されます -->
-                            </div>
-                            <!-- 🎙️ Voicemodカード直下 試聴バー -->
-                            <div class="section-inline-preview">
-                                <button type="button" class="inline-preview-btn btn-inline-slot-preview">
-                                    <span class="btn-icon">▶️</span> 選択したボイスプリセットで試聴
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- ステージ1: 人の声質パラメータ -->
-                        <div class="fx-stage-card stage-voice">
-                            <div class="fx-stage-header">
-                                <span class="fx-stage-title">🗣️ ステージ1: 声質パラメータ（中身）</span>
-                                <span class="fx-stage-badge">Voice Character</span>
-                            </div>
-
-                            <div class="fx-slider-list">
-                                <!-- ① ピッチシフト -->
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">🎵 ピッチシフト（声の高さ）</span>
-                                        <span id="slot-pitch-val" class="fx-slider-val">±0 半音</span>
-                                    </div>
-                                    <input type="range" id="slot-pitch-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>-12 (低い)</span>
-                                        <span>0 (原音)</span>
-                                        <span>+12 (高い)</span>
-                                    </div>
-                                </div>
-
-                                <!-- ② フォルマントシフト -->
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">🗣️ フォルマント（声帯・喉の太さ・巨躯感）</span>
-                                        <span id="slot-formant-val" class="fx-slider-val">1.00x (標準)</span>
-                                    </div>
-                                    <input type="range" id="slot-formant-slider" min="0.35" max="2.0" step="0.01" value="1.0" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>0.35x (極太・モンスター)</span>
-                                        <span>1.0x (標準)</span>
-                                        <span>2.0x (妖精・子ども)</span>
-                                    </div>
-                                </div>
-
-                                <!-- ③ 質感・ざらつき -->
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">🌾 声の質感・ざらつき（倍音・ハスキー）</span>
-                                        <span id="slot-rough-val" class="fx-slider-val">0% (クリア)</span>
-                                    </div>
-                                    <input type="range" id="slot-rough-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>0% (クリア)</span>
-                                        <span>50% (ハスキー)</span>
-                                        <span>100% (かすれ・歪み)</span>
-                                    </div>
-                                </div>
-
-                                <!-- ④ 再生スピード -->
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">⚡ 再生スピード（速度・テンポ）</span>
-                                        <span id="slot-speed-val" class="fx-slider-val">1.00x (等倍)</span>
-                                    </div>
-                                    <input type="range" id="slot-speed-slider" min="0.5" max="2.0" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>0.5x (ゆっくり)</span>
-                                        <span>1.0x (等倍)</span>
-                                        <span>2.0x (倍速)</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- 🗣️ 人の声質パラメータ直下 試聴バー -->
-                            <div class="section-inline-preview">
-                                <button type="button" class="inline-preview-btn btn-inline-slot-preview">
-                                    <span class="btn-icon">▶️</span> この声質パラメータで試聴
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- ステージ2: 環境フィルターパラメータ -->
-                        <div class="fx-stage-card stage-env">
-                            <div class="fx-stage-header">
-                                <span class="fx-stage-title">⛰️ ステージ2: 環境フィルター（空間・機材・背景音）</span>
-                                <span class="fx-stage-badge">Environment & FX</span>
-                            </div>
-
-                            <div class="fx-slider-list">
-                                <!-- ① リバーブ・やまびこエコー -->
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">🌊 リバーブ・やまびこエコー</span>
-                                        <span id="slot-reverb-val" class="fx-slider-val">0% (ドライ)</span>
-                                    </div>
-                                    <input type="range" id="slot-reverb-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>0% (なし)</span>
-                                        <span>50% (お風呂)</span>
-                                        <span>100% (大聖堂/洞窟)</span>
-                                    </div>
-                                </div>
-
-                                <!-- ② フィルター -->
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">📻 フィルター（こもり・電話・メガホン）</span>
-                                        <span id="slot-filter-val" class="fx-slider-val">0% (オフ)</span>
-                                    </div>
-                                    <input type="range" id="slot-filter-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>0% (クリア)</span>
-                                        <span>50% (水の中/こもり)</span>
-                                        <span>100% (メガホン/電話)</span>
-                                    </div>
-                                </div>
-
-                                <!-- ③ モジュレーション -->
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">🤖 モジュレーション（ロボット・宇宙人感）</span>
-                                        <span id="slot-mod-val" class="fx-slider-val">0% (オフ)</span>
-                                    </div>
-                                    <input type="range" id="slot-mod-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>0% (なし)</span>
-                                        <span>50% (宇宙人)</span>
-                                        <span>100% (金属ロボット)</span>
-                                    </div>
-                                </div>
-
-                                <!-- ④ 環境背景音の音量 -->
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">🔊 環境背景音の音量</span>
-                                        <span id="slot-ambient-vol-val" class="fx-slider-val">35%</span>
-                                    </div>
-                                    <input type="range" id="slot-ambient-vol-slider" min="0" max="100" step="5" value="35" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>0% (消音)</span>
-                                        <span>50% (適度)</span>
-                                        <span>100% (大音量)</span>
-                                    </div>
-                                </div>
-
-                                <!-- ⑤ 環境背景音の選択 -->
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">🎵 環境背景音の選択</span>
-                                    </div>
-                                    <select id="slot-ambient-sound-select" class="form-input" style="font-size: 11.5px; padding: 5px 8px; margin-top: 4px;">
-                                        <option value="none">🔇 背景音なし</option>
-                                        <option value="underwater">🫧 水の中（深海・気泡音）</option>
-                                        <option value="birds">🐦 鳥の声（爽やかなさえずり・微風）</option>
-                                        <option value="forest">🌲 森の音（木々のざわめき・風）</option>
-                                        <option value="city">🏙️ 街の喧騒（都市の雑踏・車の走行音）</option>
-                                        <option value="train">🚃 電車の中（ガタゴト線路音・モーター）</option>
-                                        <option value="rain">🌧️ 雨と雷（しとしと雨音・遠雷）</option>
-                                        <option value="cafe">☕ カフェ（店内の賑わい・カップ音）</option>
-                                        <option value="cave_drip">⛰️ 洞窟の滴（空間ドローン・水滴音）</option>
-                                        <option value="cathedral">⛪ 大聖堂（荘厳な聖歌コードドローン）</option>
-                                        <option value="space">🌌 宇宙（無重力サブベース・うねり）</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <!-- ⛰️ 環境パラメータ直下 試聴バー -->
-                            <div class="section-inline-preview">
-                                <button type="button" class="inline-preview-btn btn-inline-slot-preview">
-                                    <span class="btn-icon">▶️</span> この環境設定で試聴
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- ステージ3: 3バンドEQ（Bass / Mid / Treble） -->
-                        <div class="eq-stage-card">
-                            <div class="fx-stage-header">
-                                <span class="fx-stage-title" style="color: #c084fc;">🎚️ ステージ3: 3バンドEQ (音質イコライザー)</span>
-                                <span class="fx-stage-badge" style="background: rgba(139, 92, 246, 0.4); border-color: #c084fc;">3-Band EQ</span>
-                            </div>
-
-                            <div class="eq-grid">
-                                <div class="eq-item">
-                                    <div class="eq-label-row">
-                                        <span class="eq-label">低音 (Bass)</span>
-                                        <span id="slot-eq-bass-val" class="eq-val">±0 dB</span>
-                                    </div>
-                                    <input type="range" id="slot-eq-bass-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
-                                </div>
-                                <div class="eq-item">
-                                    <div class="eq-label-row">
-                                        <span class="eq-label">中音 (Mid)</span>
-                                        <span id="slot-eq-mid-val" class="eq-val">±0 dB</span>
-                                    </div>
-                                    <input type="range" id="slot-eq-mid-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
-                                </div>
-                                <div class="eq-item">
-                                    <div class="eq-label-row">
-                                        <span class="eq-label">高音 (Treble)</span>
-                                        <span id="slot-eq-treble-val" class="eq-val">±0 dB</span>
-                                    </div>
-                                    <input type="range" id="slot-eq-treble-slider" min="-12" max="12" step="1" value="0" class="adjust-slider fx-slider-track">
-                                </div>
-                            </div>
-
-                            <!-- 🎚️ 3バンドEQ直下 試聴バー -->
-                            <div class="section-inline-preview">
-                                <button type="button" class="inline-preview-btn btn-inline-slot-preview">
-                                    <span class="btn-icon">▶️</span> この3バンドEQ音質で試聴
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- ステージ4: 特殊エフェクト (コーラス / 無線ノイズ / 音割れ) -->
-                        <div class="special-stage-card">
-                            <div class="fx-stage-header">
-                                <span class="fx-stage-title" style="color: #34d399;">✨ ステージ4: 特殊エフェクト (Special FX)</span>
-                                <span class="fx-stage-badge" style="background: rgba(16, 185, 129, 0.4); border-color: #34d399;">Special FX</span>
-                            </div>
-
-                            <div class="fx-slider-list">
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">👥 コーラス・分身（多重クローンボイス）</span>
-                                        <span id="slot-special-chorus-val" class="fx-slider-val">0% (オフ)</span>
-                                    </div>
-                                    <input type="range" id="slot-special-chorus-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>0% (単体)</span>
-                                        <span>50% (合唱)</span>
-                                        <span>100% (大合唱/クローン)</span>
-                                    </div>
-                                </div>
-
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">📻 無線ノイズ（トランシーバー・スケルチ）</span>
-                                        <span id="slot-special-radio-val" class="fx-slider-val">0% (オフ)</span>
-                                    </div>
-                                    <input type="range" id="slot-special-radio-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>0% (クリア)</span>
-                                        <span>50% (通信音)</span>
-                                        <span>100% (ミリタリー交信)</span>
-                                    </div>
-                                </div>
-
-                                <div class="fx-slider-item">
-                                    <div class="fx-slider-top">
-                                        <span class="fx-slider-label">🗑️ 音割れドライブ（ネットミーム・過大入力）</span>
-                                        <span id="slot-special-trash-val" class="fx-slider-val">0% (オフ)</span>
-                                    </div>
-                                    <input type="range" id="slot-special-trash-slider" min="0" max="100" step="1" value="0" class="adjust-slider fx-slider-track">
-                                    <div class="fx-slider-hints">
-                                        <span>0% (オフ)</span>
-                                        <span>50% (サチュレーション)</span>
-                                        <span>100% (爆音ミーム)</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- ✨ 特殊エフェクト直下 試聴バー -->
-                            <div class="section-inline-preview">
-                                <button type="button" class="inline-preview-btn btn-inline-slot-preview">
-                                    <span class="btn-icon">▶️</span> この特殊エフェクトで試聴
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- 試聴ボタン -->
-                        <button type="button" id="btn-slot-fx-preview" class="action-btn share-btn" style="padding: 9px 12px; font-size: 12.5px; background: linear-gradient(135deg, #06b6d4, #3b82f6);">
-                            ▶️ このエフェクト設定で試聴する
-                        </button>
-                    </div>
-                </div>
-
                 <!-- スイッチ個別の再生スピード設定 -->
                 <div class="form-group">
                     <label class="form-label" for="edit-slot-speed">⏩ このスイッチの再生スピード</label>
@@ -439,61 +146,6 @@
                         <option value="1.75">🚀 1.75倍速 (とても速い)</option>
                         <option value="2.0">💨 2.0倍速 (2倍速)</option>
                     </select>
-                </div>
-
-                <!-- AI音声合成 (TTS) セクション -->
-                <div class="form-group tts-section-card">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                        <label class="form-label" style="margin-bottom:0;">🤖 AI音声合成（テキストから音声を自動作成）</label>
-                        <span class="badge-tag">完全ローカルTTS</span>
-                    </div>
-                    <!-- 全幅・自動改行＆行数拡張テキストエリア -->
-                    <div class="tts-textarea-wrapper">
-                        <textarea id="tts-input-text" class="form-input tts-textarea" placeholder="読み上げる文章をここに入力してください（例: おはようございます、今日もよろしくお願いします）..." rows="2" maxlength="300"></textarea>
-                    </div>
-                    
-                    <!-- イントネーション・ポーズ補助ツール ＆ 試聴ボタンバー -->
-                    <div class="tts-control-bar">
-                        <div class="tts-pause-tools" style="margin: 0;">
-                            <span style="font-size: 10.5px; color: var(--text-muted); align-self: center; font-weight:700;">ポーズ補助:</span>
-                            <button type="button" class="tts-pause-btn" data-pause="comma">➕「、」</button>
-                            <button type="button" class="tts-pause-btn" data-pause="space">⏸️ 空白</button>
-                            <button type="button" class="tts-pause-btn" data-pause="period">➕「。」</button>
-                            <button type="button" class="tts-pause-btn" data-pause="clear" style="color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);">🔄 記号消去</button>
-                        </div>
-                        <button type="button" id="btn-tts-preview" class="action-btn download-btn tts-preview-btn-wide" title="試聴する">
-                            ▶️ 音声を試聴
-                        </button>
-                    </div>
-
-                    <!-- 🎭 声のキャラクター・クイックプリセット（女の子・男の子・おとな女・おとな男） -->
-                    <div class="tts-preset-container" style="margin-top: 4px; margin-bottom: 6px;">
-                        <span class="opt-label" style="display:block; margin-bottom: 4px; font-size: 11px; font-weight: 700; color: #93c5fd;">🎭 声のキャラクター（ワンタップ切り替え）:</span>
-                        <div class="fx-preset-chips" id="tts-preset-chips" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
-                            <button type="button" class="fx-chip-btn" data-tts-preset="girl" style="justify-content: center; padding: 7px 4px;">👧 女の子</button>
-                            <button type="button" class="fx-chip-btn" data-tts-preset="boy" style="justify-content: center; padding: 7px 4px;">👦 男の子</button>
-                            <button type="button" class="fx-chip-btn active" data-tts-preset="woman" style="justify-content: center; padding: 7px 4px;">👩 おとな女</button>
-                            <button type="button" class="fx-chip-btn" data-tts-preset="man" style="justify-content: center; padding: 7px 4px;">👨 おとな男</button>
-                        </div>
-                    </div>
-
-                    <div class="tts-options-grid">
-                        <div class="tts-opt-item">
-                            <label class="opt-label" for="tts-voice-select">🎙️ ベース音声（日本語）</label>
-                            <select id="tts-voice-select" class="form-input tts-select"></select>
-                        </div>
-                        <div class="tts-opt-item">
-                            <label class="opt-label">話速: <span id="tts-rate-val">1.00x</span></label>
-                            <input type="range" id="tts-rate-slider" min="0.5" max="1.8" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
-                        </div>
-                        <div class="tts-opt-item">
-                            <label class="opt-label">音程: <span id="tts-pitch-val">1.00</span></label>
-                            <input type="range" id="tts-pitch-slider" min="0.4" max="1.8" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
-                        </div>
-                    </div>
-                    <button type="button" id="btn-tts-apply" class="action-btn highlight-btn" style="margin-top: 6px; width: 100%;">
-                        ✨ 声質＆環境エフェクトを重ねてボタンに登録
-                    </button>
                 </div>
 
                 <!-- 音声波形エディター＆トリミングセクション（録音・音声がある時に表示） -->
@@ -622,6 +274,20 @@
                     <input type="hidden" id="edit-emoji" value="🔊">
                 </div>
 
+                <!-- データを送る・共有セクション -->
+                <div class="form-group p2p-export-group" style="margin-top: 10px; padding: 10px; background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.3); border-radius: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span class="opt-label" style="font-size: 12px; font-weight: 800; color: #38bdf8;">📤 データを送る (生徒 ➜ 先生)</span>
+                        <span class="badge-tag" style="background: rgba(14, 165, 233, 0.25); color: #7dd3fc; border-color: #38bdf8;">P2P直接転送</span>
+                    </div>
+                    <button type="button" id="btn-slot-webrtc-send" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb); font-weight: 800; padding: 10px 14px;">
+                        <span class="btn-icon">📡</span> WebRTCスイッチ（先生へ直接送信）
+                    </button>
+                    <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
+                        ※ 押すとQRコードが表示され、先生のカメラで読み取るだけでボタンが送信されます。
+                    </div>
+                </div>
+
                 <!-- 音声ファイル取り込み・エクスポートアクション -->
                 <div class="modal-actions">
                     <button id="save-slot-btn" class="action-btn save-btn">💾 設定を保存する</button>
@@ -650,6 +316,13 @@
             </div>
 
             <div class="modal-body-scroll">
+                <!-- 🗑️ 声質設定オールクリアボタン -->
+                <div style="margin-bottom: 10px;">
+                    <button type="button" id="btn-clear-slot-voice" class="modal-all-clear-btn" title="声質設定をすべて初期状態にリセット">
+                        <span class="btn-icon">🗑️</span> 声質設定のオールクリア
+                    </button>
+                </div>
+
                 <div class="form-group">
                     <label class="form-label" for="slot-quick-voice-mode">声質の適用モード</label>
                     <select id="slot-quick-voice-mode" class="form-input">
@@ -870,6 +543,13 @@
             </div>
 
             <div class="modal-body-scroll">
+                <!-- 🗑️ 環境設定オールクリアボタン -->
+                <div style="margin-bottom: 10px;">
+                    <button type="button" id="btn-clear-slot-env" class="modal-all-clear-btn" title="環境設定をすべて初期状態にリセット">
+                        <span class="btn-icon">🗑️</span> 環境設定のオールクリア
+                    </button>
+                </div>
+
                 <div class="form-group">
                     <label class="form-label" for="slot-quick-env-mode">環境エフェクトの適用モード</label>
                     <select id="slot-quick-env-mode" class="form-input">
@@ -999,6 +679,103 @@
                 <div class="modal-actions" style="margin-top: 12px;">
                     <button type="button" id="btn-quick-env-preview" class="action-btn download-btn">▶️ 環境エフェクト全体を試聴する</button>
                     <button type="button" id="save-slot-env-btn" class="action-btn save-btn">💾 このボタンの環境を保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ①-D ボタン専用【AI音声合成 (TTS)】クイック設定モーダル -->
+    <div id="slot-tts-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="tts-modal-slot-num">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">🤖 スイッチ <span id="tts-modal-slot-num">1</span> のAI音声合成（テキスト読上げ）</h3>
+                <button id="close-slot-tts-modal-btn" class="close-modal-btn" title="閉じる" aria-label="閉じる">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="modal-body-scroll">
+                <!-- 🗑️ AI音声設定オールクリアボタン -->
+                <div style="margin-bottom: 10px;">
+                    <button type="button" id="btn-clear-slot-tts" class="modal-all-clear-btn" title="AI音声設定をすべて初期状態にリセット">
+                        <span class="btn-icon">🗑️</span> AI音声設定のオールクリア
+                    </button>
+                </div>
+
+                <!-- 読み上げ文章テキスト入力 -->
+                <div class="form-group tts-section-card" style="margin-bottom: 8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label class="form-label" style="margin-bottom:0;" for="slot-tts-input-text">📝 読み上げる文章（テキスト）</label>
+                        <span class="badge-tag">AI音声・完全ローカル</span>
+                    </div>
+                    <div class="tts-textarea-wrapper">
+                        <textarea id="slot-tts-input-text" class="form-input tts-textarea" placeholder="読み上げる文章をここに入力してください（例: おはようございます、今日もよろしくお願いします）..." rows="3" maxlength="300"></textarea>
+                    </div>
+
+                    <!-- ポーズ補助ツール -->
+                    <div class="tts-control-bar" style="margin-top: 6px;">
+                        <div class="tts-pause-tools" style="margin: 0; width: 100%; justify-content: space-between;">
+                            <span style="font-size: 11px; color: var(--text-muted); align-self: center; font-weight:700;">ポーズ補助:</span>
+                            <button type="button" class="tts-pause-btn" data-pause="comma">➕「、」</button>
+                            <button type="button" class="tts-pause-btn" data-pause="space">⏸️ 空白</button>
+                            <button type="button" class="tts-pause-btn" data-pause="period">➕「。」</button>
+                            <button type="button" class="tts-pause-btn" data-pause="clear" style="color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);">🔄 記号消去</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 🎙️ 日本語ベース音声（話者）スイッチ -->
+                <div class="form-group" style="margin-bottom: 8px;">
+                    <span class="opt-label" style="display:block; margin-bottom: 6px; font-size: 11.5px; font-weight: 700; color: #93c5fd;">🎙️ 日本語ベース音声（話者）を選択:</span>
+                    <div class="fx-preset-chips" id="slot-tts-voice-chips" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;">
+                        <button type="button" class="fx-chip-btn active" data-tts-voice="ayumi" style="justify-content: center; padding: 8px 2px; font-size: 11px;">👩 あゆみ</button>
+                        <button type="button" class="fx-chip-btn" data-tts-voice="haruka" style="justify-content: center; padding: 8px 2px; font-size: 11px;">👩 はるか</button>
+                        <button type="button" class="fx-chip-btn" data-tts-voice="ichiro" style="justify-content: center; padding: 8px 2px; font-size: 11px;">👨 いちろう</button>
+                        <button type="button" class="fx-chip-btn" data-tts-voice="sayaka" style="justify-content: center; padding: 8px 2px; font-size: 11px;">👩 さやか</button>
+                        <button type="button" class="fx-chip-btn" data-tts-voice="google" style="justify-content: center; padding: 8px 2px; font-size: 11px;">🟢 Google</button>
+                    </div>
+                </div>
+
+                <!-- 🎚️ 音声詳細パラメータ（声の高さ / 読む速さ） -->
+                <div class="fx-stage-card stage-voice" style="margin-bottom: 8px; padding: 10px;">
+                    <div class="fx-slider-list" style="gap: 8px;">
+                        <!-- ① 音程 (ピッチ: 声の高さ) -->
+                        <div class="fx-slider-item">
+                            <div class="fx-slider-top">
+                                <span class="fx-slider-label">🎵 声の高さ (ピッチ・音程)</span>
+                                <span id="slot-tts-pitch-val" class="fx-slider-val">1.00 (標準)</span>
+                            </div>
+                            <input type="range" id="slot-tts-pitch-slider" min="0.4" max="1.8" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
+                            <div class="fx-slider-hints">
+                                <span>0.4 (低い声)</span>
+                                <span>1.0 (標準)</span>
+                                <span>1.8 (高い声)</span>
+                            </div>
+                        </div>
+
+                        <!-- ② 話速 (スピード: 読む速さ) -->
+                        <div class="fx-slider-item">
+                            <div class="fx-slider-top">
+                                <span class="fx-slider-label">⚡ 読む速さ (スピード・話速)</span>
+                                <span id="slot-tts-rate-val" class="fx-slider-val">1.00x (標準)</span>
+                            </div>
+                            <input type="range" id="slot-tts-rate-slider" min="0.5" max="1.8" step="0.05" value="1.0" class="adjust-slider fx-slider-track">
+                            <div class="fx-slider-hints">
+                                <span>0.5x (ゆっくり)</span>
+                                <span>1.0x (標準)</span>
+                                <span>1.8x (早口)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-actions" style="margin-top: 10px;">
+                    <button type="button" id="btn-slot-tts-preview" class="action-btn download-btn">▶️ AI音声を試聴する</button>
+                    <button type="button" id="save-slot-tts-btn" class="action-btn save-btn">✨ このボタンにAI音声を登録・保存</button>
+                    <button type="button" id="delete-slot-tts-btn" class="action-btn warning-btn" style="display: none;">🔇 AI音声を消去</button>
                 </div>
             </div>
         </div>
@@ -1293,6 +1070,20 @@
                         <button id="move-scroll-right-btn" type="button" class="action-btn download-btn" style="flex: 1; padding: 9px; font-size: 13px;">
                             1つ右（次）へ移動 ▶
                         </button>
+                    </div>
+                </div>
+
+                <!-- データを回収・WebRTCインポートセクション -->
+                <div class="form-group p2p-import-group" style="margin-top: 10px; padding: 10px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span class="opt-label" style="font-size: 12px; font-weight: 800; color: #34d399;">📥 生徒のデータを回収 (先生用)</span>
+                        <span class="badge-tag" style="background: rgba(16, 185, 129, 0.25); color: #6ee7b7; border-color: #34d399;">QRカメラ読取</span>
+                    </div>
+                    <button type="button" id="btn-scroll-webrtc-import" class="action-btn save-btn" style="background: linear-gradient(135deg, #059669, #10b981); font-weight: 800; padding: 10px 14px;">
+                        <span class="btn-icon">📡</span> WebRTCインポートスイッチ
+                    </button>
+                    <div class="webrtc-desc" style="font-size: 11px; color: #94a3b8; margin-top: 5px; line-height: 1.4;">
+                        ※ 同じWi-Fi内にある機器同士でのみ送信できます。
                     </div>
                 </div>
 
@@ -1762,6 +1553,108 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
         </div>
     </div>
 
+    <!-- 📡 生徒側 P2Pデータ送信（QRコード待機）モーダル -->
+    <div id="p2p-send-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="p2p-send-modal-title">
+        <div class="modal-content" style="max-width: 440px; text-align: center;">
+            <div class="modal-header" style="justify-content: center; position: relative;">
+                <h3 id="p2p-send-modal-title" class="modal-title" style="color: #38bdf8;">📡 先生へボタンを送信中 (P2P)</h3>
+                <button id="close-p2p-send-modal-btn" class="close-modal-btn" style="position: absolute; right: 0;" title="閉じる" aria-label="閉じる">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="modal-body-scroll" style="align-items: center; gap: 12px; padding: 12px 6px;">
+                <div style="font-size: 12.5px; color: #cbd5e1; line-height: 1.5;">
+                    先生の端末のカメラで、下の <strong>QRコード</strong> を読み取ってください。
+                </div>
+
+                <!-- 送信対象のボタンカードプレビュー -->
+                <div id="p2p-send-slot-info" class="p2p-slot-preview-card">
+                    <span id="p2p-send-slot-emoji" style="font-size: 24px;">🔊</span>
+                    <div style="text-align: left; flex: 1; min-width: 0;">
+                        <div id="p2p-send-slot-name" style="font-size: 14px; font-weight: 800; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">ボタン名</div>
+                        <div id="p2p-send-slot-meta" style="font-size: 11px; color: #94a3b8;">音声・写真・設定データ準備完了</div>
+                    </div>
+                </div>
+
+                <!-- QRコード表示コンテナ -->
+                <div class="p2p-qr-wrapper">
+                    <canvas id="p2p-send-qr-canvas" width="220" height="220" style="display: block; border-radius: 12px;"></canvas>
+                    <div id="p2p-send-qr-loading" class="p2p-qr-spinner" style="display: none;">
+                        <div class="spinner"></div>
+                        <div style="font-size: 11px; color: #38bdf8; margin-top: 6px;">P2P待受準備中...</div>
+                    </div>
+                </div>
+
+                <!-- セッションPIN & ステータス -->
+                <div class="p2p-session-badge">
+                    接続PIN: <span id="p2p-send-pin" style="font-family: monospace; font-size: 16px; font-weight: 800; color: #38bdf8; letter-spacing: 2px;">------</span>
+                </div>
+
+                <div id="p2p-send-status" class="p2p-status-box">
+                    <span class="p2p-status-icon">⏳</span>
+                    <span id="p2p-send-status-text">先生のカメラからの読み取りを待っています...</span>
+                </div>
+
+                <div class="modal-actions" style="width: 100%; margin-top: 6px;">
+                    <button type="button" id="btn-cancel-p2p-send" class="action-btn secondary-btn" style="padding: 10px;">
+                        ❌ 送信をキャンセルして閉じる
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📷 先生側 P2Pデータ受信（QRコードカメラリーダー）モーダル -->
+    <div id="p2p-receive-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="p2p-receive-modal-title">
+        <div class="modal-content" style="max-width: 460px; text-align: center;">
+            <div class="modal-header" style="justify-content: center; position: relative;">
+                <h3 id="p2p-receive-modal-title" class="modal-title" style="color: #34d399;">📷 生徒のQRコードを読み取り中</h3>
+                <button id="close-p2p-receive-modal-btn" class="close-modal-btn" style="position: absolute; right: 0;" title="閉じる" aria-label="閉じる">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="modal-body-scroll" style="align-items: center; gap: 12px; padding: 12px 6px;">
+                <div style="font-size: 12px; color: #94a3b8;">
+                    生徒の画面に表示された <strong>QRコード</strong> をカメラの枠内に収めてください。
+                </div>
+
+                <!-- カメラファインダーコンテナ -->
+                <div class="p2p-camera-container">
+                    <video id="p2p-scanner-video" playsinline autoplay muted></video>
+                    <canvas id="p2p-scanner-canvas" style="display: none;"></canvas>
+                    <div class="p2p-scan-reticle">
+                        <div class="p2p-scan-laser"></div>
+                    </div>
+                </div>
+
+                <!-- 受信ステータス -->
+                <div id="p2p-receive-status" class="p2p-status-box" style="border-color: rgba(52, 211, 153, 0.35); background: rgba(5, 150, 105, 0.1);">
+                    <span class="p2p-status-icon">📷</span>
+                    <span id="p2p-receive-status-text">QRコードを探しています...</span>
+                </div>
+
+                <!-- 同じWi-Fiの案内 -->
+                <div style="font-size: 11px; color: #94a3b8;">
+                    ※ 同じWi-Fi内にある機器同士でのみ送信できます。
+                </div>
+
+                <div class="modal-actions" style="width: 100%; margin-top: 6px;">
+                    <button type="button" id="btn-cancel-p2p-receive" class="action-btn secondary-btn" style="padding: 10px;">
+                        ❌ カメラを終了して閉じる
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 全画面ドラッグ＆ドロップ受け入れオーバーレイ -->
     <div id="global-dropzone" class="global-dropzone" style="display: none;">
         <div class="dropzone-content">
@@ -1780,6 +1673,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="toast-container" class="toast-container"></div>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260924_17"></script>
+    <script src="app.js?v=20260924_0250"></script>
 </body>
 </html>

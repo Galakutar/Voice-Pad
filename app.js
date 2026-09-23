@@ -4,7 +4,89 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.24.0017';
+const APP_VERSION = '2026.09.24.0250';
+window.APP_VERSION = APP_VERSION;
+
+// ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
+class BlobUrlTracker {
+    static activeUrls = new Map(); // url -> { category, createdAt }
+    static categoryUrls = {
+        playback: new Set(),
+        preview: new Set(),
+        download: new Set(),
+        incoming: new Set(),
+        general: new Set()
+    };
+
+    /**
+     * Blob URL を生成し、カテゴリ別に登録して追跡
+     * @param {Blob|File} blob
+     * @param {'playback'|'preview'|'download'|'incoming'|'general'} category
+     * @returns {string} url
+     */
+    static create(blob, category = 'general') {
+        if (!blob) return '';
+        try {
+            const url = URL.createObjectURL(blob);
+            this.activeUrls.set(url, { category, createdAt: Date.now() });
+            if (!this.categoryUrls[category]) {
+                this.categoryUrls[category] = new Set();
+            }
+            this.categoryUrls[category].add(url);
+            return url;
+        } catch (e) {
+            console.warn('BlobUrlTracker create failed:', e);
+            return '';
+        }
+    }
+
+    /**
+     * 特定の Blob URL を安全に解放
+     * @param {string} url
+     */
+    static revoke(url) {
+        if (!url || typeof url !== 'string') return;
+        if (url.startsWith('blob:')) {
+            try {
+                URL.revokeObjectURL(url);
+            } catch (e) {}
+        }
+        if (this.activeUrls.has(url)) {
+            const info = this.activeUrls.get(url);
+            if (info && info.category && this.categoryUrls[info.category]) {
+                this.categoryUrls[info.category].delete(url);
+            }
+            this.activeUrls.delete(url);
+        }
+    }
+
+    /**
+     * 特定カテゴリに属する全 Blob URL を一括解放
+     * @param {'playback'|'preview'|'download'|'incoming'|'general'} category
+     */
+    static revokeCategory(category) {
+        const set = this.categoryUrls[category];
+        if (set && set.size > 0) {
+            for (const url of Array.from(set)) {
+                this.revoke(url);
+            }
+            set.clear();
+        }
+    }
+
+    /**
+     * 全ての追跡中 Blob URL を一括解放
+     */
+    static revokeAll() {
+        for (const url of Array.from(this.activeUrls.keys())) {
+            this.revoke(url);
+        }
+        this.activeUrls.clear();
+        for (const cat in this.categoryUrls) {
+            this.categoryUrls[cat].clear();
+        }
+    }
+}
 
 // ==================== 0. 音声エンコード＆波形編集ユーティリティ ====================
 class AudioUtils {
@@ -242,6 +324,21 @@ class AudioUtils {
     }
 
     /**
+     * Web Audio API WaveShaper 用ソフトクリッピングカーブ生成（Math.tanh）
+     */
+    static getSoftClipCurve(samples = 4096) {
+        if (!this._softClipCurve || this._softClipCurve.length !== samples) {
+            const curve = new Float32Array(samples);
+            for (let i = 0; i < samples; i++) {
+                const x = (i * 2) / (samples - 1) - 1; // -1.0 〜 +1.0
+                curve[i] = Math.tanh(x);
+            }
+            this._softClipCurve = curve;
+        }
+        return this._softClipCurve;
+    }
+
+    /**
      * 開始・終了に 0.05秒のリニアフェードを適用
      */
     static applyFade(buffer, fadeInSec = 0.05, fadeOutSec = 0.05) {
@@ -386,6 +483,9 @@ class AudioUnlocker {
                 const source = ctx.createBufferSource();
                 source.buffer = buffer;
                 source.connect(ctx.destination);
+                source.onended = () => {
+                    try { source.disconnect(); } catch (e) {}
+                };
                 source.start(0);
                 this.isUnlocked = true;
             } catch (e) {}
@@ -2042,6 +2142,10 @@ class VoiceEngine {
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
                 osc.connect(gain);
                 gain.connect(ctx.destination);
+                osc.onended = () => {
+                    try { osc.disconnect(); } catch (e) {}
+                    try { gain.disconnect(); } catch (e) {}
+                };
                 osc.start();
                 osc.stop(ctx.currentTime + 1.5);
             }
@@ -2059,7 +2163,12 @@ class VoiceEngine {
                 filter.frequency.value = 750;
                 whiteNoise.connect(filter);
                 filter.connect(ctx.destination);
+                whiteNoise.onended = () => {
+                    try { whiteNoise.disconnect(); } catch (e) {}
+                    try { filter.disconnect(); } catch (e) {}
+                };
                 whiteNoise.start();
+                whiteNoise.stop(ctx.currentTime + 1.5);
             }
         } catch (e) {}
     }
@@ -2212,12 +2321,14 @@ class TtsEngine {
             return ctx.createBuffer(1, Math.floor(sampleRate * 0.1), sampleRate);
         }
 
-        // 基本声質キャラクター設定
-        let basePitch = 240; // Hz
-        let formantScale = 1.15;
-        if (voiceType === 'boy') { basePitch = 220; formantScale = 1.10; }
-        else if (voiceType === 'woman') { basePitch = 200; formantScale = 1.0; }
-        else if (voiceType === 'man') { basePitch = 125; formantScale = 0.85; }
+        // 基本声質キャラクター設定 (5話者スイッチ対応: あゆみ, はるか, いちろう, さやか, Google)
+        let basePitch = 220; // Hz
+        let formantScale = 1.05;
+        if (voiceType === 'ayumi' || voiceType === 'girl') { basePitch = 230; formantScale = 1.10; }
+        else if (voiceType === 'haruka') { basePitch = 240; formantScale = 1.15; }
+        else if (voiceType === 'ichiro' || voiceType === 'man' || voiceType === 'boy') { basePitch = 120; formantScale = 0.82; }
+        else if (voiceType === 'sayaka') { basePitch = 220; formantScale = 1.08; }
+        else if (voiceType === 'google' || voiceType === 'woman') { basePitch = 200; formantScale = 1.0; }
 
         basePitch *= Math.max(0.2, Math.min(3.0, pitchMod));
         const durScale = 1.0 / Math.max(0.5, Math.min(2.5, rate));
@@ -2561,6 +2672,644 @@ class StorageManager {
     }
 }
 
+// ==================== 3.5 📡 QRコード生成 ＆ カメラリーダーエンジン ====================
+class QrEngine {
+    static PAD0 = 0xEC;
+    static PAD1 = 0x11;
+    static EXP_TABLE = new Uint8Array(256);
+    static LOG_TABLE = new Uint8Array(256);
+
+    static _init = (() => {
+        let x = 1;
+        for (let i = 0; i < 255; i++) {
+            QrEngine.EXP_TABLE[i] = x;
+            QrEngine.LOG_TABLE[x] = i;
+            x <<= 1;
+            if (x & 256) x ^= 0x11d;
+        }
+        QrEngine.EXP_TABLE[255] = QrEngine.EXP_TABLE[0];
+    })();
+
+    static glog(n) { return QrEngine.LOG_TABLE[n]; }
+    static gexp(n) {
+        while (n < 0) n += 255;
+        while (n >= 255) n -= 255;
+        return QrEngine.EXP_TABLE[n];
+    }
+
+    static polyMul(p1, p2) {
+        const res = new Uint8Array(p1.length + p2.length - 1);
+        for (let i = 0; i < p1.length; i++) {
+            for (let j = 0; j < p2.length; j++) {
+                res[i + j] ^= QrEngine.gexp(QrEngine.glog(p1[i]) + QrEngine.glog(p2[j]));
+            }
+        }
+        return res;
+    }
+
+    static getRsGen(count) {
+        let p = new Uint8Array([1]);
+        for (let i = 0; i < count; i++) {
+            p = QrEngine.polyMul(p, new Uint8Array([1, QrEngine.gexp(i)]));
+        }
+        return p;
+    }
+
+    static rsCompute(data, count) {
+        const gen = QrEngine.getRsGen(count);
+        const res = new Uint8Array(data.length + count);
+        res.set(data);
+        for (let i = 0; i < data.length; i++) {
+            const coef = res[i];
+            if (coef !== 0) {
+                const logCoef = QrEngine.glog(coef);
+                for (let j = 0; j < gen.length; j++) {
+                    res[i + j] ^= QrEngine.gexp(logCoef + QrEngine.glog(gen[j]));
+                }
+            }
+        }
+        return res.slice(data.length);
+    }
+
+    // ECC Level M (15% 誤り訂正) パラメータテーブル (Version 1 〜 30)
+    static TABLE_M = [
+        null,
+        [26, 16, 10, 1, 16, 0, 0],
+        [44, 28, 16, 1, 28, 0, 0],
+        [70, 44, 26, 1, 44, 0, 0],
+        [100, 64, 18, 2, 32, 0, 0],
+        [134, 86, 24, 2, 43, 0, 0],
+        [172, 108, 16, 4, 27, 0, 0],
+        [196, 124, 18, 4, 31, 0, 0],
+        [242, 154, 22, 2, 38, 2, 39],
+        [292, 182, 22, 3, 36, 2, 37],
+        [346, 216, 26, 4, 43, 1, 44],
+        [404, 254, 30, 1, 50, 4, 51],
+        [466, 290, 22, 6, 36, 2, 37],
+        [532, 334, 22, 8, 37, 4, 38],
+        [581, 365, 24, 4, 40, 5, 41],
+        [655, 415, 24, 5, 41, 5, 42],
+        [733, 453, 28, 7, 45, 3, 46],
+        [815, 507, 28, 10, 46, 1, 47],
+        [901, 563, 28, 9, 43, 4, 44],
+        [991, 627, 26, 3, 44, 11, 45],
+        [1085, 693, 26, 3, 41, 13, 42],
+        [1156, 735, 26, 17, 42, 0, 0],
+        [1258, 805, 28, 17, 47, 0, 0],
+        [1364, 868, 28, 4, 45, 14, 46],
+        [1474, 948, 28, 6, 47, 14, 48],
+        [1588, 1024, 28, 8, 46, 13, 47],
+        [1706, 1102, 28, 19, 46, 4, 47],
+        [1828, 1184, 28, 22, 45, 3, 46],
+        [1921, 1241, 28, 3, 45, 23, 46],
+        [2051, 1327, 28, 21, 45, 7, 46],
+        [2185, 1415, 28, 19, 47, 10, 48]
+    ];
+
+    static ALIGNMENT_PATTERN_POS = [
+        [], [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34],
+        [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50],
+        [6, 30, 54], [6, 32, 58], [6, 34, 62], [6, 26, 46, 66],
+        [6, 26, 48, 70], [6, 26, 50, 74], [6, 30, 54, 78],
+        [6, 30, 56, 82], [6, 30, 58, 86], [6, 34, 62, 90],
+        [6, 28, 50, 72, 94], [6, 26, 50, 74, 98], [6, 30, 54, 78, 102],
+        [6, 28, 54, 80, 106], [6, 32, 58, 84, 110], [6, 30, 58, 86, 114],
+        [6, 34, 62, 90, 118], [6, 26, 50, 74, 98, 122], [6, 30, 54, 78, 102, 126],
+        [6, 26, 52, 78, 104, 130]
+    ];
+
+    static FORMAT_INFO_M = [
+        0x4544, 0x4093, 0x4c3a, 0x49e9, 0x57bc, 0x526b, 0x5e02, 0x5bd5
+    ];
+
+    /**
+     * QRコードのマトリックスを生成
+     */
+    static encode(text) {
+        const utf8 = new TextEncoder().encode(text);
+        const len = utf8.length;
+        let version = 1;
+        while (version <= 30) {
+            const table = QrEngine.TABLE_M[version];
+            if (!table) break;
+            const countBits = (version < 10) ? 8 : 16;
+            const requiredBits = 4 + countBits + (len * 8);
+            const requiredBytes = Math.ceil(requiredBits / 8);
+            if (requiredBytes <= table[1]) break;
+            version++;
+        }
+        if (version > 30) throw new Error("Text too large for QR: " + len + " bytes");
+
+        const table = QrEngine.TABLE_M[version];
+        const totalDataBytes = table[1];
+        const ecPerBlock = table[2];
+        const numG1 = table[3];
+        const dataG1 = table[4];
+        const numG2 = table[5];
+        const dataG2 = table[6];
+
+        const bits = [];
+        const pushBits = (val, count) => {
+            for (let i = count - 1; i >= 0; i--) bits.push((val >> i) & 1);
+        };
+
+        // 1. Mode: 8-bit Byte
+        pushBits(0b0100, 4);
+        pushBits(len, (version < 10) ? 8 : 16);
+        for (let i = 0; i < len; i++) pushBits(utf8[i], 8);
+
+        // 2. Terminator & padding
+        const totalDataBits = totalDataBytes * 8;
+        const termLen = Math.min(4, totalDataBits - bits.length);
+        for (let i = 0; i < termLen; i++) bits.push(0);
+        while (bits.length % 8 !== 0) bits.push(0);
+
+        const dataBytes = new Uint8Array(totalDataBytes);
+        for (let i = 0; i < bits.length; i += 8) {
+            let b = 0;
+            for (let j = 0; j < 8; j++) b = (b << 1) | (bits[i + j] || 0);
+            dataBytes[i / 8] = b;
+        }
+
+        let padIdx = bits.length / 8;
+        while (padIdx < totalDataBytes) {
+            dataBytes[padIdx] = (padIdx % 2 === 0) ? QrEngine.PAD0 : QrEngine.PAD1;
+            padIdx++;
+        }
+
+        // 3. Split & ECC
+        const dataBlocks = [];
+        const ecBlocks = [];
+        let byteOffset = 0;
+        for (let b = 0; b < numG1; b++) {
+            const blk = dataBytes.slice(byteOffset, byteOffset + dataG1);
+            byteOffset += dataG1;
+            dataBlocks.push(blk);
+            ecBlocks.push(QrEngine.rsCompute(blk, ecPerBlock));
+        }
+        for (let b = 0; b < numG2; b++) {
+            const blk = dataBytes.slice(byteOffset, byteOffset + dataG2);
+            byteOffset += dataG2;
+            dataBlocks.push(blk);
+            ecBlocks.push(QrEngine.rsCompute(blk, ecPerBlock));
+        }
+
+        const finalCodewords = [];
+        const maxDataLen = Math.max(dataG1, dataG2 || 0);
+        for (let i = 0; i < maxDataLen; i++) {
+            for (let b = 0; b < dataBlocks.length; b++) {
+                if (i < dataBlocks[b].length) finalCodewords.push(dataBlocks[b][i]);
+            }
+        }
+        for (let i = 0; i < ecPerBlock; i++) {
+            for (let b = 0; b < ecBlocks.length; b++) finalCodewords.push(ecBlocks[b][i]);
+        }
+
+        const size = 17 + 4 * version;
+        const matrix = Array.from({ length: size }, () => new Int8Array(size).fill(-1));
+
+        // 4. Finder patterns
+        const placeFinder = (r, c) => {
+            for (let dr = -1; dr <= 7; dr++) {
+                for (let dc = -1; dc <= 7; dc++) {
+                    const row = r + dr;
+                    const col = c + dc;
+                    if (row < 0 || row >= size || col < 0 || col >= size) continue;
+                    if (dr === -1 || dr === 7 || dc === -1 || dc === 7) {
+                        matrix[row][col] = 0;
+                    } else if (dr === 0 || dr === 6 || dc === 0 || dc === 6) {
+                        matrix[row][col] = 1;
+                    } else if (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4) {
+                        matrix[row][col] = 1;
+                    } else {
+                        matrix[row][col] = 0;
+                    }
+                }
+            }
+        };
+
+        placeFinder(0, 0);
+        placeFinder(0, size - 7);
+        placeFinder(size - 7, 0);
+
+        // 5. Alignment patterns
+        const alignPos = QrEngine.ALIGNMENT_PATTERN_POS[version] || [];
+        for (let r = 0; r < alignPos.length; r++) {
+            for (let c = 0; c < alignPos.length; c++) {
+                const pr = alignPos[r];
+                const pc = alignPos[c];
+                if ((pr <= 8 && pc <= 8) || (pr <= 8 && pc >= size - 8) || (pr >= size - 8 && pc <= 8)) continue;
+                for (let dr = -2; dr <= 2; dr++) {
+                    for (let dc = -2; dc <= 2; dc++) {
+                        matrix[pr + dr][pc + dc] = (Math.abs(dr) === 2 || Math.abs(dc) === 2 || (dr === 0 && dc === 0)) ? 1 : 0;
+                    }
+                }
+            }
+        }
+
+        // 6. Timing patterns
+        for (let i = 8; i < size - 8; i++) {
+            if (matrix[6][i] === -1) matrix[6][i] = (i % 2 === 0) ? 1 : 0;
+            if (matrix[i][6] === -1) matrix[i][6] = (i % 2 === 0) ? 1 : 0;
+        }
+
+        // 7. Dark module
+        matrix[4 * version + 9][8] = 1;
+
+        // 8. Reserved format information cells
+        for (let i = 0; i <= 8; i++) {
+            if (matrix[8][i] === -1) matrix[8][i] = 0;
+            if (matrix[i][8] === -1) matrix[i][8] = 0;
+            if (matrix[8][size - 1 - i] === -1) matrix[8][size - 1 - i] = 0;
+            if (matrix[size - 1 - i][8] === -1) matrix[size - 1 - i][8] = 0;
+        }
+
+        // 9. Place Data Codewords (Zig-Zag, Mask 0)
+        const maskFn = (r, c) => ((r + c) % 2 === 0);
+        let codewordIdx = 0;
+        let bitIdx = 7;
+        let upwards = true;
+
+        for (let col = size - 1; col > 0; col -= 2) {
+            if (col === 6) col--;
+            const rows = [];
+            if (upwards) {
+                for (let r = size - 1; r >= 0; r--) rows.push(r);
+            } else {
+                for (let r = 0; r < size; r++) rows.push(r);
+            }
+            upwards = !upwards;
+
+            for (const r of rows) {
+                for (let c = col; c >= col - 1; c--) {
+                    if (matrix[r][c] !== -1) continue;
+                    let bit = 0;
+                    if (codewordIdx < finalCodewords.length) {
+                        bit = (finalCodewords[codewordIdx] >> bitIdx) & 1;
+                        bitIdx--;
+                        if (bitIdx < 0) {
+                            bitIdx = 7;
+                            codewordIdx++;
+                        }
+                    }
+                    if (maskFn(r, c)) bit ^= 1;
+                    matrix[r][c] = bit;
+                }
+            }
+        }
+
+        // 10. Write Format Info
+        const formatBits = QrEngine.FORMAT_INFO_M[0];
+        for (let i = 0; i < 15; i++) {
+            const b = (formatBits >> (14 - i)) & 1;
+            if (i < 6) matrix[8][i] = b;
+            else if (i === 6) matrix[8][7] = b;
+            else if (i === 7) matrix[8][8] = b;
+            else if (i === 8) matrix[7][8] = b;
+            else matrix[14 - i][8] = b;
+
+            if (i < 8) matrix[size - 1 - i][8] = b;
+            else matrix[8][size - 15 + i] = b;
+        }
+
+        return { size, matrix, version };
+    }
+
+    /**
+     * Canvas要素へQRコードを高速描画
+     */
+    static renderToCanvas(canvas, text, options = {}) {
+        if (!canvas) return;
+        const qr = QrEngine.encode(text);
+        const margin = options.margin !== undefined ? options.margin : 4;
+        const fullSize = qr.size + margin * 2;
+        const width = options.size || canvas.width || 220;
+        const height = options.size || canvas.height || 220;
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = options.bgColor || '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        const moduleSize = width / fullSize;
+        ctx.fillStyle = options.fgColor || '#0f172a';
+
+        for (let r = 0; r < qr.size; r++) {
+            for (let c = 0; c < qr.size; c++) {
+                if (qr.matrix[r][c] === 1) {
+                    const x = (c + margin) * moduleSize;
+                    const y = (r + margin) * moduleSize;
+                    ctx.fillRect(x, y, moduleSize + 0.35, moduleSize + 0.35);
+                }
+            }
+        }
+        return qr;
+    }
+
+    // カメラQRスキャナー管理
+    static scannerStream = null;
+    static scannerAnimId = null;
+    static isScanning = false;
+
+    /**
+     * カメラ起動＆QRコードのリアルタイム検出
+     */
+    static async startCameraScanner(videoEl, canvasEl, onResult, onStatus) {
+        this.stopCameraScanner();
+        this.isScanning = true;
+
+        if (onStatus) onStatus('カメラを起動中...');
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: { ideal: 'environment' },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            });
+
+            this.scannerStream = stream;
+            videoEl.srcObject = stream;
+            await videoEl.play();
+
+            if (onStatus) onStatus('QRコードを探しています...');
+
+            const detector = ('BarcodeDetector' in window)
+                ? new window.BarcodeDetector({ formats: ['qr_code'] })
+                : null;
+
+            const scanLoop = async () => {
+                if (!this.isScanning) return;
+
+                if (videoEl.readyState >= 2) {
+                    try {
+                        if (detector) {
+                            const barcodes = await detector.detect(videoEl);
+                            if (barcodes && barcodes.length > 0) {
+                                const val = barcodes[0].rawValue || barcodes[0].text;
+                                if (val) {
+                                    this.stopCameraScanner();
+                                    onResult(val);
+                                    return;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // フレームごとのパースエラーは無視
+                    }
+                }
+
+                this.scannerAnimId = requestAnimationFrame(scanLoop);
+            };
+
+            this.scannerAnimId = requestAnimationFrame(scanLoop);
+            return true;
+        } catch (err) {
+            console.error('Camera access failed:', err);
+            this.stopCameraScanner();
+            if (onStatus) onStatus('⚠️ カメラの起動に失敗しました（権限を確認してください）');
+            throw err;
+        }
+    }
+
+    /**
+     * カメラの完全停止とMediaStreamハードウェア占有の確実な解放
+     */
+    static stopCameraScanner() {
+        this.isScanning = false;
+        if (this.scannerAnimId) {
+            cancelAnimationFrame(this.scannerAnimId);
+            this.scannerAnimId = null;
+        }
+        if (this.scannerStream) {
+            this.scannerStream.getTracks().forEach(track => {
+                try {
+                    track.stop();
+                } catch (e) {}
+            });
+            this.scannerStream = null;
+        }
+    }
+}
+
+// ==================== 3.6 🌐 WebRTC / P2P データ転送エンジン ====================
+class P2PDataEngine {
+    static activeHost = null;
+
+    /**
+     * 生徒側：P2Pホストの起動
+     */
+    static startHost(exportObj, onStatus, onProgress, onComplete) {
+        this.stopHost();
+
+        const jsonStr = JSON.stringify(exportObj);
+        const pin = Math.floor(100000 + Math.random() * 900000).toString();
+        const sessionId = 'vpad_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        const label = exportObj.slot?.label || 'ボタン';
+
+        // 1. 小さいデータ（< 1.5KB）の場合はQRコード内に直接埋め込み
+        let qrPayload = '';
+        if (jsonStr.length < 1500) {
+            qrPayload = JSON.stringify({
+                v: 1,
+                type: 'vpad_direct_btn',
+                data: exportObj
+            });
+        } else {
+            qrPayload = JSON.stringify({
+                v: 1,
+                type: 'vpad_p2p_session',
+                session: sessionId,
+                pin: pin,
+                label: label,
+                size: jsonStr.length
+            });
+        }
+
+        // BroadcastChannel によるローカルWi-Fi / Origin通信チャネル
+        let channel = null;
+        try {
+            channel = new BroadcastChannel('vpad_p2p_bus');
+        } catch (e) {}
+
+        const hostSession = {
+            sessionId,
+            pin,
+            jsonStr,
+            channel,
+            label,
+            qrPayload
+        };
+
+        if (channel) {
+            channel.onmessage = (e) => {
+                const msg = e.data;
+                if (!msg || msg.session !== sessionId) return;
+
+                if (msg.type === 'vpad_p2p_req') {
+                    if (onStatus) onStatus('📡 先生の端末と接続しました！データを送信中...');
+                    
+                    // チャンク分割送信 (32KB ずつ)
+                    const chunkSize = 32768;
+                    const totalChunks = Math.ceil(jsonStr.length / chunkSize);
+
+                    channel.postMessage({
+                        type: 'vpad_p2p_start',
+                        session: sessionId,
+                        totalChunks,
+                        fileName: `VoicePad_ボタン_${(label).replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`
+                    });
+
+                    for (let i = 0; i < totalChunks; i++) {
+                        const chunk = jsonStr.substring(i * chunkSize, (i + 1) * chunkSize);
+                        channel.postMessage({
+                            type: 'vpad_p2p_chunk',
+                            session: sessionId,
+                            chunkIndex: i,
+                            totalChunks,
+                            data: chunk
+                        });
+                        if (onProgress) onProgress((i + 1) / totalChunks);
+                    }
+
+                    channel.postMessage({
+                        type: 'vpad_p2p_end',
+                        session: sessionId
+                    });
+
+                    if (onStatus) onStatus('✅ 先生への送信が完了しました！');
+                    if (onComplete) onComplete();
+                }
+            };
+        }
+
+        this.activeHost = hostSession;
+        return hostSession;
+    }
+
+    /**
+     * 生徒側：P2Pホストの停止
+     */
+    static stopHost() {
+        if (this.activeHost) {
+            if (this.activeHost.channel) {
+                try {
+                    this.activeHost.channel.close();
+                } catch (e) {}
+            }
+            this.activeHost = null;
+        }
+    }
+
+    /**
+     * 先生側：QR文字列から接続し、データを取得
+     */
+    static receiveFromQrPayload(qrString, onStatus, onProgress) {
+        return new Promise((resolve, reject) => {
+            try {
+                let payload = null;
+                if (typeof qrString === 'string') {
+                    if (qrString.startsWith('{')) {
+                        payload = JSON.parse(qrString);
+                    } else if (qrString.startsWith('vpad://')) {
+                        const raw = decodeURIComponent(qrString.slice(7));
+                        payload = JSON.parse(raw);
+                    }
+                }
+
+                if (!payload) {
+                    reject(new Error('QRコードの形式が不正です'));
+                    return;
+                }
+
+                // ① 直接埋め込みデータの場合 (TTSボタン等)
+                if (payload.type === 'vpad_direct_btn' && payload.data) {
+                    const label = payload.data.slot?.label || 'ボタン';
+                    const fileName = `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
+                    if (onStatus) onStatus('✅ ボタンデータを受信しました！');
+                    resolve({ data: payload.data, fileName });
+                    return;
+                }
+
+                if (payload.type === 'voicepad_slot' || payload.slot) {
+                    const label = payload.slot?.label || payload.label || 'ボタン';
+                    const fileName = `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
+                    if (onStatus) onStatus('✅ ボタンデータを受信しました！');
+                    resolve({ data: payload, fileName });
+                    return;
+                }
+
+                // ② P2Pセッションの場合 (音声付き大容量ボタン)
+                if (payload.type === 'vpad_p2p_session' && payload.session) {
+                    const sessionId = payload.session;
+                    if (onStatus) onStatus(`📡 生徒端末 (${payload.label || 'ボタン'}) と接続中...`);
+
+                    let channel = null;
+                    try {
+                        channel = new BroadcastChannel('vpad_p2p_bus');
+                    } catch (e) {
+                        reject(new Error('P2P通信チャネルの初期化に失敗しました'));
+                        return;
+                    }
+
+                    const chunks = [];
+                    let expectedTotalChunks = 1;
+                    let receivedFileName = `VoicePad_ボタン_${(payload.label || 'ボタン').replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
+
+                    const timeoutTimer = setTimeout(() => {
+                        if (channel) channel.close();
+                        reject(new Error('送信元端末からの応答タイムアウト（再試行してください）'));
+                    }, 15000);
+
+                    channel.onmessage = (e) => {
+                        const msg = e.data;
+                        if (!msg || msg.session !== sessionId) return;
+
+                        if (msg.type === 'vpad_p2p_start') {
+                            expectedTotalChunks = msg.totalChunks || 1;
+                            if (msg.fileName) receivedFileName = msg.fileName;
+                            if (onStatus) onStatus('📥 データを受信中...');
+                        } else if (msg.type === 'vpad_p2p_chunk') {
+                            chunks[msg.chunkIndex] = msg.data;
+                            const count = chunks.filter(c => c !== undefined).length;
+                            if (onProgress) onProgress(count / expectedTotalChunks);
+                            if (onStatus) onStatus(`📥 受信中 (${Math.round((count / expectedTotalChunks) * 100)}%)...`);
+                        } else if (msg.type === 'vpad_p2p_end') {
+                            clearTimeout(timeoutTimer);
+                            try {
+                                const fullJson = chunks.join('');
+                                const parsed = JSON.parse(fullJson);
+                                channel.close();
+                                if (onStatus) onStatus('✅ データ受信完了！');
+                                resolve({ data: parsed, fileName: receivedFileName });
+                            } catch (err) {
+                                channel.close();
+                                reject(new Error('受信データのパースに失敗しました'));
+                            }
+                        }
+                    };
+
+                    // 送信リクエスト発行
+                    channel.postMessage({
+                        type: 'vpad_p2p_req',
+                        session: sessionId,
+                        pin: payload.pin
+                    });
+                    return;
+                }
+
+                reject(new Error('未対応のQRデータタイプです'));
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+}
+
 // ==================== 4. メインアプリケーションロジック ====================
 class VoicePadApp {
     constructor() {
@@ -2584,6 +3333,8 @@ class VoicePadApp {
         this.globalEqParams = { bass: 0, mid: 0, treble: 0 };
         this.currentEffect = 'normal'; // 旧プリセット名（互換用）
         this.globalPlaybackSpeed = 1.0; // 全体基本再生スピード
+        this.globalVolume = 1.0; // 🔊 全体マスター音量 (0.1〜3.0)
+        this.globalSoftClip = true; // 🛡️ 音割れ防止（ソフトクリッピング）
 
         this.scrolls = [];
         this.currentScrollId = null;
@@ -2661,6 +3412,7 @@ class VoicePadApp {
 
         this.initTheme();
         this.initTTS();
+        this.initGlobalAudioControls();
         this.initWaveformEvents();
         this.initKeyboardAndMidi();
         this.initAACScanController();
@@ -2671,6 +3423,9 @@ class VoicePadApp {
     async loadAllData() {
         this.pageSize = await this.storage.getSetting('pageSize', 32);
         this.globalPlaybackSpeed = await this.storage.getSetting('globalPlaybackSpeed', 1.0);
+        this.globalVolume = await this.storage.getSetting('globalVolume', 1.0);
+        this.globalSoftClip = await this.storage.getSetting('globalSoftClip', true);
+        this.updateGlobalAudioUI();
         
         // 全体ボイスパラメータのロード
         const savedVoiceParams = await this.storage.getSetting('globalVoiceParams', null);
@@ -2804,6 +3559,48 @@ class VoicePadApp {
             });
         }
         this.applyTheme(this.currentTheme);
+    }
+
+    // ==================== 🔊 グローバル音量＆ソフトクリッピング制御 ====================
+    initGlobalAudioControls() {
+        const slider = document.getElementById('global-volume-slider');
+        const softClipToggle = document.getElementById('global-softclip-toggle');
+
+        this.updateGlobalAudioUI();
+
+        if (slider) {
+            slider.addEventListener('input', async (e) => {
+                const val = parseFloat(e.target.value);
+                this.globalVolume = isNaN(val) ? 1.0 : Math.max(0.1, Math.min(3.0, val));
+                this.updateGlobalAudioUI();
+                await this.storage.saveSetting('globalVolume', this.globalVolume);
+            });
+        }
+
+        if (softClipToggle) {
+            softClipToggle.addEventListener('change', async (e) => {
+                this.globalSoftClip = e.target.checked;
+                await this.storage.saveSetting('globalSoftClip', this.globalSoftClip);
+                this.showToast(this.globalSoftClip ? '🛡️ 音割れ防止（ソフトクリップ）をONにしました' : '⚠️ 音割れ防止をOFFにしました');
+            });
+        }
+    }
+
+    updateGlobalAudioUI() {
+        const slider = document.getElementById('global-volume-slider');
+        const valLabel = document.getElementById('global-volume-val');
+        const softClipToggle = document.getElementById('global-softclip-toggle');
+
+        const vol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
+        if (slider && Math.abs(parseFloat(slider.value) - vol) > 0.001) {
+            slider.value = vol;
+        }
+        if (valLabel) {
+            valLabel.innerText = `${vol.toFixed(2)}x${vol > 1.0 ? ' 🚀' : ''}`;
+        }
+        if (softClipToggle) {
+            softClipToggle.checked = (this.globalSoftClip !== undefined) ? this.globalSoftClip : true;
+        }
     }
 
     getCurrentSlots() {
@@ -3545,6 +4342,9 @@ class VoicePadApp {
                         <button type="button" class="pad-action-btn btn-env" title="環境・エコー設定" data-slot-id="${slot.id}" aria-label="環境設定">
                             ⛰️
                         </button>
+                        <button type="button" class="pad-action-btn btn-tts ${slot.ttsText ? 'has-tts' : ''}" title="AI音声合成 (TTS) 設定" data-slot-id="${slot.id}" aria-label="AI音声設定">
+                            🤖
+                        </button>
                         <button type="button" class="pad-action-btn btn-lock ${isLocked ? 'is-locked' : ''}" title="${isLocked ? 'ロック中 (長押しで解除)' : 'スイッチ設定 (長押しでロック)'}" data-slot-id="${slot.id}" aria-label="${isLocked ? 'ロック解除' : 'スイッチ設定'}">
                             ${isLocked ? '🔒' : '⚙️'}
                         </button>
@@ -3582,6 +4382,18 @@ class VoicePadApp {
                         this.showToast(`🔒 ロックされています。解除するには⚙️/🔒を長押ししてください`);
                     } else {
                         this.openSlotEnvModal(slot.id);
+                    }
+                });
+            }
+
+            const btnTts = card.querySelector('.btn-tts');
+            if (btnTts) {
+                btnTts.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (slot.isLocked) {
+                        this.showToast(`🔒 ロックされています。解除するには⚙️/🔒を長押ししてください`);
+                    } else {
+                        this.openSlotTtsModal(slot.id);
                     }
                 });
             }
@@ -3975,6 +4787,7 @@ class VoicePadApp {
 
     // ==================== スクロール制御 ====================
     async switchScroll(scrollId) {
+        this.stopAllAudioPlayback();
         this.currentScrollId = scrollId;
         this.currentPage = 1;
         await this.storage.saveSetting('currentScrollId', scrollId);
@@ -4079,6 +4892,7 @@ class VoicePadApp {
 
     closeScrollModal() {
         this.stopFxPreview();
+        BlobUrlTracker.revokeCategory('preview');
         document.getElementById('scroll-modal-backdrop')?.classList.remove('open');
         this.editingScrollId = null;
     }
@@ -4269,6 +5083,8 @@ class VoicePadApp {
             playBtn?.classList.add('active');
             recBtn?.classList.remove('active');
             grid?.classList.remove('mode-record');
+            // 🔊 再生モード時はマイク占有を完全解放して高品質メディア再生モードへ復帰
+            this.releaseMicrophone();
         } else {
             recBtn?.classList.add('active');
             playBtn?.classList.remove('active');
@@ -4307,10 +5123,34 @@ class VoicePadApp {
                     autoGainControl: true
                 }
             });
+            window.localStream = this.audioStream;
             return this.audioStream;
         } catch (err) {
             console.error('Microphone error:', err);
             throw err;
+        }
+    }
+
+    /**
+     * 🎙️ マイクのハードウェア占有を完全に解放
+     * - iOS / iPadOS / Android でスピーカーが通話用音量になるのを防ぎ、TTSや音声再生を大音量・高音質に保つ
+     */
+    releaseMicrophone() {
+        if (this.audioStream) {
+            try {
+                this.audioStream.getTracks().forEach(track => {
+                    track.stop();
+                });
+            } catch (e) {
+                console.warn('Error releasing microphone tracks:', e);
+            }
+            this.audioStream = null;
+        }
+        if (window.localStream) {
+            try {
+                window.localStream.getTracks().forEach(track => track.stop());
+            } catch (e) {}
+            window.localStream = null;
         }
     }
 
@@ -4463,6 +5303,8 @@ class VoicePadApp {
         this.pcmRecorderHandled = false;
         this.recStartTime = 0;
         this.recSeconds = 0;
+        // 🎙️ マイクのハードウェア占有を完全に解放（スピーカーの音量低下・TTS無音化を防止）
+        this.releaseMicrophone();
     }
 
     // ==================== 音声再生制御（階層エフェクト＆スピード反映） ====================
@@ -4498,9 +5340,9 @@ class VoicePadApp {
         const specialParams = this.getEffectiveSpecialParams(slot);
         const effectiveSpeed = this.getEffectivePlaybackSpeed(slot);
 
-        // ① AI音声合成 (TTS) スロットの場合：自然な日本語音声で確実に発話
+        // ① AI音声合成 (TTS) スロットの場合：HTML5 Audio / Web Speech API で確実に発話
         if (slot.ttsText) {
-            this.legacyPlayTts(slot, voiceParams, envParams, effectiveSpeed);
+            this.playTtsSlot(slot, voiceParams, envParams, effectiveSpeed);
             return;
         }
 
@@ -4520,8 +5362,21 @@ class VoicePadApp {
             source.playbackRate.value = effectiveSpeed;
 
             const gainNode = ctx.createGain();
-            source.connect(gainNode);
-            gainNode.connect(ctx.destination);
+            const vol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
+            gainNode.gain.value = vol;
+
+            let shaperNode = null;
+            if (this.globalSoftClip) {
+                shaperNode = ctx.createWaveShaper();
+                shaperNode.curve = AudioUtils.getSoftClipCurve();
+                shaperNode.oversample = '2x';
+                source.connect(gainNode);
+                gainNode.connect(shaperNode);
+                shaperNode.connect(ctx.destination);
+            } else {
+                source.connect(gainNode);
+                gainNode.connect(ctx.destination);
+            }
 
             source.start(0);
 
@@ -4531,9 +5386,33 @@ class VoicePadApp {
                 card.classList.add('is-playing');
             }
 
-            this.activeSources.set(slotId, source);
+            const activeHandle = {
+                source,
+                gainNode,
+                shaperNode,
+                stop: () => {
+                    try { source.stop(); } catch (e) {}
+                    try { source.disconnect(); } catch (e) {}
+                    try { gainNode.disconnect(); } catch (e) {}
+                    if (shaperNode) { try { shaperNode.disconnect(); } catch (e) {} }
+                },
+                pause: () => {
+                    try { source.stop(); } catch (e) {}
+                    try { source.disconnect(); } catch (e) {}
+                    try { gainNode.disconnect(); } catch (e) {}
+                    if (shaperNode) { try { shaperNode.disconnect(); } catch (e) {} }
+                },
+                disconnect: () => {
+                    try { source.disconnect(); } catch (e) {}
+                    try { gainNode.disconnect(); } catch (e) {}
+                    if (shaperNode) { try { shaperNode.disconnect(); } catch (e) {} }
+                }
+            };
+
+            this.activeSources.set(slotId, activeHandle);
 
             source.onended = () => {
+                activeHandle.disconnect();
                 this.stopSlot(slotId);
             };
         } catch (err) {
@@ -4559,7 +5438,8 @@ class VoicePadApp {
             return;
         }
 
-        // ② SpeechSynthesis 非対応時のみ Web Audio API フォールバック
+        // ② SpeechSynthesis 非対応時、またはフォールバック：
+        // Web Audio 合成 ➜ WAV Blob ➜ HTML5 Audio (new Audio) で iPad/Safari の音量抑制・ダッキングを完全回避
         const ctx = AudioUnlocker.getContext();
         if (!ctx) return;
 
@@ -4573,22 +5453,23 @@ class VoicePadApp {
             const rawBuffer = TtsEngine.synthesizeToBuffer(slot.ttsText, ctx, voiceType, rate, pitch);
             const finalBuffer = VoiceEngine.processFull(rawBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
-            const source = ctx.createBufferSource();
-            source.buffer = finalBuffer;
-            source.playbackRate.value = speed;
+            const controller = this.playBufferViaHtmlAudio(
+                finalBuffer,
+                speed,
+                () => { this.stopSlot(slot.id); },
+                (err) => {
+                    console.error('HTML5 Audio TTS playback error:', err);
+                    this.stopSlot(slot.id);
+                }
+            );
 
-            const gainNode = ctx.createGain();
-            source.connect(gainNode);
-            gainNode.connect(ctx.destination);
-
-            source.start(0);
-            this.activeSources.set(slot.id, source);
-
-            source.onended = () => {
+            if (controller) {
+                this.activeSources.set(slot.id, controller);
+            } else {
                 this.stopSlot(slot.id);
-            };
+            }
         } catch (err) {
-            console.error('Web Audio TTS playback error:', err);
+            console.error('TTS playback error:', err);
             this.stopSlot(slot.id);
         }
     }
@@ -4613,17 +5494,10 @@ class VoicePadApp {
         if (allVoices.length > 0) this.ttsVoices = allVoices;
 
         const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uff9f\u4e00-\u9faf]/.test(slot.ttsText);
-        let selectedVoice = null;
-        if (slot.ttsVoice) {
-            selectedVoice = this.ttsVoices.find(v => v.name === slot.ttsVoice || v.voiceURI === slot.ttsVoice);
-        }
-        if (hasJapanese && selectedVoice && !selectedVoice.lang.startsWith('ja')) {
-            const jaVoice = this.ttsVoices.find(v => v.lang.startsWith('ja'));
-            if (jaVoice) selectedVoice = jaVoice;
-        }
-        if (!selectedVoice) {
-            selectedVoice = this.ttsVoices.find(v => v.lang.startsWith('ja')) || this.ttsVoices[0];
-        }
+        const resolved = this.resolveTtsVoice(slot.ttsVoice || 'ayumi');
+        let selectedVoice = resolved?.voice || null;
+        const isFemaleFallbackForMale = resolved?.isFemaleFallbackForMale || false;
+
         if (selectedVoice) {
             utter.voice = selectedVoice;
             utter.lang = (hasJapanese && !selectedVoice.lang.startsWith('ja')) ? 'ja-JP' : (selectedVoice.lang || 'ja-JP');
@@ -4639,18 +5513,27 @@ class VoicePadApp {
         const semitones = vParams.pitchSemitones || 0;
         const formant = vParams.formantRatio || 1.0;
         const pitchFactor = Math.pow(2, semitones / 12) * Math.sqrt(formant);
-        const calculatedPitch = Math.max(0.1, Math.min(2.0, basePitch * pitchFactor));
+        const malePitchAdjustment = isFemaleFallbackForMale ? 0.72 : 1.0;
+        const calculatedPitch = Math.max(0.2, Math.min(2.0, basePitch * pitchFactor * malePitchAdjustment));
 
         let calculatedRate = baseRate * speed;
         if (vParams.roughness > 30) calculatedRate *= 0.92;
         utter.pitch = calculatedPitch;
-        utter.rate = Math.max(0.1, Math.min(3.0, calculatedRate));
+        utter.rate = Math.max(0.5, Math.min(2.0, calculatedRate));
+
+        const vol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
+        utter.volume = Math.max(0.1, Math.min(1.0, vol));
 
         const ttsController = {
             stop: () => {
                 window.speechSynthesis.cancel();
                 window._activeUtterance = null;
-            }
+            },
+            pause: () => {
+                window.speechSynthesis.cancel();
+                window._activeUtterance = null;
+            },
+            disconnect: () => {}
         };
         this.activeSources.set(slot.id, ttsController);
 
@@ -4678,10 +5561,12 @@ class VoicePadApp {
     fallbackPlay(slot, slotId, speed = 1.0) {
         if (!slot || !slot.audioBlob) return;
         try {
-            const audioUrl = URL.createObjectURL(slot.audioBlob);
+            const vol = (this.globalVolume !== undefined && this.globalVolume !== null) ? Math.min(1.0, this.globalVolume) : 1.0;
+            const audioUrl = BlobUrlTracker.create(slot.audioBlob, 'playback');
             const audio = new Audio();
             audio.src = audioUrl;
             audio.playbackRate = speed;
+            audio.volume = Math.max(0.1, Math.min(1.0, vol));
 
             const card = document.getElementById(`pad-${slotId}`);
             if (card) {
@@ -4689,12 +5574,16 @@ class VoicePadApp {
                 card.classList.add('is-playing');
             }
 
+            let isCleanedUp = false;
             const cleanup = () => {
+                if (isCleanedUp) return;
+                isCleanedUp = true;
                 if (card) {
                     card.classList.remove('playing');
                     card.classList.remove('is-playing');
                 }
-                URL.revokeObjectURL(audioUrl);
+                BlobUrlTracker.revoke(audioUrl);
+                this.activeSources.delete(slotId);
             };
 
             audio.onended = cleanup;
@@ -4702,6 +5591,25 @@ class VoicePadApp {
                 console.warn('Fallback audio playback error:', e);
                 cleanup();
             };
+
+            const controller = {
+                audio: audio,
+                url: audioUrl,
+                stop: () => {
+                    try {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    } catch (e) {}
+                    cleanup();
+                },
+                pause: () => {
+                    try { audio.pause(); } catch (e) {}
+                },
+                disconnect: () => {
+                    cleanup();
+                }
+            };
+            this.activeSources.set(slotId, controller);
 
             const playPromise = audio.play();
             if (playPromise !== undefined) {
@@ -4715,23 +5623,165 @@ class VoicePadApp {
         }
     }
 
+    /**
+     * AudioBuffer を WAV Blob 化し、HTML5 Audio (new Audio) でネイティブ再生
+     * （iPad/iOS Safari における Web Audio API 音量ダッキング・抑制を回避）
+     * グローバル音量（0.1x〜3.0x）およびソフトクリッピング（音割れ防止）を適用
+     */
+    playBufferViaHtmlAudio(buffer, speed = 1.0, onEnded = null, onError = null) {
+        if (!buffer) return null;
+        try {
+            const vol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
+            const softClip = (this.globalSoftClip !== undefined) ? this.globalSoftClip : true;
+
+            const numChannels = buffer.numberOfChannels;
+            const length = buffer.length;
+            const sampleRate = buffer.sampleRate;
+            const ctx = AudioUnlocker.getContext();
+
+            let workingBuffer = buffer;
+            if (ctx) {
+                workingBuffer = ctx.createBuffer(numChannels, length, sampleRate);
+                for (let ch = 0; ch < numChannels; ch++) {
+                    const src = buffer.getChannelData(ch);
+                    const dst = workingBuffer.getChannelData(ch);
+                    for (let i = 0; i < length; i++) {
+                        let sample = src[i] * vol;
+                        if (softClip) {
+                            dst[i] = Math.tanh(sample);
+                        } else {
+                            dst[i] = Math.max(-1.0, Math.min(1.0, sample));
+                        }
+                    }
+                }
+            }
+
+            const wavBlob = AudioUtils.audioBufferToWav(workingBuffer);
+            const url = BlobUrlTracker.create(wavBlob, 'playback');
+            const audio = new Audio();
+            audio.src = url;
+            audio.playbackRate = Math.max(0.5, Math.min(2.0, speed || 1.0));
+
+            let isCleanedUp = false;
+            const cleanup = () => {
+                if (isCleanedUp) return;
+                isCleanedUp = true;
+                BlobUrlTracker.revoke(url);
+            };
+
+            const controller = {
+                audio: audio,
+                url: url,
+                stop: () => {
+                    try {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    } catch (e) {}
+                    cleanup();
+                },
+                pause: () => {
+                    try {
+                        audio.pause();
+                    } catch (e) {}
+                },
+                disconnect: () => {
+                    cleanup();
+                }
+            };
+
+            audio.onended = () => {
+                cleanup();
+                if (onEnded) onEnded();
+            };
+
+            audio.onerror = (e) => {
+                console.warn('HTML5 Audio playback error:', e);
+                cleanup();
+                if (onError) onError(e);
+            };
+
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                playPromise.catch((err) => {
+                    console.warn('HTML5 Audio play prevented:', err);
+                    cleanup();
+                    if (onError) onError(err);
+                });
+            }
+
+            return controller;
+        } catch (err) {
+            console.error('playBufferViaHtmlAudio exception:', err);
+            if (onError) onError(err);
+            return null;
+        }
+    }
+
     stopSlot(slotId) {
         if (this.activeSources.has(slotId)) {
             const source = this.activeSources.get(slotId);
             try {
-                source.stop();
+                if (source.stop) source.stop();
+                if (source.pause) source.pause();
                 if (source.disconnect) source.disconnect();
             } catch (e) {}
             this.activeSources.delete(slotId);
         }
         if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
+            try { window.speechSynthesis.cancel(); } catch (e) {}
         }
         const card = document.getElementById(`pad-${slotId}`);
         if (card) {
             card.classList.remove('playing');
             card.classList.remove('is-playing');
         }
+    }
+
+    /**
+     * 🛑 全ての音声再生・プレビュー・合成音の完全停止とメモリクリーンアップ
+     * - Web Audio ノードの切断 (.disconnect())
+     * - HTML5 Audio の停止・破棄
+     * - Web Speech API (speechSynthesis) のキャンセル
+     * - 再生中・プレビュー用 Blob URL の一括解放
+     * - UIの再生中インジケータ（.playing, .is-playing）の解除
+     */
+    stopAllAudioPlayback() {
+        if (this.activeSources && this.activeSources.size > 0) {
+            for (const [slotId, source] of this.activeSources.entries()) {
+                try {
+                    if (source.stop) source.stop();
+                    if (source.pause) source.pause();
+                    if (source.disconnect) source.disconnect();
+                } catch (e) {}
+            }
+            this.activeSources.clear();
+        }
+
+        if (this.fxPreviewSource) {
+            this.stopFxPreview();
+        }
+        if (this.waveformPreviewSource) {
+            this.stopWaveformPreview();
+        }
+        if (this.incomingAudioPreviewNode) {
+            this.stopIncomingAudioPreview();
+        }
+
+        if ('speechSynthesis' in window) {
+            try {
+                window.speechSynthesis.cancel();
+            } catch (e) {}
+        }
+        window._activeTtsPreviewUtterance = null;
+        window._activeUtterance = null;
+
+        BlobUrlTracker.revokeCategory('playback');
+        BlobUrlTracker.revokeCategory('preview');
+
+        document.querySelectorAll('.pad-card.playing, .pad-card.is-playing').forEach(card => {
+            card.classList.remove('playing');
+            card.classList.remove('is-playing');
+        });
     }
 
     // ==================== 5. 写真・エフェクト・スピード完全対応 3階層エクスポート＆インポート ====================
@@ -4834,27 +5884,38 @@ class VoicePadApp {
             }
         }
 
-        const url = URL.createObjectURL(blob);
+        const url = BlobUrlTracker.create(blob, 'download');
         const a = document.createElement('a');
         a.href = url;
         a.download = fileName;
         a.click();
-        URL.revokeObjectURL(url);
+        setTimeout(() => BlobUrlTracker.revoke(url), 1000);
         this.showToast(`💾 「${fileName}」を保存しました`);
     }
 
-    // ① 単一スイッチのエクスポート (.vpad-button)
-    async exportSingleSlot(slotId) {
-        const slot = this.slots.find(s => s.id === slotId);
-        if (!slot) return;
+    // ファイル直接ダウンロード保存（WebRTC/P2P受信時・AirDropダイアログをスキップして即保存）
+    downloadFileDirect(fileName, jsonString) {
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = BlobUrlTracker.create(blob, 'download');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => BlobUrlTracker.revoke(url), 1000);
+        this.showToast(`📥 「${fileName}」を保存しました`);
+    }
 
+    // ボタンの完全エクスポートオブジェクト構築ヘルパー
+    async buildSlotExportObject(slot) {
+        if (!slot) return null;
         let audioBlob = slot.audioBlob;
         if (!audioBlob && slot.audioBase64) {
             audioBlob = this.base64ToBlob(slot.audioBase64);
         }
-
         const audioBase64 = await this.blobToBase64(audioBlob);
-        const exportData = {
+        return {
             type: 'voicepad_slot',
             version: '2.4',
             exportedAt: new Date().toISOString(),
@@ -4882,10 +5943,147 @@ class VoicePadApp {
                 audioBase64: audioBase64
             }
         };
+    }
+
+    // ① 単一スイッチのエクスポート (.vpad-button)
+    async exportSingleSlot(slotId) {
+        const slot = this.slots.find(s => s.id === slotId);
+        if (!slot) return;
+
+        const exportData = await this.buildSlotExportObject(slot);
+        if (!exportData) return;
 
         const safeLabel = (slot.label || 'ボタン').replace(/[\\/:*?"<>|]/g, '_');
         const fileName = `VoicePad_ボタン_${safeLabel}.vpad-button`;
         await this.shareOrDownloadFile(fileName, JSON.stringify(exportData, null, 2), '単体ボタン');
+    }
+
+    // ==================== 📡 生徒側 P2Pデータ送信モーダル ====================
+    async openP2pSendModal(slotId) {
+        const slot = this.slots.find(s => s.id === slotId);
+        if (!slot) return;
+
+        const modal = document.getElementById('p2p-send-modal-backdrop');
+        const canvas = document.getElementById('p2p-send-qr-canvas');
+        const nameEl = document.getElementById('p2p-send-slot-name');
+        const emojiEl = document.getElementById('p2p-send-slot-emoji');
+        const metaEl = document.getElementById('p2p-send-slot-meta');
+        const pinEl = document.getElementById('p2p-send-pin');
+        const statusText = document.getElementById('p2p-send-status-text');
+
+        if (!modal || !canvas) return;
+
+        if (nameEl) nameEl.innerText = slot.label || 'ボタン';
+        if (emojiEl) {
+            if (slot.imageUrl) {
+                emojiEl.innerHTML = `<img src="${slot.imageUrl}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;">`;
+            } else {
+                emojiEl.innerText = slot.emoji || '🔊';
+            }
+        }
+        if (metaEl) {
+            const hasAudio = !!(slot.audioBlob || slot.audioBase64);
+            const dur = slot.duration ? `${slot.duration.toFixed(1)}秒` : '未録音';
+            metaEl.innerText = `🎙️ 音声: ${hasAudio ? dur : 'なし'} | ⚡ ${slot.playbackSpeed && slot.playbackSpeed !== 'inherit' ? slot.playbackSpeed + '倍速' : '標準'}`;
+        }
+
+        modal.classList.add('open');
+        if (statusText) statusText.innerText = '先生のカメラからの読み取りを待っています...';
+
+        const exportObj = await this.buildSlotExportObject(slot);
+        const host = P2PDataEngine.startHost(
+            exportObj,
+            (statusMsg) => {
+                if (statusText) statusText.innerText = statusMsg;
+            },
+            (progress) => {
+                if (statusText) statusText.innerText = `📡 送信中 (${Math.round(progress * 100)}%)...`;
+            },
+            () => {
+                this.showToast(`✨ ボタン「${slot.label || 'ボタン'}」の送信が完了しました！`);
+            }
+        );
+
+        if (pinEl) pinEl.innerText = host.pin;
+        QrEngine.renderToCanvas(canvas, host.qrPayload, { size: 220 });
+    }
+
+    cancelP2pSend() {
+        P2PDataEngine.stopHost();
+        document.getElementById('p2p-send-modal-backdrop')?.classList.remove('open');
+    }
+
+    // ==================== 📷 先生側 P2Pデータ受信（QRカメラ）モーダル ====================
+    async openP2pReceiveModal() {
+        this.closeScrollModal();
+
+        const modal = document.getElementById('p2p-receive-modal-backdrop');
+        const video = document.getElementById('p2p-scanner-video');
+        const canvas = document.getElementById('p2p-scanner-canvas');
+        const statusText = document.getElementById('p2p-receive-status-text');
+
+        if (!modal || !video) return;
+
+        modal.classList.add('open');
+        if (statusText) statusText.innerText = 'カメラを起動中...';
+
+        try {
+            await QrEngine.startCameraScanner(
+                video,
+                canvas,
+                (qrPayload) => this.onP2pQrDetected(qrPayload),
+                (statusMsg) => {
+                    if (statusText) statusText.innerText = statusMsg;
+                }
+            );
+        } catch (e) {
+            this.showToast('⚠️ カメラへのアクセスが拒否されたか利用できません');
+        }
+    }
+
+    stopP2pScanner() {
+        QrEngine.stopCameraScanner();
+        document.getElementById('p2p-receive-modal-backdrop')?.classList.remove('open');
+    }
+
+    async onP2pQrDetected(qrText) {
+        const statusText = document.getElementById('p2p-receive-status-text');
+        if (statusText) statusText.innerText = '📡 QRコードを検出しました。接続中...';
+
+        try {
+            const { data, fileName } = await P2PDataEngine.receiveFromQrPayload(
+                qrText,
+                (msg) => {
+                    if (statusText) statusText.innerText = msg;
+                },
+                (progress) => {
+                    if (statusText) statusText.innerText = `📥 受信中 (${Math.round(progress * 100)}%)...`;
+                }
+            );
+
+            // カメラ停止 & モーダル閉じる
+            this.stopP2pScanner();
+
+            // ① 自動ダウンロード保存（先生の端末に保存）
+            const jsonStr = JSON.stringify(data, null, 2);
+            this.downloadFileDirect(fileName, jsonStr);
+
+            // ② 受信プレビューモーダルを開いてスクロールへの追加を促す
+            await this.showIncomingShareModal(data, fileName);
+            this.showToast(`🎉 ボタン「${data.slot?.label || 'ボタン'}」を受信・保存しました！`);
+        } catch (err) {
+            console.error('P2P QR receive error:', err);
+            if (statusText) statusText.innerText = `⚠️ 受信エラー: ${err.message || '通信に失敗しました'}`;
+            setTimeout(() => {
+                if (document.getElementById('p2p-receive-modal-backdrop')?.classList.contains('open')) {
+                    const video = document.getElementById('p2p-scanner-video');
+                    const canvas = document.getElementById('p2p-scanner-canvas');
+                    QrEngine.startCameraScanner(video, canvas, (q) => this.onP2pQrDetected(q), (m) => {
+                        if (statusText) statusText.innerText = m;
+                    });
+                }
+            }, 2500);
+        }
     }
 
     // ② スクロール単位のエクスポート (.vpad-page)
@@ -5015,6 +6213,8 @@ class VoicePadApp {
                 globalEnvParams: this.globalEnvParams,
                 globalEqParams: this.globalEqParams,
                 globalPlaybackSpeed: this.globalPlaybackSpeed,
+                globalVolume: this.globalVolume,
+                globalSoftClip: this.globalSoftClip,
                 currentScrollId: this.currentScrollId,
                 theme: this.currentTheme,
                 aacScanActive: this.aacScanActive,
@@ -5106,6 +6306,15 @@ class VoicePadApp {
                         const globalSpeedSelect = document.getElementById('setting-global-speed');
                         if (globalSpeedSelect) globalSpeedSelect.value = String(this.globalPlaybackSpeed);
                     }
+                    if (data.settings?.globalVolume !== undefined) {
+                        this.globalVolume = parseFloat(data.settings.globalVolume) || 1.0;
+                        await this.storage.saveSetting('globalVolume', this.globalVolume);
+                    }
+                    if (data.settings?.globalSoftClip !== undefined) {
+                        this.globalSoftClip = !!data.settings.globalSoftClip;
+                        await this.storage.saveSetting('globalSoftClip', this.globalSoftClip);
+                    }
+                    this.updateGlobalAudioUI();
 
                     if (Array.isArray(data.scrolls)) {
                         for (const s of data.scrolls) {
@@ -5265,6 +6474,16 @@ class VoicePadApp {
         document.getElementById('export-single-slot-btn')?.addEventListener('click', () => {
             if (this.editingSlotId) this.exportSingleSlot(this.editingSlotId);
         });
+        // 📡 生徒側 WebRTC P2P送信ボタン
+        document.getElementById('btn-slot-webrtc-send')?.addEventListener('click', () => {
+            if (this.editingSlotId) this.openP2pSendModal(this.editingSlotId);
+        });
+        document.getElementById('close-p2p-send-modal-btn')?.addEventListener('click', () => this.cancelP2pSend());
+        document.getElementById('btn-cancel-p2p-send')?.addEventListener('click', () => this.cancelP2pSend());
+        document.getElementById('p2p-send-modal-backdrop')?.addEventListener('click', (e) => {
+            if (e.target.id === 'p2p-send-modal-backdrop') this.cancelP2pSend();
+        });
+
         document.getElementById('duplicate-slot-btn')?.addEventListener('click', () => {
             if (this.editingSlotId) this.duplicateSlot(this.editingSlotId);
         });
@@ -5285,6 +6504,7 @@ class VoicePadApp {
         });
 
         // 🗣️ スイッチ専用クイック【声質】モーダル
+        document.getElementById('btn-clear-slot-voice')?.addEventListener('click', () => this.clearSlotVoiceSettings());
         document.getElementById('close-slot-voice-modal-btn')?.addEventListener('click', () => this.closeSlotVoiceModal());
         document.getElementById('slot-voice-modal-backdrop')?.addEventListener('click', (e) => {
             if (e.target.id === 'slot-voice-modal-backdrop') this.closeSlotVoiceModal();
@@ -5293,12 +6513,23 @@ class VoicePadApp {
         document.getElementById('btn-quick-voice-preview')?.addEventListener('click', () => this.previewQuickVoiceEffect());
 
         // ⛰️ スイッチ専用クイック【環境】モーダル
+        document.getElementById('btn-clear-slot-env')?.addEventListener('click', () => this.clearSlotEnvSettings());
         document.getElementById('close-slot-env-modal-btn')?.addEventListener('click', () => this.closeSlotEnvModal());
         document.getElementById('slot-env-modal-backdrop')?.addEventListener('click', (e) => {
             if (e.target.id === 'slot-env-modal-backdrop') this.closeSlotEnvModal();
         });
         document.getElementById('save-slot-env-btn')?.addEventListener('click', () => this.saveSlotEnvModal());
         document.getElementById('btn-quick-env-preview')?.addEventListener('click', () => this.previewQuickEnvEffect());
+
+        // 🤖 スイッチ専用クイック【AI音声 (TTS)】モーダル
+        document.getElementById('btn-clear-slot-tts')?.addEventListener('click', () => this.clearSlotTtsSettings());
+        document.getElementById('close-slot-tts-modal-btn')?.addEventListener('click', () => this.closeSlotTtsModal());
+        document.getElementById('slot-tts-modal-backdrop')?.addEventListener('click', (e) => {
+            if (e.target.id === 'slot-tts-modal-backdrop') this.closeSlotTtsModal();
+        });
+        document.getElementById('save-slot-tts-btn')?.addEventListener('click', () => this.saveSlotTtsModal());
+        document.getElementById('btn-slot-tts-preview')?.addEventListener('click', () => this.previewSlotTtsModal());
+        document.getElementById('delete-slot-tts-btn')?.addEventListener('click', () => this.deleteSlotTtsAudio());
 
         // 🎛️ パラメータ調整直下のインライン試聴ボタン一括バインド
         document.querySelectorAll('.btn-inline-voice-preview').forEach(btn => {
@@ -5314,14 +6545,6 @@ class VoicePadApp {
                 e.preventDefault();
                 e.stopPropagation();
                 this.previewQuickEnvEffect();
-            });
-        });
-
-        document.querySelectorAll('.btn-inline-slot-preview').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.previewSlotEffect();
             });
         });
 
@@ -5343,6 +6566,15 @@ class VoicePadApp {
         document.getElementById('save-scroll-btn')?.addEventListener('click', () => this.saveScrollModal());
         document.getElementById('export-scroll-btn')?.addEventListener('click', () => {
             if (this.editingScrollId) this.exportScroll(this.editingScrollId);
+        });
+        // 📡 先生側 WebRTC P2Pインポートボタン（QRカメラ読取）
+        document.getElementById('btn-scroll-webrtc-import')?.addEventListener('click', () => {
+            this.openP2pReceiveModal();
+        });
+        document.getElementById('close-p2p-receive-modal-btn')?.addEventListener('click', () => this.stopP2pScanner());
+        document.getElementById('btn-cancel-p2p-receive')?.addEventListener('click', () => this.stopP2pScanner());
+        document.getElementById('p2p-receive-modal-backdrop')?.addEventListener('click', (e) => {
+            if (e.target.id === 'p2p-receive-modal-backdrop') this.stopP2pScanner();
         });
         document.getElementById('duplicate-scroll-btn')?.addEventListener('click', () => this.duplicateCurrentScroll());
         document.getElementById('delete-scroll-btn')?.addEventListener('click', () => this.deleteScrollModal());
@@ -5503,28 +6735,6 @@ class VoicePadApp {
         const labelInput = document.getElementById('edit-label');
         if (labelInput) labelInput.value = slot.label;
 
-        // ボイスエフェクトモード＆2ステージパラメータ同期
-        const modeSelect = document.getElementById('edit-slot-effect-mode');
-        const panel = document.getElementById('slot-fx-custom-panel');
-        const isCustom = (slot.voiceEffectMode === 'custom') || (slot.voiceEffect && slot.voiceEffect !== 'inherit');
-        if (modeSelect) modeSelect.value = isCustom ? 'custom' : 'inherit';
-        if (panel) panel.style.display = isCustom ? 'flex' : 'none';
-
-        const initialVoice = slot.voiceParams || (slot.voiceEffect ? VoiceEngine.presetToParams(slot.voiceEffect).voice : VoiceEngine.defaultVoiceParams());
-        const initialEnv = slot.envParams || (slot.voiceEffect ? VoiceEngine.presetToParams(slot.voiceEffect).env : VoiceEngine.defaultEnvParams());
-        const initialEq = slot.eqParams || (slot.voiceEffect ? VoiceEngine.presetToParams(slot.voiceEffect).eq : { bass: 0, mid: 0, treble: 0 });
-        const initialSpecial = slot.specialParams || (slot.voiceEffect ? VoiceEngine.presetToParams(slot.voiceEffect).special : null);
-        const effectiveSpeed = this.getEffectivePlaybackSpeed(slot);
-        const currentSpeed = (slot.playbackSpeed && slot.playbackSpeed !== 'inherit') ? parseFloat(slot.playbackSpeed) : effectiveSpeed;
-        this.setFxParamsToUI('slot', initialVoice, initialEnv, initialEq, initialSpecial, currentSpeed);
-
-        // Voicemod風 プリセットカード一覧を描画
-        this.renderVoicemodPresetCards('slot-voicemod-grid', 'all', 'slot');
-        document.querySelectorAll('#slot-voicemod-tabs .vm-tab-btn').forEach(b => {
-            if (b.getAttribute('data-category') === 'all') b.classList.add('active');
-            else b.classList.remove('active');
-        });
-
         // スピード設定同期
         const speedSelect = document.getElementById('edit-slot-speed');
         if (speedSelect) {
@@ -5579,43 +6789,6 @@ class VoicePadApp {
 
         this.updateModalPhotoPreview();
 
-        // 🤖 AI TTS設定の同期
-        this.populateTtsVoices();
-        this._selectedTtsPresetKey = slot.ttsVoice || 'girl';
-        const ttsInput = document.getElementById('tts-input-text');
-        if (ttsInput) {
-            ttsInput.value = slot.ttsText || '';
-            setTimeout(() => this.adjustTtsTextarea(ttsInput), 10);
-        }
-        const ttsVoiceSelect = document.getElementById('tts-voice-select');
-        if (ttsVoiceSelect && slot.ttsVoice) ttsVoiceSelect.value = slot.ttsVoice;
-        const currentRate = slot.ttsRate || 1.0;
-        const currentPitch = slot.ttsPitch || 1.0;
-        const ttsRateSlider = document.getElementById('tts-rate-slider');
-        if (ttsRateSlider) {
-            ttsRateSlider.value = currentRate;
-            const rateVal = document.getElementById('tts-rate-val');
-            if (rateVal) rateVal.innerText = `${parseFloat(currentRate).toFixed(2)}x`;
-        }
-        const ttsPitchSlider = document.getElementById('tts-pitch-slider');
-        if (ttsPitchSlider) {
-            ttsPitchSlider.value = currentPitch;
-            const pitchVal = document.getElementById('tts-pitch-val');
-            if (pitchVal) pitchVal.innerText = `${parseFloat(currentPitch).toFixed(2)}`;
-        }
-
-        // プリセットチップのアクティブ状態判定
-        this.clearTtsPresetActiveState();
-        if (Math.abs(currentPitch - 1.40) < 0.08) {
-            document.querySelector('#tts-preset-chips button[data-tts-preset="girl"]')?.classList.add('active');
-        } else if (Math.abs(currentPitch - 1.25) < 0.08) {
-            document.querySelector('#tts-preset-chips button[data-tts-preset="boy"]')?.classList.add('active');
-        } else if (Math.abs(currentPitch - 0.65) < 0.08) {
-            document.querySelector('#tts-preset-chips button[data-tts-preset="man"]')?.classList.add('active');
-        } else if (Math.abs(currentPitch - 1.0) < 0.08 && Math.abs(currentRate - 1.0) < 0.08) {
-            document.querySelector('#tts-preset-chips button[data-tts-preset="woman"]')?.classList.add('active');
-        }
-
         // ✂️ 波形エディターの同期＆描画（録音データがある時のみ）
         this.initWaveformForSlot(slot);
 
@@ -5635,9 +6808,11 @@ class VoicePadApp {
     closeEditModal() {
         this.stopWaveformPreview();
         this.stopFxPreview();
+        this.waveformAudioBuffer = null;
         if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
+            try { window.speechSynthesis.cancel(); } catch (e) {}
         }
+        BlobUrlTracker.revokeCategory('preview');
         document.getElementById('modal-backdrop')?.classList.remove('open');
         this.editingSlotId = null;
     }
@@ -5650,7 +6825,6 @@ class VoicePadApp {
         const labelInput = document.getElementById('edit-label')?.value.trim();
         const emojiInput = document.getElementById('edit-emoji')?.value.trim();
         const labelPos = document.getElementById('edit-label-pos')?.value || 'bottom';
-        const modeSelect = document.getElementById('edit-slot-effect-mode');
         const speedSelect = document.getElementById('edit-slot-speed');
 
         slot.label = labelInput || `ボタン`;
@@ -5662,34 +6836,8 @@ class VoicePadApp {
         slot.imageOffsetY = this.editingImageOffsetY;
         slot.imageFit = this.editingImageFit;
 
-        slot.voiceEffectMode = modeSelect ? modeSelect.value : 'inherit';
-
-        if (slot.voiceEffectMode === 'custom') {
-            const { voiceParams, envParams, eqParams, specialParams, speed } = this.getFxParamsFromUI('slot');
-            slot.voiceParams = voiceParams;
-            slot.envParams = envParams;
-            slot.eqParams = eqParams;
-            slot.specialParams = specialParams;
-            slot.voiceEffect = 'custom';
-            if (speedSelect && speedSelect.value !== 'inherit') {
-                slot.playbackSpeed = String(speed);
-            }
-        } else {
-            slot.voiceEffect = 'inherit';
-        }
-
-        // 🤖 AI TTSテキストの同期
-        const ttsInputText = document.getElementById('tts-input-text')?.value.trim();
-        if (ttsInputText) {
-            slot.ttsText = ttsInputText;
-            slot.ttsRate = parseFloat(document.getElementById('tts-rate-slider')?.value || '1.0');
-            slot.ttsPitch = parseFloat(document.getElementById('tts-pitch-slider')?.value || '1.0');
-            const voiceSelect = document.getElementById('tts-voice-select');
-            slot.ttsVoice = voiceSelect ? voiceSelect.value : (this._selectedTtsPresetKey || 'woman');
-            slot.duration = Math.max(0.5, (ttsInputText.length * 0.18) / slot.ttsRate);
-            // 以前の古いオシレーター録音Blobを消去して確実にTTS読み上げモードへ
-            slot.audioBlob = null;
-            slot.audioBase64 = null;
+        if (speedSelect) {
+            slot.playbackSpeed = speedSelect.value;
         }
 
         await this.storage.saveSlot(slot);
@@ -5720,14 +6868,14 @@ class VoicePadApp {
         if (!this.editingSlotId) return;
         const slot = this.slots.find(s => s.id === this.editingSlotId);
         if (slot && slot.audioBlob) {
-            const url = URL.createObjectURL(slot.audioBlob);
+            const url = BlobUrlTracker.create(slot.audioBlob, 'download');
             const a = document.createElement('a');
             a.href = url;
-            const ext = slot.audioBlob.type.includes('mp4') ? 'm4a' : 'webm';
+            const ext = slot.audioBlob.type.includes('mp4') ? 'm4a' : (slot.audioBlob.type.includes('wav') ? 'wav' : 'webm');
             const safeLabel = (slot.label || 'voice').replace(/[\\/:*?"<>|]/g, '_');
             a.download = `${safeLabel}.${ext}`;
             a.click();
-            URL.revokeObjectURL(url);
+            setTimeout(() => BlobUrlTracker.revoke(url), 1000);
         }
     }
 
@@ -5954,7 +7102,6 @@ class VoicePadApp {
 
     // ==================== 🎙️ Voicemod スタイル ボイスラボ UIバインディング ＆ 試聴 ====================
     initVoiceEngineUIEvents() {
-        this.bindFxSliders('slot');
         this.bindFxSliders('scroll');
         this.bindFxSliders('global');
         this.bindFxSliders('quick-voice');
@@ -5962,21 +7109,10 @@ class VoicePadApp {
         this.initVoicemodCategoryTabs();
         this.initEnvironmentCategoryTabs();
 
-        // スロットモーダルのモード切り替え
-        document.getElementById('edit-slot-effect-mode')?.addEventListener('change', (e) => {
-            const panel = document.getElementById('slot-fx-custom-panel');
-            if (panel) panel.style.display = e.target.value === 'custom' ? 'flex' : 'none';
-        });
-
         // スクロールモーダルのモード切り替え
         document.getElementById('edit-scroll-effect-mode')?.addEventListener('change', (e) => {
             const panel = document.getElementById('scroll-fx-custom-panel');
             if (panel) panel.style.display = e.target.value === 'custom' ? 'flex' : 'none';
-        });
-
-        // スロット個別エフェクト試聴ボタン
-        document.getElementById('btn-slot-fx-preview')?.addEventListener('click', () => {
-            this.previewSlotEffect();
         });
 
         // スクロールエフェクト試聴ボタン
@@ -6569,14 +7705,17 @@ class VoicePadApp {
                 const originalBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arr);
                 const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
-                const src = ctx.createBufferSource();
-                src.buffer = processed;
-                src.playbackRate.value = speed;
-                src.connect(ctx.destination);
-                src.start(0);
-                this.fxPreviewSource = src;
+                const controller = this.playBufferViaHtmlAudio(
+                    processed,
+                    speed,
+                    () => { this.fxPreviewSource = null; },
+                    (err) => {
+                        console.error('Preview error:', err);
+                        this.fxPreviewSource = null;
+                    }
+                );
+                this.fxPreviewSource = controller;
                 this.showToast('▶️ 設定した声質・スピードで音声を試聴中...');
-                src.onended = () => { this.fxPreviewSource = null; };
             } catch (err) {
                 console.error('Preview error:', err);
             }
@@ -6593,6 +7732,7 @@ class VoicePadApp {
             } catch (e) {}
             this.fxPreviewSource = null;
         }
+        BlobUrlTracker.revokeCategory('preview');
     }
 
     // ==================== ⚙️ 全体設定・ガイド・QR・アップデートモーダル制御 ====================
@@ -6832,14 +7972,17 @@ class VoicePadApp {
                 const originalBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arr);
                 const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
-                const src = ctx.createBufferSource();
-                src.buffer = processed;
-                src.playbackRate.value = speed;
-                src.connect(ctx.destination);
-                src.start(0);
-                this.fxPreviewSource = src;
+                const controller = this.playBufferViaHtmlAudio(
+                    processed,
+                    speed,
+                    () => { this.fxPreviewSource = null; },
+                    (err) => {
+                        console.error('Preview error:', err);
+                        this.fxPreviewSource = null;
+                    }
+                );
+                this.fxPreviewSource = controller;
                 this.showToast('▶️ 設定した声質・EQ・エフェクトで試聴中...');
-                src.onended = () => { this.fxPreviewSource = null; };
             } catch (err) {
                 console.error('Preview error:', err);
             }
@@ -6970,14 +8113,17 @@ class VoicePadApp {
                 const originalBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arr);
                 const processed = VoiceEngine.processFull(originalBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
-                const src = ctx.createBufferSource();
-                src.buffer = processed;
-                src.playbackRate.value = speed;
-                src.connect(ctx.destination);
-                src.start(0);
-                this.fxPreviewSource = src;
+                const controller = this.playBufferViaHtmlAudio(
+                    processed,
+                    speed,
+                    () => { this.fxPreviewSource = null; },
+                    (err) => {
+                        console.error('Preview error:', err);
+                        this.fxPreviewSource = null;
+                    }
+                );
+                this.fxPreviewSource = controller;
                 this.showToast('▶️ 設定した環境エフェクトで試聴中...');
-                src.onended = () => { this.fxPreviewSource = null; };
             } catch (err) {
                 console.error('Preview error:', err);
             }
@@ -6990,56 +8136,152 @@ class VoicePadApp {
         this.stopFxPreview();
         const buffer = VoiceEngine.generateNaturalVowelBuffer(ctx, 1.1);
         const processed = VoiceEngine.processFull(buffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
-        const src = ctx.createBufferSource();
-        src.buffer = processed;
-        src.playbackRate.value = speed;
-        src.connect(ctx.destination);
-        src.start(0);
-        this.fxPreviewSource = src;
+        const controller = this.playBufferViaHtmlAudio(
+            processed,
+            speed,
+            () => { this.fxPreviewSource = null; },
+            (err) => {
+                console.error('Preview error:', err);
+                this.fxPreviewSource = null;
+            }
+        );
+        this.fxPreviewSource = controller;
         this.showToast('▶️ 自然な肉声サンプル（あー）でエフェクトを試聴中...');
-        src.onended = () => { this.fxPreviewSource = null; };
     }
 
-    // ==================== 🤖 AI音声合成 (TTS) エンジン ====================
+    // ==================== 🗑️ モーダル用 オールクリア処理 ====================
+    clearSlotVoiceSettings() {
+        const modeSelect = document.getElementById('slot-quick-voice-mode');
+        if (modeSelect) modeSelect.value = 'inherit';
+
+        const pitchSlider = document.getElementById('quick-voice-pitch-slider');
+        const formantSlider = document.getElementById('quick-voice-formant-slider');
+        const roughSlider = document.getElementById('quick-voice-rough-slider');
+        const speedSlider = document.getElementById('quick-voice-speed-slider');
+
+        if (pitchSlider) { pitchSlider.value = 0; pitchSlider.dispatchEvent(new Event('input')); }
+        if (formantSlider) { formantSlider.value = 1.0; formantSlider.dispatchEvent(new Event('input')); }
+        if (roughSlider) { roughSlider.value = 0; roughSlider.dispatchEvent(new Event('input')); }
+        if (speedSlider) { speedSlider.value = 1.0; speedSlider.dispatchEvent(new Event('input')); }
+
+        const eqBass = document.getElementById('quick-voice-eq-bass-slider');
+        const eqMid = document.getElementById('quick-voice-eq-mid-slider');
+        const eqTreble = document.getElementById('quick-voice-eq-treble-slider');
+        if (eqBass) { eqBass.value = 0; eqBass.dispatchEvent(new Event('input')); }
+        if (eqMid) { eqMid.value = 0; eqMid.dispatchEvent(new Event('input')); }
+        if (eqTreble) { eqTreble.value = 0; eqTreble.dispatchEvent(new Event('input')); }
+
+        const spChorus = document.getElementById('quick-voice-special-chorus-slider');
+        const spRadio = document.getElementById('quick-voice-special-radio-slider');
+        const spTrash = document.getElementById('quick-voice-special-trash-slider');
+        if (spChorus) { spChorus.value = 0; spChorus.dispatchEvent(new Event('input')); }
+        if (spRadio) { spRadio.value = 0; spRadio.dispatchEvent(new Event('input')); }
+        if (spTrash) { spTrash.value = 0; spTrash.dispatchEvent(new Event('input')); }
+
+        document.querySelectorAll('#quick-voice-preset-chips .fx-chip-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#quick-voice-voicemod-grid .vm-card').forEach(b => b.classList.remove('active'));
+
+        this.showToast('🗑️ 声質設定をすべて初期化（クリア）しました');
+    }
+
+    clearSlotEnvSettings() {
+        const modeSelect = document.getElementById('slot-quick-env-mode');
+        if (modeSelect) modeSelect.value = 'inherit';
+
+        const reverbSlider = document.getElementById('quick-env-reverb-slider');
+        const filterSlider = document.getElementById('quick-env-filter-slider');
+        const modSlider = document.getElementById('quick-env-mod-slider');
+        const ambVolSlider = document.getElementById('quick-env-ambient-vol-slider');
+        const ambSoundSelect = document.getElementById('quick-env-ambient-sound-select');
+
+        if (reverbSlider) { reverbSlider.value = 0; reverbSlider.dispatchEvent(new Event('input')); }
+        if (filterSlider) { filterSlider.value = 0; filterSlider.dispatchEvent(new Event('input')); }
+        if (modSlider) { modSlider.value = 0; modSlider.dispatchEvent(new Event('input')); }
+        if (ambVolSlider) { ambVolSlider.value = 35; ambVolSlider.dispatchEvent(new Event('input')); }
+        if (ambSoundSelect) { ambSoundSelect.value = 'none'; }
+
+        document.querySelectorAll('#quick-env-voicemod-grid .vm-card').forEach(b => b.classList.remove('active'));
+
+        this.showToast('🗑️ 環境設定をすべて初期化（クリア）しました');
+    }
+
+    clearSlotTtsSettings() {
+        const ttsInput = document.getElementById('slot-tts-input-text');
+        if (ttsInput) {
+            ttsInput.value = '';
+            this.adjustTtsTextarea(ttsInput);
+        }
+
+        const rateSlider = document.getElementById('slot-tts-rate-slider');
+        if (rateSlider) {
+            rateSlider.value = 1.0;
+            const rateVal = document.getElementById('slot-tts-rate-val');
+            if (rateVal) rateVal.innerText = '1.00x (標準)';
+        }
+
+        const pitchSlider = document.getElementById('slot-tts-pitch-slider');
+        if (pitchSlider) {
+            pitchSlider.value = 1.0;
+            const pitchVal = document.getElementById('slot-tts-pitch-val');
+            if (pitchVal) pitchVal.innerText = '1.00 (標準)';
+        }
+
+        this.selectTtsVoiceChip('ayumi');
+
+        this.showToast('🗑️ AI音声設定をすべてクリアしました');
+    }
+
+    // ==================== 🤖 AI音声合成 (TTS) エンジン ＆ 専用モーダル ====================
     initTTS() {
         if ('speechSynthesis' in window) {
-            this.populateTtsVoices();
             window.speechSynthesis.onvoiceschanged = () => {
-                this.populateTtsVoices();
+                this.ttsVoices = window.speechSynthesis.getVoices();
             };
         }
 
-        const ttsInput = document.getElementById('tts-input-text');
+        const ttsInput = document.getElementById('slot-tts-input-text');
         if (ttsInput) {
             ttsInput.addEventListener('input', () => {
                 this.adjustTtsTextarea(ttsInput);
             });
         }
 
-        const rateSlider = document.getElementById('tts-rate-slider');
+        const rateSlider = document.getElementById('slot-tts-rate-slider');
         if (rateSlider) {
             rateSlider.addEventListener('input', (e) => {
-                const valEl = document.getElementById('tts-rate-val');
-                if (valEl) valEl.innerText = `${parseFloat(e.target.value).toFixed(2)}x`;
-                this.clearTtsPresetActiveState();
+                const val = parseFloat(e.target.value);
+                const valEl = document.getElementById('slot-tts-rate-val');
+                if (valEl) {
+                    let hint = '';
+                    if (val < 0.8) hint = ' (ゆっくり)';
+                    else if (val > 1.2) hint = ' (早口)';
+                    else hint = ' (標準)';
+                    valEl.innerText = `${val.toFixed(2)}x${hint}`;
+                }
             });
         }
 
-        const pitchSlider = document.getElementById('tts-pitch-slider');
+        const pitchSlider = document.getElementById('slot-tts-pitch-slider');
         if (pitchSlider) {
             pitchSlider.addEventListener('input', (e) => {
-                const valEl = document.getElementById('tts-pitch-val');
-                if (valEl) valEl.innerText = `${parseFloat(e.target.value).toFixed(2)}`;
-                this.clearTtsPresetActiveState();
+                const val = parseFloat(e.target.value);
+                const valEl = document.getElementById('slot-tts-pitch-val');
+                if (valEl) {
+                    let hint = '';
+                    if (val < 0.8) hint = ' (低い声)';
+                    else if (val > 1.2) hint = ' (高い声)';
+                    else hint = ' (標準)';
+                    valEl.innerText = `${val.toFixed(2)}${hint}`;
+                }
             });
         }
 
-        // 🎭 声のキャラクター・クイックプリセットボタン
-        document.querySelectorAll('#tts-preset-chips .fx-chip-btn').forEach(btn => {
+        // 🎙️ 日本語ベース音声（話者）スイッチボタン (あゆみ, はるか, いちろう, さやか, Google)
+        document.querySelectorAll('#slot-tts-voice-chips .fx-chip-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                const presetKey = btn.getAttribute('data-tts-preset');
-                if (presetKey) {
-                    this.applyTtsPreset(presetKey);
+                const voiceKey = btn.getAttribute('data-tts-voice');
+                if (voiceKey) {
+                    this.selectTtsVoiceChip(voiceKey);
                 }
             });
         });
@@ -7048,7 +8290,7 @@ class VoicePadApp {
         document.querySelectorAll('.tts-pause-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const pauseType = btn.getAttribute('data-pause');
-                const ttsTextarea = document.getElementById('tts-input-text');
+                const ttsTextarea = document.getElementById('slot-tts-input-text');
                 if (!ttsTextarea) return;
 
                 const start = ttsTextarea.selectionStart || ttsTextarea.value.length;
@@ -7071,9 +8313,124 @@ class VoicePadApp {
                 ttsTextarea.focus();
             });
         });
+    }
 
-        document.getElementById('btn-tts-preview')?.addEventListener('click', () => this.previewTts());
-        document.getElementById('btn-tts-apply')?.addEventListener('click', () => this.applyTtsToSlot());
+    selectTtsVoiceChip(voiceKey = 'ayumi') {
+        this._selectedTtsVoiceKey = voiceKey;
+        document.querySelectorAll('#slot-tts-voice-chips .fx-chip-btn').forEach(btn => {
+            if (btn.getAttribute('data-tts-voice') === voiceKey) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
+    resolveTtsVoice(voiceKey = 'ayumi') {
+        const allVoices = ('speechSynthesis' in window) ? (window.speechSynthesis.getVoices() || []) : [];
+        const jaVoices = allVoices.filter(v => v.lang && v.lang.startsWith('ja'));
+        const key = (voiceKey || 'ayumi').toLowerCase();
+
+        let matched = null;
+        let isMaleRole = false;
+        let isFemaleFallbackForMale = false;
+
+        if (key === 'ayumi') {
+            matched = jaVoices.find(v => /ayumi/i.test(v.name));
+            if (!matched) matched = jaVoices.find(v => /female|kyoko|nanami|haruka|sayaka|mizuki/i.test(v.name));
+        } else if (key === 'haruka') {
+            matched = jaVoices.find(v => /haruka/i.test(v.name));
+            if (!matched) matched = jaVoices.find(v => /female|kyoko|nanami|ayumi|sayaka/i.test(v.name));
+        } else if (key === 'ichiro') {
+            isMaleRole = true;
+            matched = jaVoices.find(v => /ichiro/i.test(v.name));
+            if (!matched) matched = jaVoices.find(v => /otoya|keita|takumi|kenji|daichi|male/i.test(v.name));
+            // 男性音声が見つからない場合、女性音声にフォールバックしたことをフラグ化
+            if (!matched) {
+                matched = jaVoices.find(v => /female|kyoko|nanami|ayumi|sayaka|mizuki/i.test(v.name)) || jaVoices[0];
+                isFemaleFallbackForMale = true;
+            }
+        } else if (key === 'sayaka') {
+            matched = jaVoices.find(v => /sayaka/i.test(v.name));
+            if (!matched) matched = jaVoices.find(v => /female|kyoko|nanami|haruka|ayumi/i.test(v.name));
+        } else if (key === 'google') {
+            matched = jaVoices.find(v => /google|日本語/i.test(v.name));
+            if (!matched) matched = jaVoices.find(v => /kyoko/i.test(v.name));
+        }
+
+        if (!matched && jaVoices.length > 0) {
+            matched = jaVoices[0];
+        }
+
+        return {
+            voice: matched,
+            isMaleRole,
+            isFemaleFallbackForMale
+        };
+    }
+
+    openSlotTtsModal(slotId) {
+        this.editingTtsSlotId = slotId;
+        const slot = this.slots.find(s => s.id === slotId);
+        if (!slot) return;
+
+        const currentSlots = this.getCurrentSlots();
+        const displayIndex = currentSlots.findIndex(s => s.id === slotId) + 1;
+        const modalNumEl = document.getElementById('tts-modal-slot-num');
+        if (modalNumEl) modalNumEl.innerText = displayIndex > 0 ? displayIndex : '';
+
+        // 過去の後方互換マッピング（girl->ayumi, boy->ichiro, woman->ayumi, man->ichiro）
+        let initialVoice = slot.ttsVoice || 'ayumi';
+        if (initialVoice === 'girl' || initialVoice === 'woman') initialVoice = 'ayumi';
+        if (initialVoice === 'boy' || initialVoice === 'man') initialVoice = 'ichiro';
+        this.selectTtsVoiceChip(initialVoice);
+
+        const ttsInput = document.getElementById('slot-tts-input-text');
+        if (ttsInput) {
+            ttsInput.value = slot.ttsText || '';
+            setTimeout(() => this.adjustTtsTextarea(ttsInput), 10);
+        }
+
+        const currentRate = slot.ttsRate || 1.0;
+        const currentPitch = slot.ttsPitch || 1.0;
+
+        const ttsRateSlider = document.getElementById('slot-tts-rate-slider');
+        if (ttsRateSlider) {
+            ttsRateSlider.value = currentRate;
+            const rateVal = document.getElementById('slot-tts-rate-val');
+            if (rateVal) {
+                let hint = currentRate < 0.8 ? ' (ゆっくり)' : (currentRate > 1.2 ? ' (早口)' : ' (標準)');
+                rateVal.innerText = `${parseFloat(currentRate).toFixed(2)}x${hint}`;
+            }
+        }
+
+        const ttsPitchSlider = document.getElementById('slot-tts-pitch-slider');
+        if (ttsPitchSlider) {
+            ttsPitchSlider.value = currentPitch;
+            const pitchVal = document.getElementById('slot-tts-pitch-val');
+            if (pitchVal) {
+                let hint = currentPitch < 0.8 ? ' (低い声)' : (currentPitch > 1.2 ? ' (高い声)' : ' (標準)');
+                pitchVal.innerText = `${parseFloat(currentPitch).toFixed(2)}${hint}`;
+            }
+        }
+
+        const deleteTtsBtn = document.getElementById('delete-slot-tts-btn');
+        if (deleteTtsBtn) {
+            deleteTtsBtn.style.display = slot.ttsText ? 'inline-block' : 'none';
+        }
+
+        document.getElementById('slot-tts-modal-backdrop')?.classList.add('open');
+    }
+
+    closeSlotTtsModal() {
+        this.stopFxPreview();
+        if ('speechSynthesis' in window) {
+            try { window.speechSynthesis.cancel(); } catch (e) {}
+        }
+        window._activeTtsPreviewUtterance = null;
+        BlobUrlTracker.revokeCategory('preview');
+        document.getElementById('slot-tts-modal-backdrop')?.classList.remove('open');
+        this.editingTtsSlotId = null;
     }
 
     adjustTtsTextarea(textarea) {
@@ -7083,170 +8440,19 @@ class VoicePadApp {
         textarea.style.height = `${newHeight}px`;
     }
 
-    clearTtsPresetActiveState() {
-        document.querySelectorAll('#tts-preset-chips .fx-chip-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-    }
-
-    applyTtsPreset(presetKey) {
-        this._selectedTtsPresetKey = presetKey;
-        const presets = {
-            girl: { label: '👧 女の子', rate: 1.05, pitch: 1.40, formant: 1.25, roughness: 0, gender: 'female', semitones: 3 },
-            boy: { label: '👦 男の子', rate: 1.05, pitch: 1.25, formant: 1.15, roughness: 0, gender: 'child', semitones: 2 },
-            woman: { label: '👩 おとな女', rate: 1.00, pitch: 1.00, formant: 1.00, roughness: 0, gender: 'female', semitones: 0 },
-            man: { label: '👨 おとな男', rate: 0.95, pitch: 0.65, formant: 0.85, roughness: 10, gender: 'male', semitones: -2 }
-        };
-
-        const config = presets[presetKey];
-        if (!config) return;
-
-        // アクティブ表示の切り替え
-        document.querySelectorAll('#tts-preset-chips .fx-chip-btn').forEach(btn => {
-            if (btn.getAttribute('data-tts-preset') === presetKey) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-        });
-
-        // 話速・音程スライダーへの反映
-        const rateSlider = document.getElementById('tts-rate-slider');
-        const rateVal = document.getElementById('tts-rate-val');
-        if (rateSlider) {
-            rateSlider.value = config.rate;
-            if (rateVal) rateVal.innerText = `${config.rate.toFixed(2)}x`;
-        }
-
-        const pitchSlider = document.getElementById('tts-pitch-slider');
-        const pitchVal = document.getElementById('tts-pitch-val');
-        if (pitchSlider) {
-            pitchSlider.value = config.pitch;
-            if (pitchVal) pitchVal.innerText = `${config.pitch.toFixed(2)}`;
-        }
-
-        // システム音声（OS音声）の自動セレクション（該当する性別の音声があれば切り替え）
-        const select = document.getElementById('tts-voice-select');
-        if (select && this.ttsVoices && this.ttsVoices.length > 0) {
-            const jaVoices = this.ttsVoices.filter(v => v.lang.startsWith('ja'));
-            if (jaVoices.length > 0) {
-                let matchedVoice = null;
-                if (config.gender === 'male') {
-                    matchedVoice = jaVoices.find(v => /otoya|ichiro|keita|takumi|kenji|daichi|male/i.test(v.name));
-                } else if (config.gender === 'female') {
-                    matchedVoice = jaVoices.find(v => /kyoko|ayumi|nanami|haruka|sayaka|mizuki|female/i.test(v.name));
-                }
-                if (matchedVoice) {
-                    select.value = matchedVoice.name;
-                } else {
-                    // 男声指定で男性専用音声が無い場合でも、標準日本語音声（Kyoko等）を選択（ピッチ0.65で男声化）
-                    const defaultJa = jaVoices[0];
-                    if (defaultJa) select.value = defaultJa.name;
-                }
-            }
-        }
-
-        // スロットモーダルの声質・環境スライダーも連動更新（より自然で迫力ある声質へ）
-        const formantSlider = document.getElementById('slot-formant-slider');
-        const formantVal = document.getElementById('slot-formant-val');
-        if (formantSlider) {
-            formantSlider.value = config.formant;
-            if (formantVal) formantVal.innerText = `${config.formant.toFixed(2)}x`;
-        }
-
-        const pitchSemiSlider = document.getElementById('slot-pitch-slider');
-        const pitchSemiVal = document.getElementById('slot-pitch-val');
-        if (pitchSemiSlider) {
-            pitchSemiSlider.value = config.semitones || 0;
-            if (pitchSemiVal) pitchSemiVal.innerText = `${config.semitones > 0 ? '+' : ''}${config.semitones}半音`;
-        }
-
-        const modSlider = document.getElementById('slot-mod-slider');
-        const modVal = document.getElementById('slot-mod-val');
-        if (modSlider) {
-            const modValNum = config.mod || 0;
-            modSlider.value = modValNum;
-            if (modVal) modVal.innerText = `${modValNum}%`;
-        }
-
-        this.showToast(`🎭 声質を「${config.label}」に設定しました`);
-    }
-
-    populateTtsVoices() {
-        if (!('speechSynthesis' in window)) return;
-        const select = document.getElementById('tts-voice-select');
-        if (!select) return;
-
-        this.ttsVoices = window.speechSynthesis.getVoices();
-        const currentVal = select.value;
-        select.innerHTML = '';
-
-        if (this.ttsVoices.length === 0) {
-            const opt = document.createElement('option');
-            opt.value = '';
-            opt.innerText = '標準の日本語音声 (Kyoko / システムデフォルト)';
-            select.appendChild(opt);
-            return;
-        }
-
-        const jaVoices = this.ttsVoices.filter(v => v.lang.startsWith('ja'));
-
-        const formatVoiceLabel = (v) => {
-            const name = v.name;
-            let icon = '🎙️';
-            let label = name;
-
-            if (/kyoko|nanami|ayumi|haruka|sayaka|mizuki|female/i.test(name)) {
-                icon = '👩';
-                label = `${icon} ${name} (女性 / 日本語)`;
-            } else if (/otoya|ichiro|keita|takumi|kenji|daichi|male/i.test(name)) {
-                icon = '👨';
-                label = `${icon} ${name} (男性 / 日本語)`;
-            } else if (v.lang.startsWith('ja')) {
-                icon = '🇯🇵';
-                label = `${icon} ${name} (日本語)`;
-            }
-            return label;
-        };
-
-        if (jaVoices.length > 0) {
-            jaVoices.forEach(v => {
-                const opt = document.createElement('option');
-                opt.value = v.name;
-                opt.innerText = formatVoiceLabel(v);
-                select.appendChild(opt);
-            });
-        } else {
-            // 日本語音声が明示的に見つからない場合のフォールバック（第1音声）
-            const opt = document.createElement('option');
-            opt.value = this.ttsVoices[0].name;
-            opt.innerText = `🇯🇵 ${this.ttsVoices[0].name} (デフォルト日本語)`;
-            select.appendChild(opt);
-        }
-
-        // 以前の選択値があれば復元、無ければ日本語音声を最優先
-        if (currentVal && jaVoices.some(v => v.name === currentVal)) {
-            select.value = currentVal;
-        } else if (jaVoices.length > 0) {
-            select.value = jaVoices[0].name;
-        }
-    }
-
-    async previewTts() {
-        const text = document.getElementById('tts-input-text')?.value.trim();
+    async previewSlotTtsModal() {
+        const text = document.getElementById('slot-tts-input-text')?.value.trim();
         if (!text) {
             this.showToast('⚠️ 読み上げるテキストを入力してください');
             return;
         }
 
         await AudioUnlocker.unlock();
-
         this.stopFxPreview();
 
-        const rate = parseFloat(document.getElementById('tts-rate-slider')?.value || '1.0');
-        const pitch = parseFloat(document.getElementById('tts-pitch-slider')?.value || '1.0');
-        const voiceSelect = document.getElementById('tts-voice-select');
-        const selectedVoiceName = voiceSelect ? voiceSelect.value : null;
+        const rate = parseFloat(document.getElementById('slot-tts-rate-slider')?.value || '1.0');
+        const pitch = parseFloat(document.getElementById('slot-tts-pitch-slider')?.value || '1.0');
+        const selectedVoiceKey = this._selectedTtsVoiceKey || 'ayumi';
 
         // ① ブラウザ標準 Web Speech API による高品位・自然な日本語読み上げ
         if ('speechSynthesis' in window) {
@@ -7257,13 +8463,9 @@ class VoicePadApp {
                 const allVoices = window.speechSynthesis.getVoices();
                 if (allVoices.length > 0) this.ttsVoices = allVoices;
 
-                let selectedVoice = null;
-                if (selectedVoiceName && this.ttsVoices) {
-                    selectedVoice = this.ttsVoices.find(v => v.name === selectedVoiceName || v.voiceURI === selectedVoiceName);
-                }
-                if (!selectedVoice && this.ttsVoices) {
-                    selectedVoice = this.ttsVoices.find(v => v.lang.startsWith('ja')) || this.ttsVoices[0];
-                }
+                const resolved = this.resolveTtsVoice(selectedVoiceKey);
+                const selectedVoice = resolved?.voice || null;
+                const isFemaleFallbackForMale = resolved?.isFemaleFallbackForMale || false;
 
                 if (selectedVoice) {
                     utter.voice = selectedVoice;
@@ -7272,20 +8474,28 @@ class VoicePadApp {
                     utter.lang = 'ja-JP';
                 }
 
+                // ピッチ（声の高さ）とスピード（話速）の完全独立制御
+                const malePitchAdjustment = isFemaleFallbackForMale ? 0.72 : 1.0;
                 utter.rate = Math.max(0.5, Math.min(2.0, rate));
-                utter.pitch = Math.max(0.4, Math.min(1.8, pitch));
+                utter.pitch = Math.max(0.2, Math.min(2.0, pitch * malePitchAdjustment));
                 utter.volume = 1.0;
 
-                // ガベージコレクション防止
                 window._activeTtsPreviewUtterance = utter;
-
                 utter.onend = () => { window._activeTtsPreviewUtterance = null; };
                 utter.onerror = (e) => {
                     console.warn('TTS preview utterance error:', e);
                     window._activeTtsPreviewUtterance = null;
                 };
 
-                this.showToast(`🗣️ 「${text.slice(0, 15)}${text.length > 15 ? '...' : ''}」を試聴中...`);
+                const voiceNames = {
+                    ayumi: 'あゆみ',
+                    haruka: 'はるか',
+                    ichiro: 'いちろう',
+                    sayaka: 'さやか',
+                    google: 'Google'
+                };
+                const vName = voiceNames[selectedVoiceKey] || selectedVoiceKey;
+                this.showToast(`🗣️ [${vName}] 「${text.slice(0, 15)}${text.length > 15 ? '...' : ''}」を試聴中...`);
 
                 setTimeout(() => {
                     if (window.speechSynthesis.paused) {
@@ -7299,106 +8509,101 @@ class VoicePadApp {
             }
         }
 
-        // ② Web Speech API 非対応環境向け Web Audio API フォールバック
+        // ② Web Speech API 非対応時、またはフォールバック：
         const ctx = AudioUnlocker.getContext();
         if (!ctx) return;
-        const voiceType = this._selectedTtsPresetKey || 'woman';
-        const { voiceParams, envParams, eqParams, specialParams, speed } = this.getFxParamsFromUI('slot');
+        const slot = this.editingTtsSlotId ? this.slots.find(s => s.id === this.editingTtsSlotId) : null;
+        const voiceParams = slot ? this.getEffectiveVoiceParams(slot) : VoiceEngine.defaultVoiceParams();
+        const envParams = slot ? this.getEffectiveEnvParams(slot) : VoiceEngine.defaultEnvParams();
+        const eqParams = slot ? this.getEffectiveEqParams(slot) : { bass: 0, mid: 0, treble: 0 };
+        const specialParams = slot ? this.getEffectiveSpecialParams(slot) : null;
+        const speed = slot ? this.getEffectivePlaybackSpeed(slot) : 1.0;
 
         try {
             this.showToast(`🗣️ 「${text.slice(0, 15)}...」を合成中...`);
-            const rawBuffer = TtsEngine.synthesizeToBuffer(text, ctx, voiceType, rate, pitch);
+            const rawBuffer = TtsEngine.synthesizeToBuffer(text, ctx, selectedVoiceKey, rate, pitch);
             const finalBuffer = VoiceEngine.processFull(rawBuffer, ctx, voiceParams, envParams, speed, eqParams, specialParams);
 
-            const src = ctx.createBufferSource();
-            src.buffer = finalBuffer;
-            src.playbackRate.value = speed;
-            src.connect(ctx.destination);
-            src.start(0);
+            const controller = this.playBufferViaHtmlAudio(
+                finalBuffer,
+                speed,
+                () => { this.fxPreviewSource = null; },
+                (err) => {
+                    console.error('HTML5 Audio preview error:', err);
+                    this.fxPreviewSource = null;
+                    this.showToast('⚠️ 音声プレビューに失敗しました');
+                }
+            );
 
-            this.fxPreviewSource = src;
-            src.onended = () => { this.fxPreviewSource = null; };
+            this.fxPreviewSource = controller;
         } catch (err) {
             console.error('TTS preview error:', err);
             this.showToast('⚠️ 音声プレビューに失敗しました');
         }
     }
 
-    async applyTtsToSlot() {
-        const text = document.getElementById('tts-input-text')?.value.trim();
-        if (!text) {
-            this.showToast('⚠️ 読み上げるテキストを入力してください');
-            return;
-        }
-
-        if (!this.editingSlotId) {
+    async saveSlotTtsModal() {
+        if (!this.editingTtsSlotId) {
             this.showToast('⚠️ 登録先のスロットが見つかりません');
             return;
         }
 
-        const slot = this.slots.find(s => s.id === this.editingSlotId);
+        const slot = this.slots.find(s => s.id === this.editingTtsSlotId);
         if (!slot) {
             this.showToast('⚠️ 登録先のスロットが見つかりません');
             return;
         }
 
+        const text = document.getElementById('slot-tts-input-text')?.value.trim();
+        if (!text) {
+            this.showToast('⚠️ 読み上げるテキストを入力してください');
+            return;
+        }
+
         await AudioUnlocker.unlock();
 
-        // スライダーやプリセットから値を取得
-        const rate = parseFloat(document.getElementById('tts-rate-slider')?.value || '1.0');
-        const pitch = parseFloat(document.getElementById('tts-pitch-slider')?.value || '1.0');
-        const voiceSelect = document.getElementById('tts-voice-select');
-        const selectedVoiceName = voiceSelect ? voiceSelect.value : (this._selectedTtsPresetKey || 'woman');
+        const rate = parseFloat(document.getElementById('slot-tts-rate-slider')?.value || '1.0');
+        const pitch = parseFloat(document.getElementById('slot-tts-pitch-slider')?.value || '1.0');
+        const selectedVoiceKey = this._selectedTtsVoiceKey || 'ayumi';
 
         try {
-            // スロットにTTSテキストとパラメータを登録（録音WAVはクリアしてTTS優先モードに）
             slot.ttsText = text;
-            slot.ttsVoice = selectedVoiceName;
+            slot.ttsVoice = selectedVoiceKey;
             slot.ttsRate = rate;
             slot.ttsPitch = pitch;
             slot.audioBlob = null;
             slot.audioBase64 = null;
             slot.duration = Math.max(0.5, (text.length * 0.18) / rate);
 
-            // ボタンのラベルが空または初期値ならテキストを反映
-            const labelInput = document.getElementById('edit-label');
-            if (labelInput && (!labelInput.value || labelInput.value.startsWith('ボタン'))) {
-                labelInput.value = text.slice(0, 14);
+            // ラベルが初期値「ボタン」等ならテキスト先頭を反映
+            if (!slot.label || slot.label.startsWith('ボタン')) {
                 slot.label = text.slice(0, 14);
-            }
-
-            // 現在設定されている声質・環境・EQ・特殊FXエフェクトも反映
-            const modeSelect = document.getElementById('edit-slot-effect-mode');
-            const speedSelect = document.getElementById('edit-slot-speed');
-            slot.voiceEffectMode = modeSelect ? modeSelect.value : 'inherit';
-
-            const { voiceParams, envParams, eqParams, specialParams, speed } = this.getFxParamsFromUI('slot');
-            if (slot.voiceEffectMode === 'custom' || modeSelect?.value === 'custom') {
-                slot.voiceParams = voiceParams;
-                slot.envParams = envParams;
-                slot.eqParams = eqParams;
-                slot.specialParams = specialParams;
-                slot.voiceEffect = 'custom';
-                if (speedSelect && speedSelect.value !== 'inherit') {
-                    slot.playbackSpeed = String(speed);
-                }
             }
 
             await this.storage.saveSlot(slot);
             this.renderSlots();
-
-            // 削除ボタンを表示（音声削除可能に）
-            const deleteAudioBtn = document.getElementById('delete-audio-btn');
-            const downloadAudioBtn = document.getElementById('download-audio-btn');
-            if (deleteAudioBtn) deleteAudioBtn.style.display = 'block';
-            if (downloadAudioBtn) downloadAudioBtn.style.display = 'none';
-
-            // 試聴を発火して確認
-            this.previewTts();
-            this.showToast(`✨ 「${slot.label}」に読み上げ音声を登録しました！`);
+            this.closeSlotTtsModal();
+            this.showToast(`✨ スイッチ「${slot.label}」にAI音声を登録しました！`);
         } catch (err) {
-            console.error('Apply TTS error:', err);
+            console.error('Save TTS error:', err);
             this.showToast('⚠️ 音声の登録に失敗しました');
+        }
+    }
+
+    async deleteSlotTtsAudio() {
+        if (!this.editingTtsSlotId) return;
+        const slot = this.slots.find(s => s.id === this.editingTtsSlotId);
+        if (!slot) return;
+
+        if (confirm(`スイッチ「${slot.label}」のAI音声を消去しますか？`)) {
+            this.stopSlot(slot.id);
+            slot.ttsText = null;
+            slot.ttsVoice = null;
+            slot.duration = 0;
+            await this.storage.saveSlot(slot);
+            this.renderSlots();
+            this.closeSlotTtsModal();
+            this.showToast('🔇 AI音声を消去しました');
         }
     }
 
@@ -7688,6 +8893,8 @@ class VoicePadApp {
                     this.closeSettingsModal();
                     this.closeGuideModal();
                     this.closeIncomingShareModal();
+                    this.cancelP2pSend();
+                    this.stopP2pScanner();
                 }
                 return;
             }
@@ -8052,11 +9259,20 @@ class VoicePadApp {
             source.start(0);
 
             this.incomingAudioPreviewNode = {
+                stop: () => {
+                    try { source.stop(); } catch (e) {}
+                    try { source.disconnect(); } catch (e) {}
+                },
                 pause: () => {
                     try { source.stop(); } catch (e) {}
+                    try { source.disconnect(); } catch (e) {}
+                },
+                disconnect: () => {
+                    try { source.disconnect(); } catch (e) {}
                 }
             };
             source.onended = () => {
+                try { source.disconnect(); } catch (e) {}
                 this.incomingAudioPreviewNode = null;
             };
         } catch (e) {
@@ -8064,12 +9280,34 @@ class VoicePadApp {
             try {
                 const blob = (audioInput instanceof Blob) ? audioInput : this.base64ToBlob(audioInput);
                 if (!blob) return;
-                const url = URL.createObjectURL(blob);
+                const url = BlobUrlTracker.create(blob, 'incoming');
                 const audio = new Audio(url);
                 audio.play().catch(err => console.warn('HTMLAudio play blocked:', err));
-                this.incomingAudioPreviewNode = audio;
+
+                this.incomingAudioPreviewNode = {
+                    audio,
+                    url,
+                    stop: () => {
+                        try {
+                            audio.pause();
+                            audio.currentTime = 0;
+                        } catch (e) {}
+                        BlobUrlTracker.revoke(url);
+                    },
+                    pause: () => {
+                        try { audio.pause(); } catch (e) {}
+                        BlobUrlTracker.revoke(url);
+                    },
+                    disconnect: () => {
+                        BlobUrlTracker.revoke(url);
+                    }
+                };
                 audio.onended = () => {
-                    URL.revokeObjectURL(url);
+                    BlobUrlTracker.revoke(url);
+                    this.incomingAudioPreviewNode = null;
+                };
+                audio.onerror = () => {
+                    BlobUrlTracker.revoke(url);
                     this.incomingAudioPreviewNode = null;
                 };
             } catch (err) {
@@ -8080,9 +9318,14 @@ class VoicePadApp {
 
     stopIncomingAudioPreview() {
         if (this.incomingAudioPreviewNode) {
-            this.incomingAudioPreviewNode.pause();
+            try {
+                if (this.incomingAudioPreviewNode.stop) this.incomingAudioPreviewNode.stop();
+                else if (this.incomingAudioPreviewNode.pause) this.incomingAudioPreviewNode.pause();
+                if (this.incomingAudioPreviewNode.disconnect) this.incomingAudioPreviewNode.disconnect();
+            } catch (e) {}
             this.incomingAudioPreviewNode = null;
         }
+        BlobUrlTracker.revokeCategory('incoming');
     }
 
     async applyIncomingToSelectedScroll() {
@@ -8277,6 +9520,14 @@ class VoicePadApp {
 
 // 起動初期化
 function initVoicePad() {
+    window.AudioUtils = AudioUtils;
+    window.AudioUnlocker = AudioUnlocker;
+    window.VoiceEngine = VoiceEngine;
+    window.TtsEngine = TtsEngine;
+    window.QrEngine = QrEngine;
+    window.P2PDataEngine = P2PDataEngine;
+    window.BlobUrlTracker = BlobUrlTracker;
+
     if (!window.app) {
         window.app = new VoicePadApp();
         window.voicePadApp = window.app;

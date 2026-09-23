@@ -1,6 +1,6 @@
 {
-  "version": "2026.09.24.0017",
-  "updatedAt": "2026-09-24 00:12",
-  "title": "Voice Pad 2026 AI音声合成（TTS）ロボット音完全解消＆自然な音声再生版",
-  "changelog": "・スロット再生時のルーティングを根本修正：古いオシレーター録音Blobとの競合を完全解消し、テキストが入力されたスロットは100%確実にブラウザの自然でクリアな日本語音声（SpeechSynthesis）で発話されるよう修正\n・モーダル保存時およびスロット登録時のTTSモード自動クリーンアップ処理を追加\n・試聴プレビューおよびボタンスイッチからの再生の安定性を向上"
+  "version": "2026.09.24.0250",
+  "updatedAt": "2026-09-24 02:50",
+  "title": "Voice Pad 2026 メモリ最適化・リソース解放・フリーズ防止版",
+  "changelog": "・一時URL（Blob URL）の確実な解放：BlobUrlTrackerを新設し、音声再生、プレビュー、ファイル保存用の一時URLを停止・終了時に確実にURL.revokeObjectURL()で解放（保持データ・ファイル実体は保護）\n・AudioContextの管理適正化：AudioContextの単一インスタンス再利用を徹底し、Web Audioノード（AudioBufferSourceNode、GainNode等）の再生完了時・中断時の明示的.disconnect()処理を追加\n・タイマー＆リスナークリーンアップ：スクロール切り替え時やモーダル閉鎖時にstopAllAudioPlayback()で音源・アニメーション・ストリームを一括解放し、メモリリークを完全防止"
 }
