@@ -1050,12 +1050,25 @@ body.mode-record .pad-card:not(.recording):hover {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
-/* スロットカード上のアクションボタングループ（設定/ロック・声質・環境） - 縦横2倍大型化 */
+/* スロットカード上のアクションボタングループ（声質・環境・AI音声・設定/ロック） - 横スライド対応 */
 .pad-actions-group {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     pointer-events: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    touch-action: pan-x;
+    max-width: 100%;
+    flex-shrink: 1;
+    min-width: 0;
+    padding: 2px 2px 2px 4px;
+}
+
+.pad-actions-group::-webkit-scrollbar {
+    display: none;
 }
 
 .pad-action-btn {
@@ -1063,17 +1076,17 @@ body.mode-record .pad-card:not(.recording):hover {
     border: 1.5px solid rgba(255, 255, 255, 0.28);
     color: rgba(255, 255, 255, 0.95);
     border-radius: 8px;
-    padding: 4px 7px;
-    min-width: 32px;
-    min-height: 32px;
-    font-size: 17px;
+    padding: 3px 6px;
+    min-width: 30px;
+    min-height: 30px;
+    font-size: 16px;
     font-weight: 800;
     font-family: inherit;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 2px;
     line-height: 1;
     transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
     -webkit-user-select: none;
@@ -1083,12 +1096,28 @@ body.mode-record .pad-card:not(.recording):hover {
     flex-shrink: 0;
 }
 
+.pad-action-btn .tts-letter-badge {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 15px;
+    font-weight: 900;
+    color: #c084fc;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    text-shadow: 0 0 6px rgba(192, 132, 252, 0.4);
+}
+
 .pad-action-btn:hover {
     background: rgba(255, 255, 255, 0.25);
     border-color: rgba(255, 255, 255, 0.55);
     color: #ffffff;
     transform: translateY(-1.5px) scale(1.06);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+.pad-action-btn.btn-tts:hover .tts-letter-badge,
+.pad-action-btn.btn-tts.has-tts .tts-letter-badge {
+    color: #ffffff;
+    text-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
 }
 
 .pad-action-btn:active {
@@ -1118,9 +1147,9 @@ body.mode-record .pad-card:not(.recording):hover {
 }
 
 .pad-action-btn.btn-tts.has-tts {
-    border-color: rgba(168, 85, 247, 0.7);
-    background: rgba(168, 85, 247, 0.25);
-    color: #c084fc;
+    border-color: rgba(168, 85, 247, 0.85);
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.45), rgba(126, 34, 206, 0.55));
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
 }
 
 /* ロックされたカードの視覚表示 */

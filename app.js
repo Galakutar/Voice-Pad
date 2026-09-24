@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.25.0015';
+const APP_VERSION = '2026.09.25.0040';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -4056,6 +4056,39 @@ class VoicePadApp {
         this.initAACScanController();
         this.initIncomingShareAndDropzone();
         this.initVoiceEngineUIEvents();
+
+        // 🔄 最新バージョン自動検出＆キャッシュクリア更新
+        this.checkAppVersion();
+    }
+
+    async checkAppVersion() {
+        try {
+            const res = await fetch(`version.json?t=${Date.now()}`, {
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+            });
+            if (!res.ok) return;
+            const remote = await res.json();
+            if (remote && remote.version && remote.version !== APP_VERSION) {
+                console.log(`[VersionCheck] New version found: ${remote.version} (current: ${APP_VERSION})`);
+                if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (const reg of registrations) {
+                        await reg.unregister();
+                    }
+                }
+                if ('caches' in window) {
+                    const cacheKeys = await caches.keys();
+                    await Promise.all(cacheKeys.map(k => caches.delete(k)));
+                }
+                this.showToast('✨ 最新バージョンへ自動更新中...');
+                setTimeout(() => {
+                    window.location.reload(true);
+                }, 400);
+            }
+        } catch (e) {
+            console.warn('[VersionCheck] Check skipped:', e);
+        }
     }
 
     async loadAllData() {
@@ -4961,7 +4994,7 @@ class VoicePadApp {
                 const speedLabel = speed !== 1.0 ? ` (${speed}x)` : '';
                 const vol = this.getEffectiveSlotVolume(slot);
                 const volLabel = vol === 0 ? ' [消音]' : (vol !== 1.0 ? ` [${Math.round(vol * 100)}%]` : '');
-                const tag = (slot.ttsText && !slot.audioBlob) ? '🤖 ' : '';
+                const tag = (slot.ttsText && !slot.audioBlob) ? '🔤 ' : '';
                 statusText = `${tag}${(slot.duration || 1.0).toFixed(1)}s${speedLabel}${volLabel}`;
             }
 
@@ -4990,8 +5023,8 @@ class VoicePadApp {
                         <button type="button" class="pad-action-btn btn-env" title="環境・エコー設定" data-slot-id="${slot.id}" aria-label="環境設定">
                             ⛰️
                         </button>
-                        <button type="button" class="pad-action-btn btn-tts ${slot.ttsText ? 'has-tts' : ''}" title="AI音声合成 (TTS) 設定" data-slot-id="${slot.id}" aria-label="AI音声設定">
-                            🤖
+                        <button type="button" class="pad-action-btn btn-tts ${slot.ttsText ? 'has-tts' : ''}" title="打ち込みAI音声 (テキスト読み上げ) 設定" data-slot-id="${slot.id}" aria-label="打ち込みAI音声設定">
+                            <span class="tts-letter-badge">A</span>
                         </button>
                         <button type="button" class="pad-action-btn btn-lock ${isLocked ? 'is-locked' : ''}" title="${isLocked ? 'ロック中 (長押しで解除)' : 'スイッチ設定 (長押しでロック)'}" data-slot-id="${slot.id}" aria-label="${isLocked ? 'ロック解除' : 'スイッチ設定'}">
                             ${isLocked ? '🔒' : '⚙️'}
