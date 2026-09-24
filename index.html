@@ -17,7 +17,7 @@
     <meta http-equiv="Expires" content="0">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260925_0040">
+    <link rel="stylesheet" href="style.css?v=20260925_0050">
 </head>
 <body>
     <div id="app-container">
@@ -1098,17 +1098,31 @@
                     </div>
                 </div>
 
+                <!-- スクロールを送信・共有セクション (Wi-Fi直接送信) -->
+                <div class="form-group p2p-export-group" style="margin-top: 10px; padding: 10px; background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.3); border-radius: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span class="opt-label" style="font-size: 12px; font-weight: 800; color: #38bdf8;">📤 このスクロールをWi-Fi送信 (生徒➜先生 / 端末間)</span>
+                        <span class="badge-tag" style="background: rgba(14, 165, 233, 0.25); color: #7dd3fc; border-color: #38bdf8;">QR直接転送</span>
+                    </div>
+                    <button type="button" id="btn-scroll-webrtc-send" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb); font-weight: 800; padding: 10px 14px;">
+                        <span class="btn-icon">📡</span> このスクロールをQR送信（1ステップ直接転送）
+                    </button>
+                    <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
+                        ※ 押すとQRコードが表示され、相手のカメラで1回読み取るだけでこのスクロール（全ボタン・音声・設定）がWi-Fi経由で丸ごと送信されます。
+                    </div>
+                </div>
+
                 <!-- データを回収・QRインポートセクション -->
                 <div class="form-group p2p-import-group" style="margin-top: 10px; padding: 10px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 10px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span class="opt-label" style="font-size: 12px; font-weight: 800; color: #34d399;">📥 生徒のデータを回収 (先生用)</span>
+                        <span class="opt-label" style="font-size: 12px; font-weight: 800; color: #34d399;">📥 データを受信・回収 (先生用 / 端末間)</span>
                         <span class="badge-tag" style="background: rgba(16, 185, 129, 0.25); color: #6ee7b7; border-color: #34d399;">QRカメラ読取</span>
                     </div>
                     <button type="button" id="btn-scroll-webrtc-import" class="action-btn save-btn" style="background: linear-gradient(135deg, #059669, #10b981); font-weight: 800; padding: 10px 14px;">
-                        <span class="btn-icon">📷</span> QRコードからボタンを受信（カメラ起動）
+                        <span class="btn-icon">📷</span> QRコードからデータを受信（カメラ起動）
                     </button>
                     <div class="webrtc-desc" style="font-size: 11px; color: #94a3b8; margin-top: 5px; line-height: 1.4;">
-                        ※ 生徒の画面に表示されたQRコードをカメラで読み取るだけで直接取り込めます。
+                        ※ 相手の画面に表示されたQRコードをカメラで読み取るだけで、ボタン単体もスクロール丸ごとも直接取り込めます。
                     </div>
                 </div>
 
@@ -1634,7 +1648,7 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <div id="p2p-receive-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="p2p-receive-modal-title">
         <div class="modal-content" style="max-width: 460px; text-align: center;">
             <div class="modal-header" style="justify-content: center; position: relative;">
-                <h3 id="p2p-receive-modal-title" class="modal-title" style="color: #34d399;">📥 Wi-Fi 直接インポート (先生側)</h3>
+                <h3 id="p2p-receive-modal-title" class="modal-title" style="color: #34d399;">📥 Wi-Fi 直接インポート (データ受信)</h3>
                 <button id="close-p2p-receive-modal-btn" class="close-modal-btn" style="position: absolute; right: 0;" title="閉じる" aria-label="閉じる">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -1645,8 +1659,8 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
 
             <div class="modal-body-scroll" style="align-items: center; gap: 12px; padding: 12px 6px;">
                 <div style="font-size: 12.5px; color: #cbd5e1; line-height: 1.5;">
-                    生徒の画面に表示された <strong>QRコード</strong> をカメラの枠内に収めてください。<br>
-                    <span style="font-size: 11.5px; color: #34d399;">※ 1回スキャンするだけでWi-Fi経由でボタン全データを直接取得します</span>
+                    相手の画面に表示された <strong>QRコード</strong> をカメラの枠内に収めてください。<br>
+                    <span style="font-size: 11.5px; color: #34d399;">※ 1回スキャンするだけでWi-Fi経由でデータ（ボタンまたはスクロール丸ごと）を直接取得します</span>
                 </div>
 
                 <!-- カメラファインダーコンテナ -->
@@ -1705,6 +1719,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <script src="peerjs.min.js"></script>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260925_0040"></script>
+    <script src="app.js?v=20260925_0060"></script>
 </body>
 </html>

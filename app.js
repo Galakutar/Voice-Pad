@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.25.0040';
+const APP_VERSION = '2026.09.25.0060';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -5084,6 +5084,15 @@ class VoicePadApp {
                 this.attachButtonLockListeners(btnLock, slot);
             }
 
+            const actionsGroup = card.querySelector('.pad-actions-group');
+            if (actionsGroup) {
+                ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'mousedown'].forEach(evtName => {
+                    actionsGroup.addEventListener(evtName, (e) => {
+                        e.stopPropagation();
+                    }, { passive: true });
+                });
+            }
+
             this.attachPadDragListeners(card, slot.id);
             this.attachPadRippleListener(card);
             grid.appendChild(card);
@@ -5189,7 +5198,7 @@ class VoicePadApp {
         let hoverTargetSlotId = null;
 
         const onPointerDown = (e) => {
-            if (e.target.closest('.pad-settings-btn') || e.target.closest('.pad-actions-group')) return;
+            if (e.target.closest('.pad-settings-btn') || e.target.closest('.pad-actions-group') || e.target.closest('.pad-action-btn') || e.target.closest('.pad-header')) return;
             startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
             startY = e.clientY || (e.touches && e.touches[0].clientY) || 0;
             isLongPress = false;
@@ -5421,6 +5430,11 @@ class VoicePadApp {
 
         let startX = 0, startY = 0;
         grid.addEventListener('touchstart', (e) => {
+            if (e.target.closest('.pad-actions-group') || e.target.closest('.pad-action-btn') || e.target.closest('.pad-header') || e.target.closest('.pad-settings-btn')) {
+                startX = 0;
+                startY = 0;
+                return;
+            }
             if (e.touches.length === 1) {
                 startX = e.touches[0].clientX;
                 startY = e.touches[0].clientY;
@@ -5428,6 +5442,8 @@ class VoicePadApp {
         }, { passive: true });
 
         grid.addEventListener('touchend', (e) => {
+            if (startX === 0) return;
+            if (e.target.closest('.pad-actions-group') || e.target.closest('.pad-action-btn') || e.target.closest('.pad-header') || e.target.closest('.pad-settings-btn')) return;
             if (e.changedTouches.length === 1) {
                 const diffX = e.changedTouches[0].clientX - startX;
                 const diffY = e.changedTouches[0].clientY - startY;
@@ -6624,7 +6640,7 @@ class VoicePadApp {
         await this.shareOrDownloadFile(fileName, JSON.stringify(exportData, null, 2), '単体ボタン');
     }
 
-    // ==================== 📡 生徒側 Wi-Fi 直接送信モーダル ====================
+    // ==================== 📡 生徒側 Wi-Fi 直接送信モーダル（単体ボタン） ====================
     async openP2pSendModal(slotId) {
         this.stopP2pScanner();
         this.closeScrollModal();
@@ -6633,6 +6649,7 @@ class VoicePadApp {
         if (!slot) return;
 
         const modal = document.getElementById('p2p-send-modal-backdrop');
+        const modalTitle = document.getElementById('p2p-send-modal-title');
         const canvas = document.getElementById('p2p-send-qr-canvas');
         const nameEl = document.getElementById('p2p-send-slot-name');
         const emojiEl = document.getElementById('p2p-send-slot-emoji');
@@ -6642,6 +6659,7 @@ class VoicePadApp {
 
         if (!modal || !canvas) return;
 
+        if (modalTitle) modalTitle.innerText = '📡 ボタン Wi-Fi 直接送信';
         if (nameEl) nameEl.innerText = slot.label || 'ボタン';
         if (emojiEl) {
             if (slot.imageUrl) {
@@ -6680,13 +6698,71 @@ class VoicePadApp {
         );
     }
 
+    // ==================== 📡 スクロール Wi-Fi 直接送信モーダル（スクロール丸ごと） ====================
+    async openP2pSendScrollModal(scrollId) {
+        this.stopP2pScanner();
+        this.closeScrollModal();
+
+        const scroll = this.scrolls.find(s => s.id === scrollId);
+        if (!scroll) return;
+
+        const targetSlots = this.slots.filter(s => s.scrollId === scrollId);
+
+        const modal = document.getElementById('p2p-send-modal-backdrop');
+        const modalTitle = document.getElementById('p2p-send-modal-title');
+        const canvas = document.getElementById('p2p-send-qr-canvas');
+        const nameEl = document.getElementById('p2p-send-slot-name');
+        const emojiEl = document.getElementById('p2p-send-slot-emoji');
+        const metaEl = document.getElementById('p2p-send-slot-meta');
+        const statusText = document.getElementById('p2p-send-status-text');
+        const loadingSpinner = document.getElementById('p2p-send-qr-loading');
+
+        if (!modal || !canvas) return;
+
+        if (modalTitle) modalTitle.innerText = '📡 スクロール Wi-Fi 直接送信';
+        if (nameEl) nameEl.innerText = `🗂️ ${scroll.name || 'スクロール'}`;
+        if (emojiEl) emojiEl.innerText = '📂';
+        if (metaEl) {
+            const audioCount = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64)).length;
+            metaEl.innerText = `スイッチ数: ${targetSlots.length}個 (録音済: ${audioCount}個) | 全データ丸ごと転送`;
+        }
+
+        modal.classList.add('open');
+        if (loadingSpinner) loadingSpinner.style.display = 'flex';
+        if (statusText) statusText.innerText = 'Wi-Fi待受QRコードを準備中...';
+
+        const exportObj = await this.buildScrollExportObject(scrollId);
+        if (loadingSpinner) loadingSpinner.style.display = 'none';
+
+        if (!exportObj) {
+            if (statusText) statusText.innerText = '⚠️ データの生成に失敗しました';
+            return;
+        }
+
+        // Wi-Fi 1ステップ直接送信ホストを起動（1枚の静的QRコードを表示）
+        await P2PDataEngine.startWifiSender(
+            exportObj,
+            (qrPayload) => {
+                QrEngine.renderToCanvas(canvas, qrPayload, { size: 260, margin: 14, fgColor: '#000000', bgColor: '#ffffff' });
+                if (statusText) statusText.innerText = '相手の端末のカメラでこのQRコード（1枚）を読み取ってください';
+            },
+            (statusMsg) => {
+                if (statusText) statusText.innerText = statusMsg;
+            },
+            (completedObj) => {
+                if (statusText) statusText.innerText = '🎉 スクロールの送信が完了しました！';
+                this.showToast(`🎉 スクロール「${scroll.name || 'スクロール'}」のWi-Fi送信が完了しました！`);
+            }
+        );
+    }
+
     cancelP2pSend() {
         QrEngine.stopCameraScanner();
         P2PDataEngine.stopWifiSession();
         document.getElementById('p2p-send-modal-backdrop')?.classList.remove('open');
     }
 
-    // ==================== 📷 先生側 Wi-Fi 直接受信モーダル ====================
+    // ==================== 📷 先生側 / 端末間 Wi-Fi 直接受信モーダル ====================
     async openP2pReceiveModal() {
         this.closeScrollModal();
         this.closeEditModal();
@@ -6741,13 +6817,18 @@ class VoicePadApp {
                 async (receivedData) => {
                     try {
                         this.stopP2pScanner();
-                        const label = receivedData.slot?.label || receivedData.label || 'ボタン';
-                        const fileName = `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
+                        const isScroll = receivedData.type === 'voicepad_scroll' || !!receivedData.scroll;
+                        const label = isScroll
+                            ? (receivedData.scroll?.name || 'スクロール')
+                            : (receivedData.slot?.label || receivedData.label || 'ボタン');
+                        const fileName = isScroll
+                            ? `VoicePad_スクロール_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-page`
+                            : `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
                         const jsonStr = JSON.stringify(receivedData, null, 2);
                         this.downloadFileDirect(fileName, jsonStr);
 
                         await this.showIncomingShareModal(receivedData, fileName);
-                        this.showToast(`🎉 ボタン「${label}」を受信・保存しました！`);
+                        this.showToast(`🎉 ${isScroll ? 'スクロール' : 'ボタン'}「${label}」を受信・保存しました！`);
                     } catch (err) {
                         console.error('P2P receive handle error:', err);
                     }
@@ -6764,23 +6845,28 @@ class VoicePadApp {
                 this.stopP2pScanner();
 
                 const data = res.data;
-                const label = data.slot?.label || data.label || 'ボタン';
-                const fileName = res.fileName || `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
+                const isScroll = data.type === 'voicepad_scroll' || !!data.scroll;
+                const label = isScroll
+                    ? (data.scroll?.name || 'スクロール')
+                    : (data.slot?.label || data.label || 'ボタン');
+                const fileName = res.fileName || (isScroll
+                    ? `VoicePad_スクロール_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-page`
+                    : `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`);
                 const jsonStr = JSON.stringify(data, null, 2);
                 this.downloadFileDirect(fileName, jsonStr);
 
                 await this.showIncomingShareModal(data, fileName);
-                this.showToast(`🎉 ボタン「${label}」を受信・保存しました！`);
+                this.showToast(`🎉 ${isScroll ? 'スクロール' : 'ボタン'}「${label}」を受信・保存しました！`);
             } catch (err) {
                 console.error('P2P QR receive error:', err);
             }
         }
     }
 
-    // ② スクロール単位のエクスポート (.vpad-page)
-    async exportScroll(scrollId) {
+    // スクロール全体のシリアライズオブジェクト生成
+    async buildScrollExportObject(scrollId) {
         const scroll = this.scrolls.find(s => s.id === scrollId);
-        if (!scroll) return;
+        if (!scroll) return null;
 
         const targetSlots = this.slots.filter(s => s.scrollId === scrollId);
         const serializedSlots = [];
@@ -6790,7 +6876,7 @@ class VoicePadApp {
             if (!audioBlob && slot.audioBase64) {
                 audioBlob = this.base64ToBlob(slot.audioBase64);
             }
-            const audioBase64 = await this.blobToBase64(audioBlob);
+            const audioBase64 = audioBlob ? await this.blobToBase64(audioBlob) : (slot.audioBase64 || null);
             serializedSlots.push({
                 label: slot.label,
                 labelPosition: slot.labelPosition || 'bottom',
@@ -6808,6 +6894,7 @@ class VoicePadApp {
                 eqParams: slot.eqParams || null,
                 specialParams: slot.specialParams || null,
                 playbackSpeed: slot.playbackSpeed || 'inherit',
+                volume: (slot.volume !== undefined && slot.volume !== null) ? parseFloat(slot.volume) : 1.0,
                 ttsText: slot.ttsText || null,
                 ttsVoice: slot.ttsVoice || null,
                 ttsRate: slot.ttsRate || 1.0,
@@ -6817,7 +6904,7 @@ class VoicePadApp {
             });
         }
 
-        const exportData = {
+        return {
             type: 'voicepad_scroll',
             version: '2.4',
             exportedAt: new Date().toISOString(),
@@ -6833,6 +6920,15 @@ class VoicePadApp {
             },
             slots: serializedSlots
         };
+    }
+
+    // ② スクロール単位のエクスポート (.vpad-page)
+    async exportScroll(scrollId) {
+        const scroll = this.scrolls.find(s => s.id === scrollId);
+        if (!scroll) return;
+
+        const exportData = await this.buildScrollExportObject(scrollId);
+        if (!exportData) return;
 
         const safeName = (scroll.name || 'スクロール').replace(/[\\/:*?"<>|]/g, '_');
         const fileName = `VoicePad_スクロール_${safeName}.vpad-page`;
@@ -7196,7 +7292,11 @@ class VoicePadApp {
         document.getElementById('export-scroll-btn')?.addEventListener('click', () => {
             if (this.editingScrollId) this.exportScroll(this.editingScrollId);
         });
-        // 📡 先生側 WebRTC P2Pインポートボタン（QRカメラ読取）
+        // 📡 生徒側/端末間 WebRTC P2P スクロール直接送信ボタン
+        document.getElementById('btn-scroll-webrtc-send')?.addEventListener('click', () => {
+            if (this.editingScrollId) this.openP2pSendScrollModal(this.editingScrollId);
+        });
+        // 📡 先生側/端末間 WebRTC P2Pインポートボタン（QRカメラ読取）
         document.getElementById('btn-scroll-webrtc-import')?.addEventListener('click', () => {
             this.openP2pReceiveModal();
         });
@@ -9812,11 +9912,16 @@ class VoicePadApp {
             });
         }
 
-        if (data.type === 'voicepad_slot' || data.slot || data.label || data.audioBase64) {
+        if (data.type === 'voicepad_slot' || data.slot || (!data.scroll && (data.label || data.audioBase64))) {
             const s = data.slot || data;
             if (titleEl) titleEl.innerText = `📲 ボタン「${s.label || 'ボタン'}」を受信`;
             if (targetGroup) targetGroup.style.display = 'block';
-            if (addCurrentBtn) addCurrentBtn.style.display = 'block';
+            if (addCurrentBtn) {
+                addCurrentBtn.style.display = 'block';
+                addCurrentBtn.innerText = '✅ このスクロールに追加する';
+            }
+            const addNewBtn = document.getElementById('btn-incoming-add-new-scroll');
+            if (addNewBtn) addNewBtn.innerText = '➕ 新しいスクロールを作成して追加';
 
             const photoHtml = s.imageUrl
                 ? `<img src="${s.imageUrl}" alt="photo">`
@@ -9846,19 +9951,24 @@ class VoicePadApp {
                 this.previewIncomingAudio(rawAudio, s);
             });
 
-        } else if (data.type === 'voicepad_scroll') {
+        } else if (data.type === 'voicepad_scroll' || data.scroll) {
             const scrollName = data.scroll?.name || '受信スクロール';
             const slotsCount = Array.isArray(data.slots) ? data.slots.length : 0;
             if (titleEl) titleEl.innerText = `📲 スクロール「${scrollName}」を受信`;
-            if (targetGroup) targetGroup.style.display = 'none';
-            if (addCurrentBtn) addCurrentBtn.style.display = 'none';
+            if (targetGroup) targetGroup.style.display = 'block';
+            if (addCurrentBtn) {
+                addCurrentBtn.style.display = 'block';
+                addCurrentBtn.innerText = '📥 このスクロールのスイッチを現在のシートに追加';
+            }
+            const addNewBtn = document.getElementById('btn-incoming-add-new-scroll');
+            if (addNewBtn) addNewBtn.innerText = '➕ 新規スクロールとして丸ごと追加 (推奨)';
 
             previewCard.innerHTML = `
                 <div class="incoming-preview-slot">
                     <div class="incoming-slot-icon">📂</div>
                     <div class="incoming-slot-meta">
                         <div class="incoming-slot-title">${this.escapeHtml(scrollName)}</div>
-                        <div class="incoming-slot-sub">スイッチ数: ${slotsCount}個 | エフェクト: ${this.getVoiceEffectLabel(data.scroll?.voiceEffect || 'normal')}</div>
+                        <div class="incoming-slot-sub">スイッチ数: ${slotsCount}個 | エフェクト: ${this.getVoiceEffectLabel(data.scroll?.voiceEffect || 'inherit')}</div>
                     </div>
                 </div>
             `;
@@ -9966,8 +10076,62 @@ class VoicePadApp {
     async applyIncomingToSelectedScroll() {
         if (!this.incomingData) return;
         const targetScrollId = document.getElementById('incoming-target-scroll')?.value || this.currentScrollId;
-        const s = this.incomingData.slot || this.incomingData;
 
+        // スクロールを受信して既存スクロールに統合する場合
+        if (this.incomingData.type === 'voicepad_scroll' || this.incomingData.scroll) {
+            const currentSlots = this.slots.filter(sl => sl.scrollId === targetScrollId);
+            let addedCount = 0;
+            if (Array.isArray(this.incomingData.slots)) {
+                for (let i = 0; i < this.incomingData.slots.length; i++) {
+                    const s = this.incomingData.slots[i];
+                    const blob = this.extractAudioBlob(s);
+                    const newSlot = {
+                        id: 'slot_' + Date.now() + '_' + i + '_' + Math.random().toString(36).substr(2, 4),
+                        scrollId: targetScrollId,
+                        label: s.label || 'ボタン',
+                        labelPosition: s.labelPosition || 'bottom',
+                        emoji: s.emoji || '🔊',
+                        imageUrl: s.imageUrl || null,
+                        imageScale: s.imageScale !== undefined ? s.imageScale : 1.0,
+                        imageOffsetX: s.imageOffsetX !== undefined ? s.imageOffsetX : 0,
+                        imageOffsetY: s.imageOffsetY !== undefined ? s.imageOffsetY : 0,
+                        imageFit: s.imageFit || 'cover',
+                        audioBlob: blob,
+                        duration: s.duration || 0,
+                        voiceEffect: s.voiceEffect || 'inherit',
+                        voiceEffectMode: s.voiceEffectMode || 'inherit',
+                        voiceParams: s.voiceParams || null,
+                        envParams: s.envParams || null,
+                        eqParams: s.eqParams || null,
+                        specialParams: s.specialParams || null,
+                        playbackSpeed: s.playbackSpeed || 'inherit',
+                        volume: (s.volume !== undefined && s.volume !== null) ? parseFloat(s.volume) : 1.0,
+                        ttsText: s.ttsText || null,
+                        ttsVoice: s.ttsVoice || null,
+                        ttsRate: s.ttsRate || 1.0,
+                        ttsPitch: s.ttsPitch || 1.0,
+                        order: currentSlots.length + addedCount + 1
+                    };
+                    await this.storage.saveSlot(newSlot);
+                    this.slots.push(newSlot);
+                    addedCount++;
+                }
+            }
+
+            if (this.currentScrollId !== targetScrollId) {
+                await this.switchScroll(targetScrollId);
+            } else {
+                this.renderSlots();
+                this.renderScrollTabs();
+            }
+
+            this.closeIncomingShareModal();
+            this.showToast(`✨ スクロールから ${addedCount} 個のスイッチを追加しました！`);
+            return;
+        }
+
+        // 単一スロットの場合
+        const s = this.incomingData.slot || this.incomingData;
         const blob = this.extractAudioBlob(s);
         const targetSlots = this.slots.filter(sl => sl.scrollId === targetScrollId);
         const newSlot = {
@@ -10016,7 +10180,7 @@ class VoicePadApp {
     async applyIncomingToNewScroll() {
         if (!this.incomingData) return;
 
-        if (this.incomingData.type === 'voicepad_scroll') {
+        if (this.incomingData.type === 'voicepad_scroll' || this.incomingData.scroll) {
             const newScrollId = 'scroll_' + Date.now();
             const newScroll = {
                 id: newScrollId,
@@ -10035,10 +10199,11 @@ class VoicePadApp {
             this.scrolls.push(newScroll);
 
             if (Array.isArray(this.incomingData.slots)) {
-                for (const s of this.incomingData.slots) {
+                for (let i = 0; i < this.incomingData.slots.length; i++) {
+                    const s = this.incomingData.slots[i];
                     const blob = this.extractAudioBlob(s);
                     const slotObj = {
-                        id: 'slot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                        id: 'slot_' + Date.now() + '_' + i + '_' + Math.random().toString(36).substr(2, 4),
                         scrollId: newScrollId,
                         label: s.label || 'ボタン',
                         labelPosition: s.labelPosition || 'bottom',
@@ -10057,11 +10222,12 @@ class VoicePadApp {
                         eqParams: s.eqParams || null,
                         specialParams: s.specialParams || null,
                         playbackSpeed: s.playbackSpeed || 'inherit',
+                        volume: (s.volume !== undefined && s.volume !== null) ? parseFloat(s.volume) : 1.0,
                         ttsText: s.ttsText || null,
                         ttsVoice: s.ttsVoice || null,
                         ttsRate: s.ttsRate || 1.0,
                         ttsPitch: s.ttsPitch || 1.0,
-                        order: s.order || 1
+                        order: (s.order !== undefined) ? s.order : (i + 1)
                     };
                     await this.storage.saveSlot(slotObj);
                     this.slots.push(slotObj);
