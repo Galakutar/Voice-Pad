@@ -8533,7 +8533,7 @@ class VoicePadApp {
         const canvas = document.getElementById('qr-canvas');
         if (!canvas) return;
         const targetUrl = 'https://galakutar.github.io/Voice-Pad/';
-        QrEngine.renderToCanvas(canvas, targetUrl, { size: 180, margin: 12, fgColor: '#000000', bgColor: '#ffffff' });
+        QrEngine.renderToCanvas(canvas, targetUrl, { size: 220, margin: 16, fgColor: '#000000', bgColor: '#ffffff' });
     }
 
     // ==================== 🗣️ スイッチ専用クイック【声質】モーダル制御 ====================
