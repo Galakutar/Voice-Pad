@@ -147,12 +147,14 @@
             }
         }
     </style>
+    <script src="qrcode.min.js"></script>
 </head>
 <body>
     <div class="card">
         <div class="qr-col">
             <div class="qr-container">
-                <img id="qr-img" class="qr-image" src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://galakutar.github.io/Voice-Pad/" alt="QR Code">
+                <div id="qr-holder" style="display: flex; justify-content: center; align-items: center;"></div>
+                <img id="qr-img" class="qr-image" src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://galakutar.github.io/Voice-Pad/" alt="QR Code" style="display: none;">
             </div>
         </div>
 
@@ -183,6 +185,25 @@
     <script>
         const appShareUrl = 'https://galakutar.github.io/Voice-Pad/';
         const shareText = '音声録音＆タッチサンプラーアプリ「Voice Pad」を使ってみてね！\n' + appShareUrl;
+
+        // QRコードのローカル高精度生成
+        try {
+            const holder = document.getElementById('qr-holder');
+            if (typeof QRCode !== 'undefined' && holder) {
+                new QRCode(holder, {
+                    text: appShareUrl,
+                    width: 180,
+                    height: 180,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            } else {
+                document.getElementById('qr-img').style.display = 'block';
+            }
+        } catch (e) {
+            document.getElementById('qr-img').style.display = 'block';
+        }
 
         document.getElementById('btn-share').addEventListener('click', async () => {
             if (navigator.share) {

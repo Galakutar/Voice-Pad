@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.24.0450';
+const APP_VERSION = '2026.09.24.2350';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -6593,7 +6593,7 @@ class VoicePadApp {
         await this.shareOrDownloadFile(fileName, JSON.stringify(exportData, null, 2), '単体ボタン');
     }
 
-    // ==================== 📡 生徒側 WebRTC Wi-Fi データ送信モーダル ====================
+    // ==================== 📡 生徒側 QRデータ直接送信モーダル ====================
     async openP2pSendModal(slotId) {
         this.stopP2pScanner();
         this.closeScrollModal();
@@ -6608,6 +6608,8 @@ class VoicePadApp {
         const metaEl = document.getElementById('p2p-send-slot-meta');
         const statusText = document.getElementById('p2p-send-status-text');
         const loadingSpinner = document.getElementById('p2p-send-qr-loading');
+        const streamBox = document.getElementById('p2p-send-stream-controls');
+        const streamBadge = document.getElementById('p2p-send-stream-badge');
 
         if (!modal || !canvas) return;
 
@@ -6625,140 +6627,76 @@ class VoicePadApp {
             metaEl.innerText = `🎙️ 音声: ${hasAudio ? dur : 'なし'} | ⚡ ${slot.playbackSpeed && slot.playbackSpeed !== 'inherit' ? slot.playbackSpeed + '倍速' : '標準'}`;
         }
 
-        // 初期表示をステップ1にリセット
-        this.switchP2pSendStep(1);
         modal.classList.add('open');
         if (loadingSpinner) loadingSpinner.style.display = 'flex';
-        if (statusText) statusText.innerText = 'WebRTC待受の接続情報を生成中...';
+        if (statusText) statusText.innerText = '送信用QRコードを生成中...';
 
         const exportObj = await this.buildSlotExportObject(slot);
+        if (loadingSpinner) loadingSpinner.style.display = 'none';
 
-        try {
-            await WebRtcEngine.startSenderSession(
-                exportObj,
-                (offerPayload) => {
-                    if (loadingSpinner) loadingSpinner.style.display = 'none';
-                    QrEngine.renderToCanvas(canvas, offerPayload, { size: 280 });
-                    if (statusText) statusText.innerText = '先生のカメラで上のQRコードを読み取ってください...';
-                },
-                (statusMsg) => {
-                    if (statusText) statusText.innerText = statusMsg;
-                },
-                (completedObj) => {
-                    this.updateP2pSendStepPills(3);
-                    if (statusText) statusText.innerText = '🎉 先生への送信が完了しました！';
-                    this.showToast(`✨ ボタン「${slot.label || 'ボタン'}」の送信が完了しました！`);
-                    setTimeout(() => {
-                        this.cancelP2pSend();
-                    }, 1400);
+        // P2P 1ステップ直接送信ホストを起動
+        const hostSession = P2PDataEngine.startHost(
+            exportObj,
+            (curFrame, curIdx, totalFrames) => {
+                QrEngine.renderToCanvas(canvas, curFrame, { size: 280, margin: 14 });
+                if (streamBadge) {
+                    streamBadge.innerText = `🔄 コマ ${curIdx + 1} / ${totalFrames}`;
                 }
-            );
-        } catch (err) {
-            console.error('WebRTC send error:', err);
-            if (loadingSpinner) loadingSpinner.style.display = 'none';
-            if (statusText) statusText.innerText = '⚠️ WebRTC接続の準備に失敗しました';
+            },
+            (statusMsg) => {
+                if (statusText) statusText.innerText = statusMsg;
+            }
+        );
+
+        if (hostSession.isStream && hostSession.frames.length > 1) {
+            QrEngine.renderToCanvas(canvas, hostSession.frames[0], { size: 280, margin: 14 });
+            if (streamBox) streamBox.style.display = 'flex';
+            if (streamBadge) streamBadge.innerText = `🔄 コマ 1 / ${hostSession.totalChunks}`;
+            if (statusText) statusText.innerText = '先生の端末のカメラをこのQRコードにかざしてください（全コマを自動読取します）';
+        } else {
+            QrEngine.renderToCanvas(canvas, hostSession.qrPayload, { size: 280, margin: 14 });
+            if (streamBox) streamBox.style.display = 'none';
+            if (streamBadge) streamBadge.innerText = '⚡ 単一QRコード（瞬時読取）';
+            if (statusText) statusText.innerText = '先生の端末のカメラでこのQRコードを1回スキャンするだけで送信完了します！';
         }
     }
 
-    switchP2pSendStep(stepNumber) {
-        const step1 = document.getElementById('p2p-send-step1-container');
-        const step2 = document.getElementById('p2p-send-step2-container');
-        const video = document.getElementById('p2p-send-scanner-video');
-        const canvas = document.getElementById('p2p-send-scanner-canvas');
-        const statusText = document.getElementById('p2p-send-status-text');
-
-        this.updateP2pSendStepPills(stepNumber);
-
-        if (stepNumber === 1) {
-            QrEngine.stopCameraScanner();
-            if (step1) step1.style.display = 'flex';
-            if (step2) step2.style.display = 'none';
-            if (statusText && WebRtcEngine.activeSender?.offerPayload) {
-                statusText.innerText = '先生のカメラで上のQRコードを読み取ってください...';
-            }
-        } else if (stepNumber === 2) {
-            if (step1) step1.style.display = 'none';
-            if (step2) step2.style.display = 'flex';
-            if (statusText) statusText.innerText = '先生の画面の返信用QRコードを探しています...';
-
-            if (video) {
-                QrEngine.startCameraScanner(
-                    video,
-                    canvas,
-                    async (qrPayload) => {
-                        if (qrPayload && (qrPayload.startsWith('vpad_rtc_answer:') || qrPayload.startsWith('vpad_rtc_a:'))) {
-                            QrEngine.stopCameraScanner();
-                            try {
-                                await WebRtcEngine.applyAnswerToSender(
-                                    qrPayload,
-                                    (statusMsg) => {
-                                        if (statusText) statusText.innerText = statusMsg;
-                                    }
-                                );
-                            } catch (err) {
-                                console.error('Failed to apply answer:', err);
-                                if (statusText) statusText.innerText = `⚠️ 応答エラー: ${err.message}`;
-                            }
-                        }
-                    },
-                    (statusMsg) => {
-                        if (statusText) statusText.innerText = statusMsg;
-                    }
-                ).catch(err => {
-                    this.showToast('⚠️ カメラへのアクセスが拒否されたか利用できません');
-                });
-            }
+    updateP2pSendStreamUi(frame, index, total) {
+        const canvas = document.getElementById('p2p-send-qr-canvas');
+        const badge = document.getElementById('p2p-send-stream-badge');
+        if (canvas && frame) {
+            QrEngine.renderToCanvas(canvas, frame, { size: 280, margin: 14 });
         }
-    }
-
-    updateP2pSendStepPills(activeStep) {
-        const p1 = document.getElementById('p2p-send-step-pill-1');
-        const p2 = document.getElementById('p2p-send-step-pill-2');
-        const p3 = document.getElementById('p2p-send-step-pill-3');
-
-        if (activeStep === 1) {
-            p1?.classList.add('active'); p1?.classList.remove('done');
-            p2?.classList.remove('active', 'done');
-            p3?.classList.remove('active', 'done');
-        } else if (activeStep === 2) {
-            p1?.classList.remove('active'); p1?.classList.add('done');
-            p2?.classList.add('active'); p2?.classList.remove('done');
-            p3?.classList.remove('active', 'done');
-        } else if (activeStep === 3) {
-            p1?.classList.remove('active'); p1?.classList.add('done');
-            p2?.classList.remove('active'); p2?.classList.add('done');
-            p3?.classList.add('active', 'done');
+        if (badge) {
+            badge.innerText = `コマ ${index + 1} / ${total}`;
         }
     }
 
     cancelP2pSend() {
         QrEngine.stopCameraScanner();
-        WebRtcEngine.stopSenderSession();
         P2PDataEngine.stopHost();
         document.getElementById('p2p-send-modal-backdrop')?.classList.remove('open');
     }
 
-    // ==================== 📷 先生側 WebRTC Wi-Fi データ受信モーダル ====================
+    // ==================== 📷 先生側 QRデータ直接受信モーダル ====================
     async openP2pReceiveModal() {
         this.closeScrollModal();
         this.closeEditModal();
         this.cancelP2pSend();
 
         const modal = document.getElementById('p2p-receive-modal-backdrop');
-        const step1 = document.getElementById('p2p-receive-step1-container');
-        const step2 = document.getElementById('p2p-receive-step2-container');
         const video = document.getElementById('p2p-scanner-video');
         const canvas = document.getElementById('p2p-scanner-canvas');
         const statusText = document.getElementById('p2p-receive-status-text');
+        const progressTrack = document.getElementById('p2p-receive-progress-track');
+        const progressBar = document.getElementById('p2p-receive-progress-bar');
 
         if (!modal || !video) return;
 
         P2PDataEngine.initReceiver();
-        WebRtcEngine.stopReceiverSession();
 
-        this.updateP2pReceiveStepPills(1);
-        if (step1) step1.style.display = 'flex';
-        if (step2) step2.style.display = 'none';
+        if (progressTrack) progressTrack.style.display = 'none';
+        if (progressBar) progressBar.style.width = '0%';
 
         modal.classList.add('open');
         if (statusText) statusText.innerText = 'カメラを起動中...';
@@ -6779,87 +6717,19 @@ class VoicePadApp {
         }
     }
 
-    updateP2pReceiveStepPills(activeStep) {
-        const p1 = document.getElementById('p2p-receive-step-pill-1');
-        const p2 = document.getElementById('p2p-receive-step-pill-2');
-        const p3 = document.getElementById('p2p-receive-step-pill-3');
-
-        if (activeStep === 1) {
-            p1?.classList.add('active'); p1?.classList.remove('done');
-            p2?.classList.remove('active', 'done');
-            p3?.classList.remove('active', 'done');
-        } else if (activeStep === 2) {
-            p1?.classList.remove('active'); p1?.classList.add('done');
-            p2?.classList.add('active'); p2?.classList.remove('done');
-            p3?.classList.remove('active', 'done');
-        } else if (activeStep === 3) {
-            p1?.classList.remove('active'); p1?.classList.add('done');
-            p2?.classList.remove('active'); p2?.classList.add('done');
-            p3?.classList.add('active', 'done');
-        }
-    }
-
     stopP2pScanner() {
         QrEngine.stopCameraScanner();
-        WebRtcEngine.stopReceiverSession();
         document.getElementById('p2p-receive-modal-backdrop')?.classList.remove('open');
     }
 
     async onP2pQrDetected(qrText) {
         const statusText = document.getElementById('p2p-receive-status-text');
-        const step1 = document.getElementById('p2p-receive-step1-container');
-        const step2 = document.getElementById('p2p-receive-step2-container');
-        const answerCanvas = document.getElementById('p2p-receive-qr-canvas');
+        const progressTrack = document.getElementById('p2p-receive-progress-track');
+        const progressBar = document.getElementById('p2p-receive-progress-bar');
 
         if (!qrText || typeof qrText !== 'string') return;
 
-        // ① WebRTC SDP Offer の場合
-        if (qrText.startsWith('vpad_rtc_offer:') || qrText.startsWith('vpad_rtc_o:')) {
-            QrEngine.stopCameraScanner();
-            if (statusText) statusText.innerText = '⚡ 接続要求を確認しました。返信用QRコードを生成中...';
-
-            try {
-                await WebRtcEngine.handleOfferOnReceiver(
-                    qrText,
-                    (answerPayload) => {
-                        this.updateP2pReceiveStepPills(2);
-                        if (step1) step1.style.display = 'none';
-                        if (step2) step2.style.display = 'flex';
-                        if (answerCanvas) {
-                            QrEngine.renderToCanvas(answerCanvas, answerPayload, { size: 280 });
-                        }
-                        if (statusText) {
-                            statusText.innerText = '⚡ 生徒のカメラで上の返信用QRコードを読み取らせてください...';
-                        }
-                    },
-                    async (receivedData) => {
-                        this.updateP2pReceiveStepPills(3);
-                        if (statusText) statusText.innerText = '✅ 受信完了！データを保存しています...';
-
-                        this.stopP2pScanner();
-
-                        const label = receivedData.slot?.label || receivedData.label || 'ボタン';
-                        const fileName = `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
-
-                        // 自動バックアップ保存
-                        const jsonStr = JSON.stringify(receivedData, null, 2);
-                        this.downloadFileDirect(fileName, jsonStr);
-
-                        await this.showIncomingShareModal(receivedData, fileName);
-                        this.showToast(`🎉 WebRTC Wi-Fi通信でボタン「${label}」を受信しました！`);
-                    },
-                    (statusMsg) => {
-                        if (statusText) statusText.innerText = statusMsg;
-                    }
-                );
-            } catch (err) {
-                console.error('WebRTC receive error:', err);
-                if (statusText) statusText.innerText = `⚠️ WebRTCエラー: ${err.message}`;
-            }
-            return;
-        }
-
-        // ② 光学ダイレクトQR・フォールバックの場合
+        // P2P 直接QR・アニメーションストリームの高速デコード
         const res = P2PDataEngine.processDetectedPayload(qrText);
         if (!res) return;
 
@@ -6868,17 +6738,25 @@ class VoicePadApp {
         if (res.complete && res.data) {
             try {
                 if (statusText) statusText.innerText = '✅ 受信完了！データを保存しています...';
+                if (progressBar) progressBar.style.width = '100%';
                 this.stopP2pScanner();
 
                 const data = res.data;
-                const fileName = res.fileName || 'VoicePad_ボタン.vpad-button';
+                const label = data.slot?.label || data.label || 'ボタン';
+                const fileName = res.fileName || `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
                 const jsonStr = JSON.stringify(data, null, 2);
                 this.downloadFileDirect(fileName, jsonStr);
 
                 await this.showIncomingShareModal(data, fileName);
-                this.showToast(`🎉 ボタン「${data.slot?.label || 'ボタン'}」を受信・保存しました！`);
+                this.showToast(`🎉 ボタン「${label}」を受信・保存しました！`);
             } catch (err) {
                 console.error('P2P QR receive error:', err);
+            }
+        } else if (!res.complete && res.progress !== undefined) {
+            if (progressTrack) progressTrack.style.display = 'block';
+            if (progressBar) progressBar.style.width = `${Math.round(res.progress * 100)}%`;
+            if (statusText) {
+                statusText.innerText = `📥 受信中: ${res.count} / ${res.total} コマ (${Math.round(res.progress * 100)}%)... そのままカメラをかざしてください`;
             }
         }
     }
@@ -8654,62 +8532,8 @@ class VoicePadApp {
     renderQrCode() {
         const canvas = document.getElementById('qr-canvas');
         if (!canvas) return;
-        this.drawStylizedQr(canvas, 'https://galakutar.github.io/Voice-Pad/');
-    }
-
-    drawStylizedQr(canvas, text) {
-        const ctx = canvas.getContext('2d');
-        const size = canvas.width || 160;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, size, size);
-
-        // QRコードのスタイリッシュなマトリックス描画（完全オフラインで動作）
-        const moduleCount = 25;
-        const cellSize = size / moduleCount;
-
-        // ハッシュベースの決定論的パターン生成
-        let hash = 0;
-        for (let i = 0; i < text.length; i++) {
-            hash = ((hash << 5) - hash) + text.charCodeAt(i);
-            hash |= 0;
-        }
-
-        ctx.fillStyle = '#0f172a';
-
-        // 3隅のファインダーパターン（位置検出マーク）
-        const drawFinder = (x, y) => {
-            ctx.fillStyle = '#0f172a';
-            ctx.fillRect(x * cellSize, y * cellSize, 7 * cellSize, 7 * cellSize);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect((x + 1) * cellSize, (y + 1) * cellSize, 5 * cellSize, 5 * cellSize);
-            ctx.fillStyle = '#2563eb';
-            ctx.fillRect((x + 2) * cellSize, (y + 2) * cellSize, 3 * cellSize, 3 * cellSize);
-        };
-
-        drawFinder(0, 0);
-        drawFinder(moduleCount - 7, 0);
-        drawFinder(0, moduleCount - 7);
-
-        // データモジュール描画
-        ctx.fillStyle = '#1e293b';
-        let seed = Math.abs(hash);
-        for (let r = 0; r < moduleCount; r++) {
-            for (let c = 0; c < moduleCount; c++) {
-                if ((r < 8 && c < 8) || (r < 8 && c >= moduleCount - 8) || (r >= moduleCount - 8 && c < 8)) {
-                    continue; // ファインダー領域はスキップ
-                }
-                seed = (seed * 9301 + 49297) % 233280;
-                if ((seed / 233280) > 0.48) {
-                    ctx.beginPath();
-                    if (ctx.roundRect) {
-                        ctx.roundRect(c * cellSize + 0.5, r * cellSize + 0.5, cellSize - 1, cellSize - 1, 1.5);
-                    } else {
-                        ctx.rect(c * cellSize + 0.5, r * cellSize + 0.5, cellSize - 1, cellSize - 1);
-                    }
-                    ctx.fill();
-                }
-            }
-        }
+        const targetUrl = 'https://galakutar.github.io/Voice-Pad/';
+        QrEngine.renderToCanvas(canvas, targetUrl, { size: 180, margin: 12, fgColor: '#000000', bgColor: '#ffffff' });
     }
 
     // ==================== 🗣️ スイッチ専用クイック【声質】モーダル制御 ====================
