@@ -14,7 +14,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260924_2350">
+    <link rel="stylesheet" href="style.css?v=20260925_0015">
 </head>
 <body>
     <div id="app-container">
@@ -1575,11 +1575,11 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
         </div>
     </div>
 
-    <!-- 📡 生徒側 QR直接送信モーダル -->
+    <!-- 📡 生徒側 Wi-Fi 直接送信モーダル -->
     <div id="p2p-send-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="p2p-send-modal-title">
         <div class="modal-content" style="max-width: 440px; text-align: center;">
             <div class="modal-header" style="justify-content: center; position: relative;">
-                <h3 id="p2p-send-modal-title" class="modal-title" style="color: #38bdf8;">📡 QR直接送信 (生徒 ➜ 先生)</h3>
+                <h3 id="p2p-send-modal-title" class="modal-title" style="color: #38bdf8;">📡 Wi-Fi 直接送信 (生徒 ➜ 先生)</h3>
                 <button id="close-p2p-send-modal-btn" class="close-modal-btn" style="position: absolute; right: 0;" title="閉じる" aria-label="閉じる">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -1599,8 +1599,8 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                 </div>
 
                 <div style="font-size: 12.5px; color: #cbd5e1; line-height: 1.5;">
-                    先生の端末のカメラで、下の <strong>QRコード</strong> を読み取ってください。<br>
-                    <span style="font-size: 11px; color: #38bdf8;">※ 1回スキャンするだけで先生側にデータが直接転送されます</span>
+                    先生の端末のカメラで、下の <strong>QRコード（1枚）</strong> を読み取ってください。<br>
+                    <span style="font-size: 11.5px; color: #38bdf8;">※ 1回スキャンするだけでWi-Fi経由で瞬時にデータが転送されます</span>
                 </div>
 
                 <!-- QRコード表示コンテナ -->
@@ -1608,25 +1608,13 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                     <canvas id="p2p-send-qr-canvas" width="320" height="320" style="display: block; width: 250px; height: 250px; max-width: 80vw; max-height: 80vw; border-radius: 12px;"></canvas>
                     <div id="p2p-send-qr-loading" class="p2p-qr-spinner" style="display: none;">
                         <div class="spinner"></div>
-                        <div style="font-size: 11px; color: #38bdf8; margin-top: 6px;">QRコード生成中...</div>
-                    </div>
-                </div>
-
-                <!-- アニメーションストリーム用コントロール（複数コマの場合のみ表示） -->
-                <div id="p2p-send-stream-controls" class="p2p-stream-box" style="display: none; flex-direction: column; gap: 8px; width: 100%; max-width: 320px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span id="p2p-send-stream-badge" class="p2p-frame-badge">🔄 自動アニメーション送信中</span>
-                    </div>
-                    <div style="display: flex; justify-content: center; gap: 8px;">
-                        <button type="button" id="btn-p2p-stream-prev" class="action-btn download-btn" style="padding: 4px 10px; font-size: 11px;">◀ 前のコマ</button>
-                        <button type="button" id="btn-p2p-stream-pause" class="action-btn download-btn" style="padding: 4px 10px; font-size: 11px;">⏸️ 一時停止</button>
-                        <button type="button" id="btn-p2p-stream-next" class="action-btn download-btn" style="padding: 4px 10px; font-size: 11px;">次のコマ ▶</button>
+                        <div style="font-size: 11px; color: #38bdf8; margin-top: 6px;">Wi-Fi待受準備中...</div>
                     </div>
                 </div>
 
                 <!-- ステータス -->
                 <div id="p2p-send-status" class="p2p-status-box">
-                    <span class="p2p-status-icon">📷</span>
+                    <span class="p2p-status-icon">📡</span>
                     <span id="p2p-send-status-text">先生のカメラからの読み取りを待っています...</span>
                 </div>
 
@@ -1639,11 +1627,11 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
         </div>
     </div>
 
-    <!-- 📷 先生側 QR直接インポートモーダル -->
+    <!-- 📷 先生側 Wi-Fi 直接インポートモーダル -->
     <div id="p2p-receive-modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="p2p-receive-modal-title">
         <div class="modal-content" style="max-width: 460px; text-align: center;">
             <div class="modal-header" style="justify-content: center; position: relative;">
-                <h3 id="p2p-receive-modal-title" class="modal-title" style="color: #34d399;">📥 QR直接インポート (先生側)</h3>
+                <h3 id="p2p-receive-modal-title" class="modal-title" style="color: #34d399;">📥 Wi-Fi 直接インポート (先生側)</h3>
                 <button id="close-p2p-receive-modal-btn" class="close-modal-btn" style="position: absolute; right: 0;" title="閉じる" aria-label="閉じる">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -1655,7 +1643,7 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
             <div class="modal-body-scroll" style="align-items: center; gap: 12px; padding: 12px 6px;">
                 <div style="font-size: 12.5px; color: #cbd5e1; line-height: 1.5;">
                     生徒の画面に表示された <strong>QRコード</strong> をカメラの枠内に収めてください。<br>
-                    <span style="font-size: 11px; color: #34d399;">※ 1回スキャンするだけで自動的にボタンを受信・取り込みます</span>
+                    <span style="font-size: 11.5px; color: #34d399;">※ 1回スキャンするだけでWi-Fi経由でボタン全データを直接取得します</span>
                 </div>
 
                 <!-- カメラファインダーコンテナ -->
@@ -1674,11 +1662,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
 
                 <div style="font-size: 11.5px; color: #34d399;">
                     💡 <strong>15〜25cm</strong> ほど離して中央に収めるとピントが合って即認識されます
-                </div>
-
-                <!-- マルチコマ受信時のプログレスバー -->
-                <div id="p2p-receive-progress-track" class="p2p-progress-track" style="display: none; width: 100%; max-width: 320px;">
-                    <div id="p2p-receive-progress-bar" class="p2p-progress-bar" style="width: 0%;"></div>
                 </div>
 
                 <!-- 受信ステータス -->
@@ -1713,11 +1696,12 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <!-- トースト通知コンテナ -->
     <div id="toast-container" class="toast-container"></div>
 
-    <!-- 📱 QRコード生成 & スキャンライブラリ (100% オフライン完全ローカル動作) -->
+    <!-- 📱 QRコード生成 & スキャンライブラリ & WebRTC P2P (100% オフライン/Wi-Fi直接通信) -->
     <script src="qrcode.min.js"></script>
     <script src="jsqr.min.js"></script>
+    <script src="peerjs.min.js"></script>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260924_2350"></script>
+    <script src="app.js?v=20260925_0015"></script>
 </body>
 </html>

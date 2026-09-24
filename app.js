@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.24.2350';
+const APP_VERSION = '2026.09.25.0015';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -3715,135 +3715,206 @@ class WebRtcEngine {
 }
 
 class P2PDataEngine {
-    static activeHost = null;
-    static receiverSession = null;
+    static activeSenderPeer = null;
+    static activeSenderConn = null;
+    static activeReceiverPeer = null;
 
     /**
-     * 生徒側：P2Pホストの起動（単一QRコードまたは超高速アニメーションQRストリーム）
-     * 完全オフライン・Wi-Fi不要で100%確実に別端末へデータを転送
+     * 生徒側：Wi-Fi 直接送信ホストの起動
+     * 画面には「1枚の静的QRコード（ルームID）」のみを表示し、
+     * 先生が1回スキャンするだけでWebRTC DataChannel経由で音声・ボタン全データを直接高速転送
      */
-    static startHost(exportObj, onFrameChange, onStatus, onProgress, onComplete) {
-        this.stopHost();
+    static async startWifiSender(exportObj, onQrReady, onStatus, onComplete) {
+        this.stopWifiSession();
 
-        const jsonStr = JSON.stringify(exportObj);
-        const pin = Math.floor(100000 + Math.random() * 900000).toString();
-        const sessionId = 's_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 4);
-        const label = exportObj.slot?.label || 'ボタン';
-        const encodedFull = encodeURIComponent(jsonStr);
+        const roomId = 'vpad_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
+        const qrPayload = `vpad_p2p:${roomId}`;
 
-        let isStream = false;
-        let frames = [];
-        let qrPayload = '';
+        if (onStatus) onStatus('📡 Wi-Fi待受中... 先生のカメラで読み取ってください');
 
-        // 1. 小さいデータ（<= 750文字）の場合は単一QRコード
-        if (encodedFull.length <= 750) {
-            qrPayload = 'vpad:direct:' + encodedFull;
-            frames = [qrPayload];
-        } else {
-            // 2. 音声録音等の大容量データはマルチフレームアニメーションストリーム（1コマ240文字）
-            isStream = true;
-            const chunkSize = 240;
-            const totalChunks = Math.ceil(encodedFull.length / chunkSize);
-            for (let i = 0; i < totalChunks; i++) {
-                const chunk = encodedFull.substring(i * chunkSize, (i + 1) * chunkSize);
-                frames.push(`vpad_chunk:1:${totalChunks}:${i}:${sessionId}:${chunk}`);
+        // QRコードは即座に1枚表示（ルームIDが確定しているため待機ゼロ）
+        if (onQrReady) onQrReady(qrPayload);
+
+        try {
+            if (typeof Peer === 'undefined') {
+                throw new Error('PeerJS ライブラリが読み込まれていません');
             }
-            qrPayload = frames[0];
-        }
 
-        const hostSession = {
-            sessionId,
-            pin,
-            jsonStr,
-            label,
-            isStream,
-            frames,
-            totalChunks: frames.length,
-            currentFrameIndex: 0,
-            isPlaying: true,
-            intervalId: null,
-            qrPayload
-        };
-
-        // アニメーションループ開始（ストリームの場合）
-        if (isStream && frames.length > 1) {
-            hostSession.intervalId = setInterval(() => {
-                if (!hostSession.isPlaying) return;
-                hostSession.currentFrameIndex = (hostSession.currentFrameIndex + 1) % hostSession.frames.length;
-                const curFrame = hostSession.frames[hostSession.currentFrameIndex];
-                hostSession.qrPayload = curFrame;
-                if (onFrameChange) {
-                    onFrameChange(
-                        curFrame,
-                        hostSession.currentFrameIndex,
-                        hostSession.frames.length
-                    );
+            const peer = new Peer(roomId, {
+                debug: 1,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun.cloudflare.com:3478' }
+                    ]
                 }
-            }, 280); // ~3.5 fps でテンポよく切り替え
-        }
+            });
+            this.activeSenderPeer = peer;
 
-        this.activeHost = hostSession;
-        return hostSession;
+            peer.on('open', (id) => {
+                console.log('[P2P Wi-Fi Sender] Room ready with ID:', id);
+                if (onStatus) onStatus('先生のカメラからの読み取りを待っています... (QRコードは1枚のみ)');
+            });
+
+            peer.on('connection', (conn) => {
+                this.activeSenderConn = conn;
+                if (onStatus) onStatus('⚡ 接続確立！Wi-Fi経由でデータを送信中...');
+
+                const sendData = () => {
+                    try {
+                        conn.send(exportObj);
+                        console.log('[P2P Wi-Fi Sender] Data sent over DataChannel');
+                    } catch (e) {
+                        console.error('[P2P Wi-Fi Sender] Send error:', e);
+                        if (onStatus) onStatus(`⚠️ 送信エラー: ${e.message}`);
+                    }
+                };
+
+                if (conn.open) {
+                    sendData();
+                } else {
+                    conn.on('open', sendData);
+                }
+
+                conn.on('data', (msg) => {
+                    if (msg && msg.type === 'ack') {
+                        console.log('[P2P Wi-Fi Sender] ACK received from receiver');
+                        if (onStatus) onStatus('🎉 送信完了しました！');
+                        if (onComplete) onComplete(exportObj);
+                    }
+                });
+
+                conn.on('error', (err) => {
+                    console.error('[P2P Wi-Fi Sender] Connection error:', err);
+                });
+            });
+
+            peer.on('error', (err) => {
+                console.warn('[P2P Wi-Fi Sender] Peer error:', err);
+                if (onStatus && err.type !== 'peer-unavailable') {
+                    onStatus(`⚠️ 通信ステータス: ${err.type || '待機中'}`);
+                }
+            });
+
+            return { roomId, qrPayload };
+        } catch (err) {
+            console.error('[P2P Wi-Fi Sender] Init error:', err);
+            if (onStatus) onStatus('⚠️ Wi-Fi初期化エラー');
+            return { roomId, qrPayload };
+        }
     }
 
     /**
-     * 生徒側：P2Pホストの停止
+     * 先生側：生徒のQRコード（1枚）をスキャンした時のWi-Fi直接受信処理
+     * QRコードからルームIDを取り出し、WebRTC DataChannelで瞬時にデータを受信してACK返信
      */
-    static stopHost() {
-        if (this.activeHost) {
-            if (this.activeHost.intervalId) {
-                clearInterval(this.activeHost.intervalId);
-                this.activeHost.intervalId = null;
+    static async handleWifiReceiverScan(qrPayload, onStatus, onDataReceived) {
+        if (!qrPayload || !qrPayload.startsWith('vpad_p2p:')) return false;
+        const roomId = qrPayload.replace('vpad_p2p:', '').trim();
+        if (!roomId) return false;
+
+        if (this.activeReceiverPeer) {
+            try { this.activeReceiverPeer.destroy(); } catch (e) {}
+            this.activeReceiverPeer = null;
+        }
+
+        if (onStatus) onStatus('⚡ Wi-Fi接続を確立中...');
+
+        return new Promise((resolve) => {
+            if (typeof Peer === 'undefined') {
+                if (onStatus) onStatus('⚠️ PeerJS ライブラリが見つかりません');
+                resolve(false);
+                return;
             }
-            this.activeHost = null;
+
+            const rcvPeer = new Peer({
+                debug: 1,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun.cloudflare.com:3478' }
+                    ]
+                }
+            });
+            this.activeReceiverPeer = rcvPeer;
+
+            let isCompleted = false;
+
+            const timeoutId = setTimeout(() => {
+                if (!isCompleted) {
+                    if (onStatus) onStatus('⚠️ 接続待機中... もう一度生徒のQRコードをかざしてください');
+                    resolve(false);
+                }
+            }, 18000);
+
+            rcvPeer.on('open', () => {
+                if (onStatus) onStatus('⚡ 送信者へWi-Fi接続中...');
+                const conn = rcvPeer.connect(roomId, { reliable: true });
+
+                conn.on('open', () => {
+                    if (onStatus) onStatus('📥 ボタンデータを受信中...');
+                });
+
+                conn.on('data', (data) => {
+                    if (!isCompleted && data && (data.slot || data.type === 'voicepad_slot' || data.type === 'voicepad_scroll' || data.label)) {
+                        isCompleted = true;
+                        clearTimeout(timeoutId);
+
+                        // ACKを送信側に即時返信
+                        try {
+                            conn.send({ type: 'ack', ok: true });
+                        } catch (e) {}
+
+                        if (onStatus) onStatus('✅ 受信完了！データを保存しています...');
+                        if (onDataReceived) onDataReceived(data);
+
+                        setTimeout(() => {
+                            try { rcvPeer.destroy(); } catch (e) {}
+                            if (this.activeReceiverPeer === rcvPeer) {
+                                this.activeReceiverPeer = null;
+                            }
+                        }, 1200);
+
+                        resolve(true);
+                    }
+                });
+
+                conn.on('error', (err) => {
+                    console.error('[P2P Wi-Fi Receiver] Conn error:', err);
+                });
+            });
+
+            rcvPeer.on('error', (err) => {
+                console.warn('[P2P Wi-Fi Receiver] Peer error:', err);
+                if (onStatus) onStatus(`⚠️ 接続エラー: ${err.type || '通信待機中'}`);
+            });
+        });
+    }
+
+    /**
+     * Wi-Fi P2P 送信・受信セッションの完全終了
+     */
+    static stopWifiSession() {
+        if (this.activeSenderConn) {
+            try { this.activeSenderConn.close(); } catch (e) {}
+            this.activeSenderConn = null;
+        }
+        if (this.activeSenderPeer) {
+            try { this.activeSenderPeer.destroy(); } catch (e) {}
+            this.activeSenderPeer = null;
+        }
+        if (this.activeReceiverPeer) {
+            try { this.activeReceiverPeer.destroy(); } catch (e) {}
+            this.activeReceiverPeer = null;
         }
     }
 
     /**
-     * 送信側アニメーションの手動コマ送り
-     */
-    static setHostFrame(index) {
-        if (!this.activeHost || !this.activeHost.isStream) return null;
-        const len = this.activeHost.frames.length;
-        this.activeHost.currentFrameIndex = ((index % len) + len) % len;
-        this.activeHost.qrPayload = this.activeHost.frames[this.activeHost.currentFrameIndex];
-        return {
-            frame: this.activeHost.qrPayload,
-            index: this.activeHost.currentFrameIndex,
-            total: len
-        };
-    }
-
-    /**
-     * 送信側アニメーションの一時停止／再開
-     */
-    static toggleHostPlay() {
-        if (!this.activeHost || !this.activeHost.isStream) return false;
-        this.activeHost.isPlaying = !this.activeHost.isPlaying;
-        return this.activeHost.isPlaying;
-    }
-
-    /**
-     * 先生側：受信セッションの初期化
-     */
-    static initReceiver() {
-        this.receiverSession = {
-            sessionId: null,
-            totalChunks: 0,
-            chunks: {},
-            receivedCount: 0,
-            completed: false
-        };
-    }
-
-    /**
-     * 先生側：検出したQRコード文字列を処理・チャンク結合・自動復元
+     * 単一直接QRコード (小さいデータ / オフライン) のデコード
      */
     static processDetectedPayload(qrString) {
-        if (!this.receiverSession) this.initReceiver();
-        const sess = this.receiverSession;
-        if (sess.completed) return { complete: true, alreadyCompleted: true };
-
         if (!qrString || typeof qrString !== 'string') return null;
 
         // ① 単一直接QRコード (vpad:direct:...)
@@ -3851,8 +3922,7 @@ class P2PDataEngine {
             try {
                 const raw = decodeURIComponent(qrString.slice(12));
                 const parsed = JSON.parse(raw);
-                sess.completed = true;
-                const label = parsed.slot?.label || 'ボタン';
+                const label = parsed.slot?.label || parsed.label || 'ボタン';
                 const fileName = `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
                 return { complete: true, data: parsed, fileName };
             } catch (e) {
@@ -3861,91 +3931,19 @@ class P2PDataEngine {
             }
         }
 
-        // ①-b 既存互換（生JSONまたはvpad://）
+        // ② 既存互換（生JSONまたはvpad://）
         if (qrString.startsWith('{') || qrString.startsWith('vpad://')) {
             try {
                 const raw = qrString.startsWith('vpad://') ? decodeURIComponent(qrString.slice(7)) : qrString;
                 const parsed = JSON.parse(raw);
                 const btnData = (parsed.type === 'vpad_direct_btn' && parsed.data) ? parsed.data : parsed;
-                sess.completed = true;
                 const label = btnData.slot?.label || btnData.label || 'ボタン';
                 const fileName = `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
                 return { complete: true, data: btnData, fileName };
             } catch (e) {}
         }
 
-        // ② マルチフレームアニメーションQRストリーム (vpad_chunk:1:tot:idx:sid:data)
-        if (qrString.startsWith('vpad_chunk:1:')) {
-            const parts = qrString.split(':');
-            if (parts.length < 6) return null;
-            const totalChunks = parseInt(parts[2], 10);
-            const chunkIndex = parseInt(parts[3], 10);
-            const sessionId = parts[4];
-            const chunkData = parts.slice(5).join(':');
-
-            // 別のセッションが来た場合はリセット
-            if (sess.sessionId !== sessionId) {
-                sess.sessionId = sessionId;
-                sess.totalChunks = totalChunks;
-                sess.chunks = {};
-                sess.receivedCount = 0;
-            }
-
-            if (!sess.chunks[chunkIndex]) {
-                sess.chunks[chunkIndex] = chunkData;
-                sess.receivedCount = Object.keys(sess.chunks).length;
-            }
-
-            const progress = sess.receivedCount / sess.totalChunks;
-
-            // 全チャンク取得完了！
-            if (sess.receivedCount >= sess.totalChunks) {
-                try {
-                    let assembled = '';
-                    for (let i = 0; i < sess.totalChunks; i++) {
-                        if (sess.chunks[i] === undefined) {
-                            return { complete: false, progress, count: sess.receivedCount, total: sess.totalChunks };
-                        }
-                        assembled += sess.chunks[i];
-                    }
-                    const fullJson = decodeURIComponent(assembled);
-                    const parsed = JSON.parse(fullJson);
-                    sess.completed = true;
-                    const label = parsed.slot?.label || 'ボタン';
-                    const fileName = `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
-                    return { complete: true, data: parsed, fileName };
-                } catch (err) {
-                    console.error('Failed to reassemble chunks:', err);
-                    return null;
-                }
-            }
-
-            return {
-                complete: false,
-                progress,
-                count: sess.receivedCount,
-                total: sess.totalChunks
-            };
-        }
-
         return null;
-    }
-
-    /**
-     * 互換用メソッド
-     */
-    static receiveFromQrPayload(qrString, onStatus, onProgress) {
-        return new Promise((resolve, reject) => {
-            const res = this.processDetectedPayload(qrString);
-            if (res && res.complete && res.data) {
-                resolve({ data: res.data, fileName: res.fileName });
-            } else if (res && !res.complete) {
-                if (onProgress) onProgress(res.progress);
-                if (onStatus) onStatus(`📥 受信中: ${res.count} / ${res.total} コマ (${Math.round(res.progress * 100)}%)...`);
-            } else {
-                reject(new Error('未対応のQRデータ形式です'));
-            }
-        });
     }
 }
 
@@ -6593,7 +6591,7 @@ class VoicePadApp {
         await this.shareOrDownloadFile(fileName, JSON.stringify(exportData, null, 2), '単体ボタン');
     }
 
-    // ==================== 📡 生徒側 QRデータ直接送信モーダル ====================
+    // ==================== 📡 生徒側 Wi-Fi 直接送信モーダル ====================
     async openP2pSendModal(slotId) {
         this.stopP2pScanner();
         this.closeScrollModal();
@@ -6608,8 +6606,6 @@ class VoicePadApp {
         const metaEl = document.getElementById('p2p-send-slot-meta');
         const statusText = document.getElementById('p2p-send-status-text');
         const loadingSpinner = document.getElementById('p2p-send-qr-loading');
-        const streamBox = document.getElementById('p2p-send-stream-controls');
-        const streamBadge = document.getElementById('p2p-send-stream-badge');
 
         if (!modal || !canvas) return;
 
@@ -6629,56 +6625,35 @@ class VoicePadApp {
 
         modal.classList.add('open');
         if (loadingSpinner) loadingSpinner.style.display = 'flex';
-        if (statusText) statusText.innerText = '送信用QRコードを生成中...';
+        if (statusText) statusText.innerText = 'Wi-Fi待受QRコードを準備中...';
 
         const exportObj = await this.buildSlotExportObject(slot);
         if (loadingSpinner) loadingSpinner.style.display = 'none';
 
-        // P2P 1ステップ直接送信ホストを起動
-        const hostSession = P2PDataEngine.startHost(
+        // Wi-Fi 1ステップ直接送信ホストを起動（1枚の静的QRコードを表示）
+        await P2PDataEngine.startWifiSender(
             exportObj,
-            (curFrame, curIdx, totalFrames) => {
-                QrEngine.renderToCanvas(canvas, curFrame, { size: 280, margin: 14 });
-                if (streamBadge) {
-                    streamBadge.innerText = `🔄 コマ ${curIdx + 1} / ${totalFrames}`;
-                }
+            (qrPayload) => {
+                QrEngine.renderToCanvas(canvas, qrPayload, { size: 260, margin: 14, fgColor: '#000000', bgColor: '#ffffff' });
+                if (statusText) statusText.innerText = '先生の端末のカメラでこのQRコード（1枚）を読み取ってください';
             },
             (statusMsg) => {
                 if (statusText) statusText.innerText = statusMsg;
+            },
+            (completedObj) => {
+                if (statusText) statusText.innerText = '🎉 送信完了しました！';
+                this.showToast(`🎉 スイッチ「${slot.label || 'ボタン'}」のWi-Fi送信が完了しました！`);
             }
         );
-
-        if (hostSession.isStream && hostSession.frames.length > 1) {
-            QrEngine.renderToCanvas(canvas, hostSession.frames[0], { size: 280, margin: 14 });
-            if (streamBox) streamBox.style.display = 'flex';
-            if (streamBadge) streamBadge.innerText = `🔄 コマ 1 / ${hostSession.totalChunks}`;
-            if (statusText) statusText.innerText = '先生の端末のカメラをこのQRコードにかざしてください（全コマを自動読取します）';
-        } else {
-            QrEngine.renderToCanvas(canvas, hostSession.qrPayload, { size: 280, margin: 14 });
-            if (streamBox) streamBox.style.display = 'none';
-            if (streamBadge) streamBadge.innerText = '⚡ 単一QRコード（瞬時読取）';
-            if (statusText) statusText.innerText = '先生の端末のカメラでこのQRコードを1回スキャンするだけで送信完了します！';
-        }
-    }
-
-    updateP2pSendStreamUi(frame, index, total) {
-        const canvas = document.getElementById('p2p-send-qr-canvas');
-        const badge = document.getElementById('p2p-send-stream-badge');
-        if (canvas && frame) {
-            QrEngine.renderToCanvas(canvas, frame, { size: 280, margin: 14 });
-        }
-        if (badge) {
-            badge.innerText = `コマ ${index + 1} / ${total}`;
-        }
     }
 
     cancelP2pSend() {
         QrEngine.stopCameraScanner();
-        P2PDataEngine.stopHost();
+        P2PDataEngine.stopWifiSession();
         document.getElementById('p2p-send-modal-backdrop')?.classList.remove('open');
     }
 
-    // ==================== 📷 先生側 QRデータ直接受信モーダル ====================
+    // ==================== 📷 先生側 Wi-Fi 直接受信モーダル ====================
     async openP2pReceiveModal() {
         this.closeScrollModal();
         this.closeEditModal();
@@ -6688,15 +6663,8 @@ class VoicePadApp {
         const video = document.getElementById('p2p-scanner-video');
         const canvas = document.getElementById('p2p-scanner-canvas');
         const statusText = document.getElementById('p2p-receive-status-text');
-        const progressTrack = document.getElementById('p2p-receive-progress-track');
-        const progressBar = document.getElementById('p2p-receive-progress-bar');
 
         if (!modal || !video) return;
-
-        P2PDataEngine.initReceiver();
-
-        if (progressTrack) progressTrack.style.display = 'none';
-        if (progressBar) progressBar.style.width = '0%';
 
         modal.classList.add('open');
         if (statusText) statusText.innerText = 'カメラを起動中...';
@@ -6719,26 +6687,47 @@ class VoicePadApp {
 
     stopP2pScanner() {
         QrEngine.stopCameraScanner();
+        P2PDataEngine.stopWifiSession();
         document.getElementById('p2p-receive-modal-backdrop')?.classList.remove('open');
     }
 
     async onP2pQrDetected(qrText) {
         const statusText = document.getElementById('p2p-receive-status-text');
-        const progressTrack = document.getElementById('p2p-receive-progress-track');
-        const progressBar = document.getElementById('p2p-receive-progress-bar');
-
         if (!qrText || typeof qrText !== 'string') return;
 
-        // P2P 直接QR・アニメーションストリームの高速デコード
+        // ① Wi-Fi 1ステップ WebRTC 受信
+        if (qrText.startsWith('vpad_p2p:')) {
+            QrEngine.stopCameraScanner();
+            if (statusText) statusText.innerText = '⚡ QRコード認識！Wi-Fi経由でデータ受信中...';
+
+            await P2PDataEngine.handleWifiReceiverScan(
+                qrText,
+                (statusMsg) => {
+                    if (statusText) statusText.innerText = statusMsg;
+                },
+                async (receivedData) => {
+                    try {
+                        this.stopP2pScanner();
+                        const label = receivedData.slot?.label || receivedData.label || 'ボタン';
+                        const fileName = `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
+                        const jsonStr = JSON.stringify(receivedData, null, 2);
+                        this.downloadFileDirect(fileName, jsonStr);
+
+                        await this.showIncomingShareModal(receivedData, fileName);
+                        this.showToast(`🎉 ボタン「${label}」を受信・保存しました！`);
+                    } catch (err) {
+                        console.error('P2P receive handle error:', err);
+                    }
+                }
+            );
+            return;
+        }
+
+        // ② 単一直接QRコード (小さいデータ / オフライン)
         const res = P2PDataEngine.processDetectedPayload(qrText);
-        if (!res) return;
-
-        if (res.alreadyCompleted) return;
-
-        if (res.complete && res.data) {
+        if (res && res.complete && res.data) {
             try {
                 if (statusText) statusText.innerText = '✅ 受信完了！データを保存しています...';
-                if (progressBar) progressBar.style.width = '100%';
                 this.stopP2pScanner();
 
                 const data = res.data;
@@ -6751,12 +6740,6 @@ class VoicePadApp {
                 this.showToast(`🎉 ボタン「${label}」を受信・保存しました！`);
             } catch (err) {
                 console.error('P2P QR receive error:', err);
-            }
-        } else if (!res.complete && res.progress !== undefined) {
-            if (progressTrack) progressTrack.style.display = 'block';
-            if (progressBar) progressBar.style.width = `${Math.round(res.progress * 100)}%`;
-            if (statusText) {
-                statusText.innerText = `📥 受信中: ${res.count} / ${res.total} コマ (${Math.round(res.progress * 100)}%)... そのままカメラをかざしてください`;
             }
         }
     }
@@ -7066,60 +7049,10 @@ class VoicePadApp {
         document.getElementById('btn-slot-webrtc-send')?.addEventListener('click', () => {
             if (this.editingSlotId) this.openP2pSendModal(this.editingSlotId);
         });
-        document.getElementById('btn-p2p-goto-step2')?.addEventListener('click', () => this.switchP2pSendStep(2));
-        document.getElementById('btn-p2p-back-step1')?.addEventListener('click', () => this.switchP2pSendStep(1));
-        document.getElementById('btn-p2p-send-manual-camera')?.addEventListener('click', async () => {
-            const video = document.getElementById('p2p-send-scanner-video');
-            const canvas = document.getElementById('p2p-send-scanner-canvas');
-            const statusText = document.getElementById('p2p-send-status-text');
-            if (video) {
-                try {
-                    await QrEngine.startCameraScanner(
-                        video,
-                        canvas,
-                        async (qrPayload) => {
-                            if (qrPayload && (qrPayload.startsWith('vpad_rtc_answer:') || qrPayload.startsWith('vpad_rtc_a:'))) {
-                                QrEngine.stopCameraScanner();
-                                try {
-                                    await WebRtcEngine.applyAnswerToSender(
-                                        qrPayload,
-                                        (statusMsg) => {
-                                            if (statusText) statusText.innerText = statusMsg;
-                                        }
-                                    );
-                                } catch (err) {
-                                    if (statusText) statusText.innerText = `⚠️ 応答エラー: ${err.message}`;
-                                }
-                            }
-                        },
-                        (statusMsg) => {
-                            if (statusText) statusText.innerText = statusMsg;
-                        }
-                    );
-                } catch (err) {
-                    this.showToast('⚠️ カメラへのアクセスが拒否されたか利用できません');
-                }
-            }
-        });
         document.getElementById('close-p2p-send-modal-btn')?.addEventListener('click', () => this.cancelP2pSend());
         document.getElementById('btn-cancel-p2p-send')?.addEventListener('click', () => this.cancelP2pSend());
         document.getElementById('p2p-send-modal-backdrop')?.addEventListener('click', (e) => {
             if (e.target.id === 'p2p-send-modal-backdrop') this.cancelP2pSend();
-        });
-        document.getElementById('btn-p2p-stream-prev')?.addEventListener('click', () => {
-            const res = P2PDataEngine.setHostFrame((P2PDataEngine.activeHost?.currentFrameIndex || 0) - 1);
-            if (res) this.updateP2pSendStreamUi(res.frame, res.index, res.total);
-        });
-        document.getElementById('btn-p2p-stream-pause')?.addEventListener('click', () => {
-            const isPlaying = P2PDataEngine.toggleHostPlay();
-            const pauseBtn = document.getElementById('btn-p2p-stream-pause');
-            const badge = document.getElementById('p2p-send-stream-badge');
-            if (pauseBtn) pauseBtn.innerText = isPlaying ? '⏸️ 一時停止' : '▶️ 再生';
-            if (badge) badge.innerText = isPlaying ? '🔄 自動アニメーション送信中' : '⏸️ 一時停止中（手動送り可）';
-        });
-        document.getElementById('btn-p2p-stream-next')?.addEventListener('click', () => {
-            const res = P2PDataEngine.setHostFrame((P2PDataEngine.activeHost?.currentFrameIndex || 0) + 1);
-            if (res) this.updateP2pSendStreamUi(res.frame, res.index, res.total);
         });
 
         document.getElementById('duplicate-slot-btn')?.addEventListener('click', () => {
