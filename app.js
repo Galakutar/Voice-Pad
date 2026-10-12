@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.09.25.0060';
+const APP_VERSION = '2026.10.12.2350';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -465,15 +465,24 @@ class AudioUnlocker {
         return this.audioCtx;
     }
 
+    /**
+     * 📱 Bluetooth接続時やiOSオーディオ割り込み時でも絶対にハングしない非同期覚醒
+     * （Promise.race による 80ms タイムアウトガードでクリックイベントのブロッキングを完全防止）
+     */
     static async unlock() {
         const ctx = this.getContext();
         if (!ctx) return;
 
+        // Bluetooth接続やバックグラウンド復帰時の suspended / interrupted 解除
         if (ctx.state === 'suspended' || ctx.state === 'interrupted') {
             try {
-                await ctx.resume();
+                // 最大 80ms のタイムアウト付きで resume 実行（Bluetooth遅延によるブロッキングを完全防止）
+                await Promise.race([
+                    ctx.resume(),
+                    new Promise(resolve => setTimeout(resolve, 80))
+                ]);
             } catch (e) {
-                console.warn('AudioContext resume failed:', e);
+                console.warn('AudioContext resume non-blocking warn:', e);
             }
         }
 
@@ -488,7 +497,7 @@ class AudioUnlocker {
                 };
                 source.start(0);
 
-                // 📱 iOS / iPhone 向けメディアオーディオセッションの覚醒（マナーモード貫通＆スピーカー出力確保）
+                // 📱 iOS / iPhone / iPad 向けメディアオーディオセッションの覚醒（Bluetooth / スピーカー出力確保）
                 const silentAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');
                 silentAudio.volume = 0.01;
                 const p = silentAudio.play();
@@ -505,14 +514,16 @@ class AudioUnlocker {
 
     static initListeners() {
         const events = ['pointerdown', 'touchstart', 'click', 'keydown', 'pageshow', 'focus'];
-        const trigger = () => this.unlock();
+        const trigger = () => {
+            this.unlock().catch(() => {});
+        };
         events.forEach(evt => {
             window.addEventListener(evt, trigger, { passive: true });
         });
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
-                this.unlock();
+                this.unlock().catch(() => {});
             }
         });
     }
@@ -2187,6 +2198,27 @@ class VoiceEngine {
 
 // ==================== 2.5 🤖 Web Audio 音声合成 (TTS) エンジン ====================
 class TtsEngine {
+    // 🛡️ iOS WebKit ガベージコレクション防止用 Set（発話途中の音声消失＆onend未発火を完全防止）
+    static activeUtterances = new Set();
+
+    /**
+     * 🛡️ Bluetooth接続時やiOSオーディオ割り込み時の SpeechSynthesis 完全リセット＆スタック解除
+     */
+    static safeResetSpeechSynthesis() {
+        if ('speechSynthesis' in window) {
+            try {
+                if (window.speechSynthesis.speaking || window.speechSynthesis.pending || window.speechSynthesis.paused) {
+                    window.speechSynthesis.cancel();
+                }
+                if (window.speechSynthesis.paused) {
+                    window.speechSynthesis.resume();
+                }
+            } catch (e) {
+                console.warn('speechSynthesis reset error:', e);
+            }
+        }
+    }
+
     /**
      * 日本語・英語・数字・記号を音声合成用ひらがな表記へ正規化
      */
@@ -4047,6 +4079,7 @@ class VoicePadApp {
         this.renderScrollTabs();
         this.renderSlots();
         this.initEvents();
+        this.initMultiTouchBlocker();
 
         this.initTheme();
         this.initTTS();
@@ -4511,6 +4544,7 @@ class VoicePadApp {
 
             tab.addEventListener('click', (e) => {
                 if (this.isDraggingScroll) return;
+                if (Date.now() < (this._suppressTabClickUntil || 0)) return;
                 if (this.isMergeMode) {
                     e.stopPropagation();
                     this.toggleScrollSelectionForMerge(scroll.id);
@@ -4533,6 +4567,51 @@ class VoicePadApp {
 
             container.appendChild(tab);
         });
+
+        // 🔄 選択中スクロールタブへのスムーズな自動スライド＆スライドボタン状態更新
+        this.scrollActiveTabIntoView('smooth');
+    }
+
+    /**
+     * 🎯 選択中（アクティブ）のスクロールタブを視界内に自動スライドスクロール
+     */
+    scrollActiveTabIntoView(behavior = 'smooth') {
+        const container = document.getElementById('scroll-tabs-container');
+        if (!container) return;
+        requestAnimationFrame(() => {
+            const activeTab = container.querySelector('.scroll-tab-item.active');
+            if (activeTab) {
+                activeTab.scrollIntoView({ behavior, block: 'nearest', inline: 'nearest' });
+            }
+            this.updateScrollTabsNavButtons();
+        });
+    }
+
+    /**
+     * 🔄 スクロールタブの横スライドナビゲーションボタン（◀ / ▶）の表示・無効化状態を更新
+     */
+    updateScrollTabsNavButtons() {
+        const container = document.getElementById('scroll-tabs-container');
+        const prevBtn = document.getElementById('scroll-tabs-prev-btn');
+        const nextBtn = document.getElementById('scroll-tabs-next-btn');
+        if (!container || !prevBtn || !nextBtn) return;
+
+        // タブ全体の幅がコンテナ表示幅を超えているか判定（余白マージン6px）
+        const hasOverflow = container.scrollWidth > container.clientWidth + 6;
+        if (!hasOverflow) {
+            prevBtn.style.display = 'none';
+            nextBtn.style.display = 'none';
+            return;
+        }
+
+        prevBtn.style.display = 'inline-flex';
+        nextBtn.style.display = 'inline-flex';
+
+        const scrollLeft = container.scrollLeft;
+        const maxScroll = container.scrollWidth - container.clientWidth;
+
+        prevBtn.disabled = (scrollLeft <= 4);
+        nextBtn.disabled = (scrollLeft >= maxScroll - 4);
     }
 
     // ==================== 🗂️ スクロールまとめ（マージ）モード制御 ====================
@@ -5297,13 +5376,63 @@ class VoicePadApp {
         this.renderSlots();
     }
 
+    // ==================== 特別支援教育向け 誤動作防止・マルチタッチ＆タッチブレ制御 ====================
+    initMultiTouchBlocker() {
+        // 🛡️ 複数本の指（2本以上）や手のひらの接触による誤動作・誤タップ・ズーム・画面遷移を完全遮断
+        const blockMultiTouch = (e) => {
+            if (e.touches && e.touches.length >= 2) {
+                if (e.cancelable) {
+                    e.preventDefault();
+                }
+                e.stopPropagation();
+            }
+        };
+
+        window.addEventListener('touchstart', blockMultiTouch, { passive: false, capture: true });
+        window.addEventListener('touchmove', blockMultiTouch, { passive: false, capture: true });
+        window.addEventListener('touchend', blockMultiTouch, { passive: false, capture: true });
+        window.addEventListener('pointerdown', (e) => {
+            if (e.isPrimary === false) {
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+            }
+        }, { passive: false, capture: true });
+
+        // iOS Safari のピンチズーム・拡大ジェスチャーの無効化
+        ['gesturestart', 'gesturechange', 'gestureend'].forEach((evtName) => {
+            document.addEventListener(evtName, (e) => {
+                if (e.cancelable) e.preventDefault();
+            }, { passive: false });
+        });
+    }
+
+    cancelPendingPadTouch() {
+        if (this._touchTargetCard) {
+            this._touchTargetCard.classList.remove('is-touch-pressing');
+        }
+        this._touchStartX = 0;
+        this._touchStartY = 0;
+        this._touchStartTime = 0;
+        this._touchTargetCard = null;
+        this._touchSlotId = null;
+        this._touchIsAddNew = false;
+        this._touchMaxDist = 0;
+    }
+
     // ==================== イベントリスナー設定 ====================
     initEvents() {
         const grid = document.getElementById('pad-grid');
         if (grid) {
+            // 🖱️ デスクトップ用クリックハンドラ（タッチ操作後の合成clickイベントはデバウンスで除外）
             grid.addEventListener('click', (e) => {
                 if (this.isDraggingPad) return;
                 if (e.target.closest('.pad-actions-group')) return;
+
+                // 🛡️ 直前のタッチ操作（touchend）で処理済みの場合は、合成clickイベントの多重発火を防止
+                if (Date.now() - (this._lastTouchHandledTime || 0) < 600) {
+                    return;
+                }
+
                 AudioUnlocker.unlock();
 
                 const settingsBtn = e.target.closest('.pad-settings-btn');
@@ -5382,7 +5511,11 @@ class VoicePadApp {
             await this.executeMergeScrolls();
         });
 
+        // 🎯 特別支援教育向け 誤動作防止タッチ＆デッドゾーン判定スワイプハンドラ
         this.initSwipeGesture();
+
+        // 📜 スクロールタブバーの横スライド操作（◀ / ▶ナビ、マウスホイール、ドラッグスライド）
+        this.initScrollTabsEvents();
 
         document.getElementById('header-import-btn')?.addEventListener('click', () => {
             document.getElementById('global-import-input')?.click();
@@ -5424,62 +5557,236 @@ class VoicePadApp {
         window.addEventListener('click', handleFirstInteraction, { once: true, passive: true });
     }
 
+    /**
+     * 🎯 特別支援向け タッチブレ許容デッドゾーン（130px）＆誤スワイプ・スクロール防止
+     * - 指がキーボード2個分（約100〜150px、本設計130px）滑っても、意図しない画面遷移を起こさず安定したタッチ（タップ）として処理
+     * - 2本以上の指（マルチタッチ）接触時は即時キャンセル
+     * - 130pxを超える明確な大スワイプのみ、本来のページ切り替えとして認識
+     */
     initSwipeGesture() {
         const grid = document.getElementById('pad-grid');
         if (!grid) return;
 
-        let startX = 0, startY = 0;
+        const DEADZONE_PX = 130; // キーボードキー約2個分のブレ許容デッドゾーン
+
         grid.addEventListener('touchstart', (e) => {
-            if (e.target.closest('.pad-actions-group') || e.target.closest('.pad-action-btn') || e.target.closest('.pad-header') || e.target.closest('.pad-settings-btn')) {
-                startX = 0;
-                startY = 0;
+            // ① 2本以上の指（マルチタッチ）は即座に無効化
+            if (e.touches && e.touches.length >= 2) {
+                this._isMultiTouchActive = true;
+                this.cancelPendingPadTouch();
+                if (e.cancelable) e.preventDefault();
                 return;
             }
-            if (e.touches.length === 1) {
-                startX = e.touches[0].clientX;
-                startY = e.touches[0].clientY;
+            this._isMultiTouchActive = false;
+
+            // ② 右上アクションボタングループ（声質・環境・TTS・ロック）は個別処理
+            if (e.target.closest('.pad-actions-group') || e.target.closest('.pad-action-btn') || e.target.closest('.pad-header') || e.target.closest('.pad-settings-btn')) {
+                this.cancelPendingPadTouch();
+                return;
             }
-        }, { passive: true });
+
+            const touch = e.touches[0];
+            const card = e.target.closest('.pad-card');
+
+            this._touchStartX = touch.clientX;
+            this._touchStartY = touch.clientY;
+            this._touchStartTime = Date.now();
+            this._touchTargetCard = card;
+            this._touchSlotId = card ? card.getAttribute('data-slot-id') : null;
+            this._touchIsAddNew = card ? card.classList.contains('pad-card-add-new') : false;
+            this._touchMaxDist = 0;
+
+            if (card && !this.isDraggingPad) {
+                card.classList.add('is-touch-pressing');
+            }
+        }, { passive: false });
+
+        grid.addEventListener('touchmove', (e) => {
+            if (this._isMultiTouchActive || (e.touches && e.touches.length >= 2)) {
+                this.cancelPendingPadTouch();
+                if (e.cancelable) e.preventDefault();
+                return;
+            }
+            if (!this._touchStartTime) return;
+
+            const touch = e.touches[0];
+            const diffX = touch.clientX - this._touchStartX;
+            const diffY = touch.clientY - this._touchStartY;
+            const dist = Math.hypot(diffX, diffY);
+            if (dist > this._touchMaxDist) {
+                this._touchMaxDist = dist;
+            }
+
+            // 🛡️ 130px以内のブレ・滑り：
+            // iOS Safari のネイティブスクロール発生を抑止し、ボタン押下（タップ）状態を保護
+            if (dist <= DEADZONE_PX) {
+                if (e.cancelable) e.preventDefault();
+                if (this._touchTargetCard && !this.isDraggingPad) {
+                    this._touchTargetCard.classList.add('is-touch-pressing');
+                }
+            } else {
+                // 130pxを超えた大きな移動
+                if (this._touchTargetCard && !this.isDraggingPad) {
+                    this._touchTargetCard.classList.remove('is-touch-pressing');
+                }
+                // 水平スワイプ操作中は縦スクロールを抑止
+                if (Math.abs(diffX) > Math.abs(diffY) * 1.3) {
+                    if (e.cancelable) e.preventDefault();
+                }
+            }
+        }, { passive: false });
 
         grid.addEventListener('touchend', (e) => {
-            if (startX === 0) return;
-            if (e.target.closest('.pad-actions-group') || e.target.closest('.pad-action-btn') || e.target.closest('.pad-header') || e.target.closest('.pad-settings-btn')) return;
-            if (e.changedTouches.length === 1) {
-                const diffX = e.changedTouches[0].clientX - startX;
-                const diffY = e.changedTouches[0].clientY - startY;
+            if (this._isMultiTouchActive) {
+                this.cancelPendingPadTouch();
+                this._isMultiTouchActive = false;
+                return;
+            }
+            if (!this._touchStartTime) return;
 
-                if (Math.abs(diffX) > 60 && Math.abs(diffY) < 40) {
-                    const totalPages = this.getTotalPages();
-                    if (diffX < 0 && this.currentPage < totalPages) {
-                        this.currentPage++;
-                        this.renderSlots();
-                    } else if (diffX > 0 && this.currentPage > 1) {
-                        this.currentPage--;
-                        this.renderSlots();
+            const touch = e.changedTouches ? e.changedTouches[0] : null;
+            if (!touch) {
+                this.cancelPendingPadTouch();
+                return;
+            }
+
+            const diffX = touch.clientX - this._touchStartX;
+            const diffY = touch.clientY - this._touchStartY;
+            const dist = Math.hypot(diffX, diffY);
+            const maxDist = Math.max(dist, this._touchMaxDist);
+            const touchTarget = this._touchTargetCard;
+            const slotId = this._touchSlotId;
+            const isAddNew = this._touchIsAddNew;
+
+            this.cancelPendingPadTouch();
+
+            // ① デッドゾーン（130px）を超える大きなスワイプ操作のみ、ページ切り替えを発動
+            if (maxDist > DEADZONE_PX && Math.abs(diffX) > DEADZONE_PX && Math.abs(diffX) > Math.abs(diffY) * 1.4) {
+                const totalPages = this.getTotalPages();
+                if (diffX < 0 && this.currentPage < totalPages) {
+                    this.currentPage++;
+                    this.renderSlots();
+                } else if (diffX > 0 && this.currentPage > 1) {
+                    this.currentPage--;
+                    this.renderSlots();
+                }
+                if (e.cancelable) e.preventDefault();
+                this._lastTouchHandledTime = Date.now();
+                return;
+            }
+
+            // ② デッドゾーン内（130px以内）の移動：
+            // 手が不自由な生徒さんの指が多少滑っても、安定したタップ（ボタン押下）として確実に発火！
+            if (maxDist <= DEADZONE_PX && touchTarget && !this.isDraggingPad) {
+                if (e.cancelable) e.preventDefault();
+                this._lastTouchHandledTime = Date.now();
+                AudioUnlocker.unlock();
+
+                if (isAddNew) {
+                    this.addNewSlotToCurrentScroll();
+                } else if (slotId) {
+                    if (this.currentMode === 'play') {
+                        this.playSlot(slotId);
+                    } else {
+                        this.toggleRecording(slotId);
                     }
                 }
             }
+        }, { passive: false });
+
+        grid.addEventListener('touchcancel', () => {
+            this.cancelPendingPadTouch();
+            this._isMultiTouchActive = false;
         }, { passive: true });
     }
 
-    setMode(mode) {
-        if (this.recordingSlotId !== null) {
-            this.stopRecording();
-        }
-        this.currentMode = mode;
-        const playBtn = document.getElementById('mode-play-btn');
-        const recordBtn = document.getElementById('mode-record-btn');
+    /**
+     * 📜 スクロールタブバーの横スライド操作イベント初期化
+     * - ◀ / ▶ ナビゲーションボタンによる左右スムーズスクロール
+     * - マウスホイールの横スクロール自動変換
+     * - マウスクリックドラッグによる横スライド操作
+     * - コンテナのスクロール＆リサイズ検知によるボタン状態更新
+     */
+    initScrollTabsEvents() {
+        const container = document.getElementById('scroll-tabs-container');
+        const prevBtn = document.getElementById('scroll-tabs-prev-btn');
+        const nextBtn = document.getElementById('scroll-tabs-next-btn');
 
-        if (mode === 'play') {
-            playBtn?.classList.add('active');
-            recordBtn?.classList.remove('active');
-            document.body.classList.remove('mode-record');
-        } else {
-            recordBtn?.classList.add('active');
-            playBtn?.classList.remove('active');
-            document.body.classList.add('mode-record');
-            this.showToast('🔴 録音モード: ボタンを押して録音を開始');
+        if (prevBtn) {
+            prevBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (!container) return;
+                const scrollAmount = Math.max(160, Math.floor(container.clientWidth * 0.7));
+                container.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+                setTimeout(() => this.updateScrollTabsNavButtons(), 250);
+            });
         }
+
+        if (nextBtn) {
+            nextBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (!container) return;
+                const scrollAmount = Math.max(160, Math.floor(container.clientWidth * 0.7));
+                container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+                setTimeout(() => this.updateScrollTabsNavButtons(), 250);
+            });
+        }
+
+        if (container) {
+            container.addEventListener('scroll', () => {
+                this.updateScrollTabsNavButtons();
+            }, { passive: true });
+
+            // 🖱️ マウスホイールでの横スクロール（縦スクロールを横スライドに自動変換）
+            container.addEventListener('wheel', (e) => {
+                if (e.deltaY !== 0 && !e.shiftKey) {
+                    e.preventDefault();
+                    container.scrollLeft += e.deltaY;
+                    this.updateScrollTabsNavButtons();
+                }
+            }, { passive: false });
+
+            // 🖱️ PC用マウスクリック＆ドラッグによるスムーズスライド
+            let isDown = false;
+            let startX = 0;
+            let scrollLeftStart = 0;
+            let hasDragged = false;
+
+            container.addEventListener('mousedown', (e) => {
+                if (e.button !== 0 || e.target.closest('.scroll-tab-edit-icon')) return;
+                isDown = true;
+                hasDragged = false;
+                startX = e.pageX - container.offsetLeft;
+                scrollLeftStart = container.scrollLeft;
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDown || this.isDraggingScroll) return;
+                const x = e.pageX - container.offsetLeft;
+                const walk = (x - startX);
+                if (Math.abs(walk) > 6) {
+                    hasDragged = true;
+                    container.scrollLeft = scrollLeftStart - walk;
+                    this.updateScrollTabsNavButtons();
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (isDown) {
+                    isDown = false;
+                    if (hasDragged) {
+                        this._suppressTabClickUntil = Date.now() + 120;
+                    }
+                }
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            this.updateScrollTabsNavButtons();
+        }, { passive: true });
+
+        // 初期描画時のボタン状態判定
+        setTimeout(() => this.updateScrollTabsNavButtons(), 100);
     }
 
     // ==================== スクロール制御 ====================
@@ -5533,6 +5840,16 @@ class VoicePadApp {
         }
 
         await this.switchScroll(newScroll.id);
+
+        // 🔄 新規追加時は最右端のスクロールタブへ確実に自動スライド
+        requestAnimationFrame(() => {
+            const container = document.getElementById('scroll-tabs-container');
+            if (container) {
+                container.scrollTo({ left: container.scrollWidth, behavior: 'smooth' });
+            }
+            this.updateScrollTabsNavButtons();
+        });
+
         this.showToast(`✨ スクロール「${newScroll.name}」を作成しました`);
     }
 
@@ -5773,6 +6090,11 @@ class VoicePadApp {
 
     // ==================== モード切り替え＆マイク事前ウォームアップ ====================
     async setMode(mode) {
+        if (this.recordingSlotId !== null) {
+            this.stopRecording();
+        }
+        this.stopAllAudioPlayback();
+
         this.currentMode = mode;
         const playBtn = document.getElementById('mode-play-btn');
         const recBtn = document.getElementById('mode-record-btn');
@@ -5782,15 +6104,19 @@ class VoicePadApp {
             playBtn?.classList.add('active');
             recBtn?.classList.remove('active');
             grid?.classList.remove('mode-record');
+            document.body.classList.remove('mode-record');
             // 🔊 再生モード時はマイク占有を完全解放して高品質メディア再生モードへ復帰
             this.releaseMicrophone();
+            this.showToast('▶️ 再生モード: ボタンを押して音声を再生');
         } else {
             recBtn?.classList.add('active');
             playBtn?.classList.remove('active');
             grid?.classList.add('mode-record');
+            document.body.classList.add('mode-record');
+            this.showToast('🔴 録音モード: ボタンを押して録音を開始');
 
-            // 🔴 録音モードに切り替えた瞬間にマイクを事前起動（ウォームアップ）
-            this.prewarmMicrophone(true);
+            // 🔴 録音モードに切り替えた瞬間にマイクを事前起動（ウォームアップ・非同期）
+            this.prewarmMicrophone(true).catch(() => {});
         }
     }
 
@@ -6008,7 +6334,8 @@ class VoicePadApp {
 
     // ==================== 音声再生制御（階層エフェクト＆スピード反映） ====================
     async playSlot(slotId) {
-        await AudioUnlocker.unlock();
+        // iOS Bluetooth/Audio session 非同期アンロック（UIイベントをブロックさせない）
+        AudioUnlocker.unlock().catch(() => {});
         const ctx = AudioUnlocker.getContext();
 
         const slot = this.slots.find(s => s.id === slotId);
@@ -6070,7 +6397,7 @@ class VoicePadApp {
                     this.stopSlot(slotId);
                 },
                 (err) => {
-                    console.error('Audio playback error, trying fallback:', err);
+                    console.warn('Audio playback error, trying fallback:', err);
                     this.stopSlot(slotId);
                 },
                 slotVol
@@ -6088,7 +6415,7 @@ class VoicePadApp {
     }
 
     async playTtsSlot(slot, voiceParams, envParams, speed = 1.0) {
-        await AudioUnlocker.unlock();
+        AudioUnlocker.unlock().catch(() => {});
 
         this.stopSlot(slot.id);
 
@@ -6100,14 +6427,25 @@ class VoicePadApp {
 
         // ① ブラウザの高品質な日本語音声合成（SpeechSynthesis）を最優先
         if ('speechSynthesis' in window) {
-            this.legacyPlayTts(slot, voiceParams, envParams, speed);
-            return;
+            try {
+                this.legacyPlayTts(slot, voiceParams, envParams, speed);
+                return;
+            } catch (err) {
+                console.warn('SpeechSynthesis invocation error, fallback to WebAudio:', err);
+            }
         }
 
         // ② SpeechSynthesis 非対応時、またはフォールバック：
         // Web Audio 合成 ➜ WAV Blob ➜ HTML5 Audio (new Audio) で iPad/Safari の音量抑制・ダッキングを完全回避
+        this.playTtsViaWebAudio(slot, voiceParams, envParams, speed);
+    }
+
+    playTtsViaWebAudio(slot, voiceParams, envParams, speed = 1.0) {
         const ctx = AudioUnlocker.getContext();
-        if (!ctx) return;
+        if (!ctx) {
+            this.stopSlot(slot.id);
+            return;
+        }
 
         try {
             const eqParams = this.getEffectiveEqParams(slot);
@@ -6137,19 +6475,19 @@ class VoicePadApp {
                 this.stopSlot(slot.id);
             }
         } catch (err) {
-            console.error('TTS playback error:', err);
+            console.error('TTS WebAudio playback error:', err);
             this.stopSlot(slot.id);
         }
     }
 
     legacyPlayTts(slot, voiceParams, envParams, speed = 1.0) {
         if (!('speechSynthesis' in window)) {
-            alert('お使いのブラウザは音声合成に対応していません。');
+            this.playTtsViaWebAudio(slot, voiceParams, envParams, speed);
             return;
         }
 
         this.stopSlot(slot.id);
-        window.speechSynthesis.cancel();
+        TtsEngine.safeResetSpeechSynthesis();
 
         const card = document.getElementById(`pad-${slot.id}`);
         if (card) {
@@ -6174,7 +6512,6 @@ class VoicePadApp {
         }
 
         const vParams = voiceParams || VoiceEngine.defaultVoiceParams();
-        const eParams = envParams || VoiceEngine.defaultEnvParams();
         const baseRate = slot.ttsRate || 1.0;
         const basePitch = slot.ttsPitch || 1.0;
 
@@ -6193,38 +6530,69 @@ class VoicePadApp {
         const gVol = (this.globalVolume !== undefined && this.globalVolume !== null) ? this.globalVolume : 1.0;
         utter.volume = Math.max(0.0, Math.min(1.0, slotVol * gVol));
 
+        // 🛡️ iOS Safari GCによる Utterance 回収・onend不発の防止
+        TtsEngine.activeUtterances.add(utter);
+        window._activeUtterance = utter;
+
+        // 🛡️ Bluetooth切断やオーディオ割り込みで onend が消失した場合のセーフティウォッチドッグ
+        const textLen = slot.ttsText ? slot.ttsText.length : 10;
+        const estimatedDurationMs = Math.max(1500, Math.round(((textLen * 0.38) / (calculatedRate || 1.0) + 3.0) * 1000));
+        let watchdogTimer = setTimeout(() => {
+            TtsEngine.activeUtterances.delete(utter);
+            if (this.activeSources.get(slot.id) === ttsController) {
+                this.stopSlot(slot.id);
+            }
+        }, estimatedDurationMs);
+
+        const cleanupUtterance = () => {
+            if (watchdogTimer) {
+                clearTimeout(watchdogTimer);
+                watchdogTimer = null;
+            }
+            TtsEngine.activeUtterances.delete(utter);
+            if (window._activeUtterance === utter) {
+                window._activeUtterance = null;
+            }
+        };
+
         const ttsController = {
             stop: () => {
-                window.speechSynthesis.cancel();
-                window._activeUtterance = null;
+                cleanupUtterance();
+                TtsEngine.safeResetSpeechSynthesis();
             },
             pause: () => {
-                window.speechSynthesis.cancel();
-                window._activeUtterance = null;
+                cleanupUtterance();
+                TtsEngine.safeResetSpeechSynthesis();
             },
-            disconnect: () => {}
+            disconnect: () => {
+                cleanupUtterance();
+            }
         };
         this.activeSources.set(slot.id, ttsController);
 
-        window._activeUtterance = utter;
-
         utter.onend = () => {
-            window._activeUtterance = null;
+            cleanupUtterance();
             this.stopSlot(slot.id);
         };
-        utter.onerror = () => {
-            window._activeUtterance = null;
+        utter.onerror = (e) => {
+            console.warn('SpeechSynthesis playback error:', e);
+            cleanupUtterance();
             this.stopSlot(slot.id);
         };
 
-        VoiceEngine.playAcousticFilterOverlay(eParams);
-
+        // 🚨 iOS Bluetooth CoreAudio セッション競合回避のため、発話開始を microtask / 短ディレイで確実に実行
         setTimeout(() => {
-            if (window.speechSynthesis.paused) {
-                window.speechSynthesis.resume();
+            try {
+                if (window.speechSynthesis.paused) {
+                    window.speechSynthesis.resume();
+                }
+                window.speechSynthesis.speak(utter);
+            } catch (err) {
+                console.warn('speechSynthesis.speak() threw error, fallback to WebAudio:', err);
+                cleanupUtterance();
+                this.playTtsViaWebAudio(slot, voiceParams, envParams, speed);
             }
-            window.speechSynthesis.speak(utter);
-        }, 50);
+        }, 30);
     }
 
     fallbackPlay(slot, slotId, speed = 1.0) {
@@ -6246,9 +6614,15 @@ class VoicePadApp {
             }
 
             let isCleanedUp = false;
+            let watchdogTimer = null;
+
             const cleanup = () => {
                 if (isCleanedUp) return;
                 isCleanedUp = true;
+                if (watchdogTimer) {
+                    clearTimeout(watchdogTimer);
+                    watchdogTimer = null;
+                }
                 if (card) {
                     card.classList.remove('playing');
                     card.classList.remove('is-playing');
@@ -6256,6 +6630,12 @@ class VoicePadApp {
                 BlobUrlTracker.revoke(audioUrl);
                 this.activeSources.delete(slotId);
             };
+
+            const durationSec = slot.duration || 4.0;
+            const maxSafePlaybackTimeMs = Math.max(1500, Math.round(((durationSec / (speed || 1.0)) + 3.0) * 1000));
+            watchdogTimer = setTimeout(() => {
+                cleanup();
+            }, maxSafePlaybackTimeMs);
 
             audio.onended = cleanup;
             audio.onerror = (e) => {
@@ -6291,6 +6671,12 @@ class VoicePadApp {
             }
         } catch (e) {
             console.error('Fallback error:', e);
+            const card = document.getElementById(`pad-${slotId}`);
+            if (card) {
+                card.classList.remove('playing');
+                card.classList.remove('is-playing');
+            }
+            this.activeSources.delete(slotId);
         }
     }
 
@@ -6298,6 +6684,7 @@ class VoicePadApp {
      * AudioBuffer を WAV Blob 化し、HTML5 Audio (new Audio) でネイティブ再生
      * （iPad/iOS Safari における Web Audio API 音量ダッキング・抑制を回避）
      * グローバル音量（0.1x〜3.0x）およびソフトクリッピング（音割れ防止）を適用
+     * 🛡️ Bluetooth切断やオーディオルーティング変更時のウォッチドッグタイマー付き
      */
     playBufferViaHtmlAudio(buffer, speed = 1.0, onEnded = null, onError = null, customVolume = null) {
         if (!buffer) return null;
@@ -6337,11 +6724,26 @@ class VoicePadApp {
             audio.volume = Math.max(0.0, Math.min(1.0, Math.min(vol, 1.0)));
 
             let isCleanedUp = false;
+            let watchdogTimer = null;
+
             const cleanup = () => {
                 if (isCleanedUp) return;
                 isCleanedUp = true;
+                if (watchdogTimer) {
+                    clearTimeout(watchdogTimer);
+                    watchdogTimer = null;
+                }
                 BlobUrlTracker.revoke(url);
             };
+
+            const durationSec = (workingBuffer && workingBuffer.duration) ? workingBuffer.duration : 3.0;
+            const maxSafePlaybackTimeMs = Math.max(1500, Math.round(((durationSec / (speed || 1.0)) + 2.5) * 1000));
+            watchdogTimer = setTimeout(() => {
+                if (!isCleanedUp) {
+                    cleanup();
+                    if (onEnded) onEnded();
+                }
+            }, maxSafePlaybackTimeMs);
 
             const controller = {
                 audio: audio,
@@ -6401,9 +6803,7 @@ class VoicePadApp {
             } catch (e) {}
             this.activeSources.delete(slotId);
         }
-        if ('speechSynthesis' in window) {
-            try { window.speechSynthesis.cancel(); } catch (e) {}
-        }
+        TtsEngine.safeResetSpeechSynthesis();
         const card = document.getElementById(`pad-${slotId}`);
         if (card) {
             card.classList.remove('playing');
@@ -6441,11 +6841,8 @@ class VoicePadApp {
             this.stopIncomingAudioPreview();
         }
 
-        if ('speechSynthesis' in window) {
-            try {
-                window.speechSynthesis.cancel();
-            } catch (e) {}
-        }
+        TtsEngine.safeResetSpeechSynthesis();
+        TtsEngine.activeUtterances.clear();
         window._activeTtsPreviewUtterance = null;
         window._activeUtterance = null;
 
@@ -7584,9 +7981,7 @@ class VoicePadApp {
         this.stopWaveformPreview();
         this.stopFxPreview();
         this.waveformAudioBuffer = null;
-        if ('speechSynthesis' in window) {
-            try { window.speechSynthesis.cancel(); } catch (e) {}
-        }
+        TtsEngine.safeResetSpeechSynthesis();
         BlobUrlTracker.revokeCategory('preview');
         document.getElementById('modal-backdrop')?.classList.remove('open');
         this.editingSlotId = null;
@@ -9153,9 +9548,8 @@ class VoicePadApp {
 
     closeSlotTtsModal() {
         this.stopFxPreview();
-        if ('speechSynthesis' in window) {
-            try { window.speechSynthesis.cancel(); } catch (e) {}
-        }
+        TtsEngine.safeResetSpeechSynthesis();
+        TtsEngine.activeUtterances.clear();
         window._activeTtsPreviewUtterance = null;
         BlobUrlTracker.revokeCategory('preview');
         document.getElementById('slot-tts-modal-backdrop')?.classList.remove('open');
@@ -9176,7 +9570,7 @@ class VoicePadApp {
             return;
         }
 
-        await AudioUnlocker.unlock();
+        AudioUnlocker.unlock().catch(() => {});
         this.stopFxPreview();
 
         const rate = parseFloat(document.getElementById('slot-tts-rate-slider')?.value || '1.0');
@@ -9186,7 +9580,7 @@ class VoicePadApp {
         // ① ブラウザ標準 Web Speech API による高品位・自然な日本語読み上げ
         if ('speechSynthesis' in window) {
             try {
-                window.speechSynthesis.cancel();
+                TtsEngine.safeResetSpeechSynthesis();
 
                 const utter = new SpeechSynthesisUtterance(text);
                 const allVoices = window.speechSynthesis.getVoices();
@@ -9209,11 +9603,32 @@ class VoicePadApp {
                 utter.pitch = Math.max(0.2, Math.min(2.0, pitch * malePitchAdjustment));
                 utter.volume = 1.0;
 
+                TtsEngine.activeUtterances.add(utter);
                 window._activeTtsPreviewUtterance = utter;
-                utter.onend = () => { window._activeTtsPreviewUtterance = null; };
+
+                const estimatedDurationMs = Math.max(1500, Math.round(((text.length * 0.38) / (rate || 1.0) + 3.0) * 1000));
+                let watchdog = setTimeout(() => {
+                    TtsEngine.activeUtterances.delete(utter);
+                    if (window._activeTtsPreviewUtterance === utter) {
+                        window._activeTtsPreviewUtterance = null;
+                    }
+                }, estimatedDurationMs);
+
+                const cleanupModalUtterance = () => {
+                    if (watchdog) {
+                        clearTimeout(watchdog);
+                        watchdog = null;
+                    }
+                    TtsEngine.activeUtterances.delete(utter);
+                    if (window._activeTtsPreviewUtterance === utter) {
+                        window._activeTtsPreviewUtterance = null;
+                    }
+                };
+
+                utter.onend = cleanupModalUtterance;
                 utter.onerror = (e) => {
                     console.warn('TTS preview utterance error:', e);
-                    window._activeTtsPreviewUtterance = null;
+                    cleanupModalUtterance();
                 };
 
                 const voiceNames = {
@@ -9227,11 +9642,16 @@ class VoicePadApp {
                 this.showToast(`🗣️ [${vName}] 「${text.slice(0, 15)}${text.length > 15 ? '...' : ''}」を試聴中...`);
 
                 setTimeout(() => {
-                    if (window.speechSynthesis.paused) {
-                        window.speechSynthesis.resume();
+                    try {
+                        if (window.speechSynthesis.paused) {
+                            window.speechSynthesis.resume();
+                        }
+                        window.speechSynthesis.speak(utter);
+                    } catch (err) {
+                        console.warn('speechSynthesis.speak error in preview:', err);
+                        cleanupModalUtterance();
                     }
-                    window.speechSynthesis.speak(utter);
-                }, 50);
+                }, 30);
                 return;
             } catch (speechErr) {
                 console.warn('speechSynthesis preview fallback to WebAudio:', speechErr);

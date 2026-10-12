@@ -17,7 +17,7 @@
     <meta http-equiv="Expires" content="0">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20260925_0050">
+    <link rel="stylesheet" href="style.css?v=20261012_2350">
 </head>
 <body>
     <div id="app-container">
@@ -72,11 +72,13 @@
             </div>
         </div>
 
-        <!-- ２段目：スクロールタブバー（横スクロール＆長押しドラッグ並び替え対応） -->
+        <!-- ２段目：スクロールタブバー（横スクロール＆長押しドラッグ並び替え＆スライドナビ対応） -->
         <nav class="scroll-tabs-bar" aria-label="スクロールタブ">
+            <button id="scroll-tabs-prev-btn" class="scroll-nav-btn prev-btn" title="前のスクロールへスライド" aria-label="左のスクロールへスライド">◀</button>
             <div id="scroll-tabs-container" class="scroll-tabs-container">
                 <!-- JavaScript で動的にスクロールタブを生成 -->
             </div>
+            <button id="scroll-tabs-next-btn" class="scroll-nav-btn next-btn" title="次のスクロールへスライド" aria-label="右のスクロールへスライド">▶</button>
             <button id="add-scroll-btn" class="add-scroll-btn" title="新しいスクロールを追加" aria-label="スクロールを追加">
                 <span class="plus-icon">＋</span>
             </button>
@@ -1216,7 +1218,7 @@
                 <div class="form-group version-card">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span class="form-label">🚀 アプリのバージョン</span>
-                        <span id="app-version-badge" class="version-badge">v2026.09.16.0001</span>
+                        <span id="app-version-badge" class="version-badge">v2026.10.12.2350</span>
                     </div>
                     <button id="check-update-btn" class="action-btn update-btn" style="margin-top: 6px;">
                         🔄 最新バージョンを確認・アップデート
@@ -1719,6 +1721,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <script src="peerjs.min.js"></script>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20260925_0060"></script>
+    <script src="app.js?v=20261012_2350"></script>
 </body>
 </html>
