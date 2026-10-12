@@ -3575,4 +3575,49 @@ body.theme-mint {
     box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
 }
 
+/* ==================== 🎴 ボタン設定モーダル内の独立した音声保存・QR送信セクション ==================== */
+.wav-save-group,
+.p2p-export-group,
+.btn-data-export-group,
+.btn-wav-export-group {
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.wav-save-group:hover,
+.btn-wav-export-group:hover {
+    border-color: rgba(124, 58, 237, 0.65) !important;
+    box-shadow: 0 4px 16px rgba(124, 58, 237, 0.2);
+}
+
+.p2p-export-group:hover,
+.btn-data-export-group:hover {
+    border-color: rgba(14, 165, 233, 0.65) !important;
+    box-shadow: 0 4px 16px rgba(14, 165, 233, 0.2);
+}
+
+.wav-save-group button.action-btn,
+.p2p-export-group button.action-btn,
+.btn-data-export-group button.action-btn,
+.btn-wav-export-group button.action-btn {
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease, filter 0.18s ease;
+}
+
+.wav-save-group button.action-btn:hover,
+.p2p-export-group button.action-btn:hover,
+.btn-data-export-group button.action-btn:hover,
+.btn-wav-export-group button.action-btn:hover {
+    transform: translateY(-1.5px);
+    filter: brightness(1.1);
+}
+
+.wav-save-group button.action-btn:active,
+.p2p-export-group button.action-btn:active,
+.btn-data-export-group button.action-btn:active,
+.btn-wav-export-group button.action-btn:active {
+    transform: translateY(0.5px);
+    filter: brightness(0.95);
+}
+
+
+
 

@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.10.13.0145';
+const APP_VERSION = '2026.10.13.0245';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -7224,6 +7224,30 @@ class VoicePadApp {
         this.showToast(`💾 「${fileName}」を保存しました`);
     }
 
+    // 📤 音声ファイル・Blobの AirDrop送信 / 共有メニュー / ダウンロード保存
+    async shareOrDownloadBlob(fileName, blob, mimeType = 'audio/wav', categoryName = '音声データ') {
+        const file = new File([blob], fileName, { type: mimeType });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+                await navigator.share({
+                    files: [file],
+                    title: fileName,
+                    text: `Voice Pad ${categoryName}: ${fileName}`
+                });
+                this.showToast(`📤 AirDrop / 共有メニューを開きました (${fileName})`);
+                return;
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.warn('Share API error, fallback to download:', err);
+                } else {
+                    return;
+                }
+            }
+        }
+        this.downloadBlobDirect(blob, fileName);
+        this.showToast(`💾 「${fileName}」を保存しました`);
+    }
+
     // ファイル直接ダウンロード保存（WebRTC/P2P受信時・AirDropダイアログをスキップして即保存）
     downloadFileDirect(fileName, jsonString) {
         const blob = new Blob([jsonString], { type: 'application/json' });
@@ -7297,29 +7321,61 @@ class VoicePadApp {
         };
     }
 
-    // ① 単一スイッチのエクスポート (.vpad-button)
+    // ① 単一スイッチのエクスポート / AirDrop (.vpad-button)
     async exportSingleSlot(slotId) {
-        const slot = this.slots.find(s => s.id === slotId);
+        const targetId = slotId !== undefined ? slotId : this.editingSlotId;
+        let slot = this.slots.find(s => s.id === targetId || String(s.id) === String(targetId));
+        if (!slot && typeof targetId === 'number' && targetId > 0 && targetId <= this.slots.length) {
+            slot = this.slots[targetId - 1];
+        }
         if (!slot) return;
 
         const exportData = await this.buildSlotExportObject(slot);
         if (!exportData) return;
 
-        const safeLabel = (slot.label || 'ボタン').replace(/[\\/:*?"<>|]/g, '_');
+        const safeLabel = (slot.label || `ボタン_${slot.id}`).replace(/[\\/:*?"<>|]/g, '_');
         const fileName = `VoicePad_ボタン_${safeLabel}.vpad-button`;
         await this.shareOrDownloadFile(fileName, JSON.stringify(exportData, null, 2), '単体ボタン');
     }
 
-    // ==================== 📡 生徒側 Wi-Fi 直接送信モーダル（単体ボタン） ====================
-    async openP2pSendModal(slotId) {
+    /**
+     * 📤 ② ボタン設定内：ボタンの音声データWAVをエアドロップ送信（AirDrop / 共有メニュー / ファイル保存）
+     * iOS/iPadOS/macOS の AirDrop およびファイル共有に対応
+     */
+    async shareSingleSlotWav(slotId) {
+        const targetId = slotId !== undefined ? slotId : this.editingSlotId;
+        let slot = this.slots.find(s => s.id === targetId || String(s.id) === String(targetId));
+        if (!slot && typeof targetId === 'number' && targetId > 0 && targetId <= this.slots.length) {
+            slot = this.slots[targetId - 1];
+        }
+        if (!slot) return;
+
+        const wavBlob = await this.getSlotWavBlob(slot);
+        if (!wavBlob) {
+            this.showToast('⚠️ このボタンには音声データ（録音またはAI音声）がありません');
+            return;
+        }
+
+        const safeLabel = (slot.label || `スイッチ${slot.id}`).replace(/[\\/:*?"<>|]/g, '_');
+        const fileName = `VoicePad_${safeLabel}.wav`;
+
+        await this.shareOrDownloadBlob(fileName, wavBlob, 'audio/wav', 'ボタンWAV音声');
+    }
+
+    // ==================== 📡 Wi-Fi 直接送信モーダル（単体ボタンデータ / 単体WAV音声） ====================
+    async openP2pSendModal(slotId, mode = 'button') {
         this.stopP2pScanner();
         this.closeScrollModal();
+        this.closeEditModal();
 
-        const slot = this.slots.find(s => s.id === slotId);
+        let slot = this.slots.find(s => s.id === slotId || String(s.id) === String(slotId));
+        if (!slot && typeof slotId === 'number' && slotId > 0 && slotId <= this.slots.length) {
+            slot = this.slots[slotId - 1];
+        }
         if (!slot) return;
 
         this.activeP2pScrollId = null;
-        this.activeP2pScrollMode = null;
+        this.activeP2pScrollMode = mode;
 
         const modal = document.getElementById('p2p-send-modal-backdrop');
         const modalTitle = document.getElementById('p2p-send-modal-title');
@@ -7335,26 +7391,62 @@ class VoicePadApp {
 
         if (datatypeBar) datatypeBar.style.display = 'none';
 
-        if (modalTitle) modalTitle.innerText = '📡 ボタン Wi-Fi 直接送信';
-        if (nameEl) nameEl.innerText = slot.label || 'ボタン';
-        if (emojiEl) {
-            if (slot.imageUrl) {
-                emojiEl.innerHTML = `<img src="${slot.imageUrl}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;">`;
-            } else {
-                emojiEl.innerText = slot.emoji || '🔊';
+        const safeLabel = (slot.label || `ボタン_${slot.id}`).replace(/[\\/:*?"<>|]/g, '_');
+        let exportObj = null;
+
+        if (mode === 'wav') {
+            if (modalTitle) modalTitle.innerText = '📡 ボタン音声（WAV）Wi-Fi 直接送信';
+            if (nameEl) nameEl.innerText = `VoicePad_${safeLabel}.wav`;
+            if (emojiEl) emojiEl.innerText = '🎵';
+            if (metaEl) metaEl.innerText = '動画編集用 16-bit PCM WAV (Premiere / DaVinci 即対応)';
+
+            modal.classList.add('open');
+            if (loadingSpinner) loadingSpinner.style.display = 'flex';
+            if (statusText) statusText.innerText = '音声WAVを生成＆Wi-Fi待受QRコードを準備中...';
+
+            const wavBlob = await this.getSlotWavBlob(slot);
+            if (!wavBlob) {
+                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                if (statusText) statusText.innerText = '⚠️ このボタンには音声データがありません';
+                this.showToast('⚠️ このボタンには音声データ（録音またはAI音声）がありません');
+                return;
             }
-        }
-        if (metaEl) {
-            const hasAudio = !!(slot.audioBlob || slot.audioBase64);
-            const dur = slot.duration ? `${slot.duration.toFixed(1)}秒` : '未録音';
-            metaEl.innerText = `🎙️ 音声: ${hasAudio ? dur : 'なし'} | ⚡ ${slot.playbackSpeed && slot.playbackSpeed !== 'inherit' ? slot.playbackSpeed + '倍速' : '標準'}`;
+
+            const dataBase64 = await this.blobToBase64(wavBlob);
+            const fileName = `VoicePad_${safeLabel}.wav`;
+
+            exportObj = {
+                type: 'vpad_slot_wav',
+                slotId: slot.id,
+                slotLabel: slot.label,
+                fileName: fileName,
+                mimeType: 'audio/wav',
+                duration: slot.duration || 0,
+                dataBase64: dataBase64
+            };
+        } else {
+            if (modalTitle) modalTitle.innerText = '📡 ボタンデータ Wi-Fi 直接送信';
+            if (nameEl) nameEl.innerText = slot.label || 'ボタン';
+            if (emojiEl) {
+                if (slot.imageUrl) {
+                    emojiEl.innerHTML = `<img src="${slot.imageUrl}" style="width:28px;height:28px;object-fit:cover;border-radius:6px;">`;
+                } else {
+                    emojiEl.innerText = slot.emoji || '🔊';
+                }
+            }
+            if (metaEl) {
+                const hasAudio = !!(slot.audioBlob || slot.audioBase64 || slot.ttsText);
+                const dur = slot.duration ? `${slot.duration.toFixed(1)}秒` : (slot.ttsText ? 'AI音声' : '未録音');
+                metaEl.innerText = `🎙️ 音声: ${hasAudio ? dur : 'なし'} | ⚡ ${slot.playbackSpeed && slot.playbackSpeed !== 'inherit' ? slot.playbackSpeed + '倍速' : '標準'}`;
+            }
+
+            modal.classList.add('open');
+            if (loadingSpinner) loadingSpinner.style.display = 'flex';
+            if (statusText) statusText.innerText = 'Wi-Fi待受QRコードを準備中...';
+
+            exportObj = await this.buildSlotExportObject(slot);
         }
 
-        modal.classList.add('open');
-        if (loadingSpinner) loadingSpinner.style.display = 'flex';
-        if (statusText) statusText.innerText = 'Wi-Fi待受QRコードを準備中...';
-
-        const exportObj = await this.buildSlotExportObject(slot);
         if (loadingSpinner) loadingSpinner.style.display = 'none';
 
         // Wi-Fi 1ステップ直接送信ホストを起動（1枚の静的QRコードを表示）
@@ -7362,7 +7454,7 @@ class VoicePadApp {
             exportObj,
             (qrPayload) => {
                 QrEngine.renderToCanvas(canvas, qrPayload, { size: 260, margin: 14, fgColor: '#000000', bgColor: '#ffffff' });
-                if (statusText) statusText.innerText = '先生の端末のカメラでこのQRコード（1枚）を読み取ってください';
+                if (statusText) statusText.innerText = '相手の端末のカメラでこのQRコード（1枚）を読み取ってください';
             },
             (statusMsg) => {
                 if (statusText) statusText.innerText = statusMsg;
@@ -7379,6 +7471,7 @@ class VoicePadApp {
         this.stopP2pScanner();
         this.closeScrollModal();
         this.closeScrollShareModal();
+        this.closeEditModal();
 
         const scroll = this.scrolls.find(s => s.id === scrollId);
         if (!scroll) return;
@@ -7610,12 +7703,13 @@ class VoicePadApp {
                 async (receivedData) => {
                     try {
                         this.stopP2pScanner();
-                        if (receivedData.type === 'vpad_wav_master') {
+                        if (receivedData.type === 'vpad_wav_master' || receivedData.type === 'vpad_slot_wav') {
+                            const isSlot = receivedData.type === 'vpad_slot_wav';
                             const blob = this.base64ToBlob(receivedData.dataBase64);
-                            const fileName = receivedData.fileName || 'VoicePad_全音声結合マスター.wav';
+                            const fileName = receivedData.fileName || (isSlot ? 'VoicePad_ボタン音声.wav' : 'VoicePad_全音声結合マスター.wav');
                             this.downloadBlobDirect(blob, fileName);
                             await this.showIncomingShareModal(receivedData, fileName);
-                            this.showToast(`🎉 統合マスターWAV「${fileName}」を受信・保存しました！`);
+                            this.showToast(`🎉 ${isSlot ? 'ボタン音声WAV' : '統合マスターWAV'}「${fileName}」を受信・保存しました！`);
                         } else if (receivedData.type === 'vpad_wav_batch') {
                             const files = receivedData.files || [];
                             for (let i = 0; i < files.length; i++) {
@@ -7658,12 +7752,13 @@ class VoicePadApp {
                 this.stopP2pScanner();
 
                 const data = res.data;
-                if (data.type === 'vpad_wav_master') {
+                if (data.type === 'vpad_wav_master' || data.type === 'vpad_slot_wav') {
+                    const isSlot = data.type === 'vpad_slot_wav';
                     const blob = this.base64ToBlob(data.dataBase64);
-                    const fileName = data.fileName || 'VoicePad_全音声結合マスター.wav';
+                    const fileName = data.fileName || (isSlot ? 'VoicePad_ボタン音声.wav' : 'VoicePad_全音声結合マスター.wav');
                     this.downloadBlobDirect(blob, fileName);
                     await this.showIncomingShareModal(data, fileName);
-                    this.showToast(`🎉 統合マスターWAV「${fileName}」を受信・保存しました！`);
+                    this.showToast(`🎉 ${isSlot ? 'ボタン音声WAV' : '統合マスターWAV'}「${fileName}」を受信・保存しました！`);
                 } else if (data.type === 'vpad_wav_batch') {
                     const files = data.files || [];
                     for (let i = 0; i < files.length; i++) {
@@ -8264,9 +8359,60 @@ class VoicePadApp {
         document.getElementById('export-single-slot-btn')?.addEventListener('click', () => {
             if (this.editingSlotId) this.exportSingleSlot(this.editingSlotId);
         });
-        // 📡 生徒側 WebRTC P2P送信ボタン
+
+        // 🎴 ① このボタンだけの【ボタンデータ】送信（QR送信 ＆ エアドロップ送信）
+        document.getElementById('btn-slot-send-button-qr')?.addEventListener('click', () => {
+            if (this.editingSlotId) this.openP2pSendModal(this.editingSlotId, 'button');
+        });
+        document.getElementById('btn-slot-send-button-airdrop')?.addEventListener('click', () => {
+            if (this.editingSlotId) this.exportSingleSlot(this.editingSlotId);
+        });
         document.getElementById('btn-slot-webrtc-send')?.addEventListener('click', () => {
-            if (this.editingSlotId) this.openP2pSendModal(this.editingSlotId);
+            if (this.editingSlotId) this.openP2pSendModal(this.editingSlotId, 'button');
+        });
+
+        // 🎵 ② このボタンだけの【音声データWAV】送信（QR送信 ＆ エアドロップ送信 ＆ 端末保存）
+        document.getElementById('btn-slot-send-wav-qr')?.addEventListener('click', () => {
+            if (this.editingSlotId) this.openP2pSendModal(this.editingSlotId, 'wav');
+        });
+        document.getElementById('btn-slot-send-wav-airdrop')?.addEventListener('click', async () => {
+            if (this.editingSlotId) await this.shareSingleSlotWav(this.editingSlotId);
+        });
+        document.getElementById('btn-slot-save-wav')?.addEventListener('click', async () => {
+            if (this.editingSlotId) await this.saveSlotAudioWav(this.editingSlotId);
+        });
+
+        // 📦 スクロール全体の一括送信・保存ボタン群
+        document.getElementById('btn-slot-webrtc-send-scroll')?.addEventListener('click', () => {
+            const slot = this.slots.find(s => s.id === this.editingSlotId);
+            const scrollId = slot ? slot.scrollId : this.currentScrollId;
+            this.closeEditModal();
+            this.openP2pSendScrollModal(scrollId, 'buttons');
+        });
+        document.getElementById('btn-slot-webrtc-send-wav-master')?.addEventListener('click', () => {
+            const slot = this.slots.find(s => s.id === this.editingSlotId);
+            const scrollId = slot ? slot.scrollId : this.currentScrollId;
+            this.closeEditModal();
+            this.openP2pSendScrollModal(scrollId, 'wav-master');
+        });
+        document.getElementById('btn-slot-webrtc-send-wav-batch')?.addEventListener('click', () => {
+            const slot = this.slots.find(s => s.id === this.editingSlotId);
+            const scrollId = slot ? slot.scrollId : this.currentScrollId;
+            this.closeEditModal();
+            this.openP2pSendScrollModal(scrollId, 'wav-batch');
+        });
+        document.getElementById('btn-slot-save-scroll-wav-master')?.addEventListener('click', async () => {
+            const slot = this.slots.find(s => s.id === this.editingSlotId);
+            const scrollId = slot ? slot.scrollId : this.currentScrollId;
+            await this.saveScrollWavMaster(scrollId);
+        });
+        document.getElementById('btn-slot-save-scroll-wav-batch')?.addEventListener('click', async () => {
+            const slot = this.slots.find(s => s.id === this.editingSlotId);
+            const scrollId = slot ? slot.scrollId : this.currentScrollId;
+            await this.saveScrollIndividualWavs(scrollId);
+        });
+        document.getElementById('download-audio-btn')?.addEventListener('click', async () => {
+            if (this.editingSlotId) await this.saveSlotAudioWav(this.editingSlotId);
         });
         document.getElementById('close-p2p-send-modal-btn')?.addEventListener('click', () => this.cancelP2pSend());
         document.getElementById('btn-cancel-p2p-send')?.addEventListener('click', () => this.cancelP2pSend());
@@ -8281,7 +8427,6 @@ class VoicePadApp {
             if (this.editingSlotId) this.deleteSlot(this.editingSlotId);
         });
         document.getElementById('delete-audio-btn')?.addEventListener('click', () => this.deleteSlotAudio());
-        document.getElementById('download-audio-btn')?.addEventListener('click', () => this.downloadSlotAudio());
 
         document.getElementById('import-slot-audio-btn')?.addEventListener('click', () => {
             document.getElementById('slot-audio-input')?.click();
@@ -8630,12 +8775,15 @@ class VoicePadApp {
 
     // ==================== スイッチエディタ制御 ====================
     openEditModal(slotId) {
-        this.editingSlotId = slotId;
-        const slot = this.slots.find(s => s.id === slotId);
+        let slot = this.slots.find(s => s.id === slotId || String(s.id) === String(slotId));
+        if (!slot && typeof slotId === 'number' && slotId > 0 && slotId <= this.slots.length) {
+            slot = this.slots[slotId - 1];
+        }
         if (!slot) return;
+        this.editingSlotId = slot.id;
 
         const currentSlots = this.getCurrentSlots();
-        const displayIndex = currentSlots.findIndex(s => s.id === slotId) + 1;
+        const displayIndex = currentSlots.findIndex(s => s.id === slot.id) + 1;
 
         const modalNumEl = document.getElementById('modal-slot-num');
         if (modalNumEl) modalNumEl.innerText = displayIndex > 0 ? displayIndex : '';
@@ -8728,7 +8876,7 @@ class VoicePadApp {
         const downloadAudioBtn = document.getElementById('download-audio-btn');
         if (slot.audioBlob || slot.ttsText) {
             if (deleteAudioBtn) deleteAudioBtn.style.display = 'block';
-            if (downloadAudioBtn) downloadAudioBtn.style.display = slot.audioBlob ? 'block' : 'none';
+            if (downloadAudioBtn) downloadAudioBtn.style.display = 'block';
         } else {
             if (deleteAudioBtn) deleteAudioBtn.style.display = 'none';
             if (downloadAudioBtn) downloadAudioBtn.style.display = 'none';
@@ -8800,19 +8948,33 @@ class VoicePadApp {
         }
     }
 
-    downloadSlotAudio() {
-        if (!this.editingSlotId) return;
-        const slot = this.slots.find(s => s.id === this.editingSlotId);
-        if (slot && slot.audioBlob) {
-            const url = BlobUrlTracker.create(slot.audioBlob, 'download');
-            const a = document.createElement('a');
-            a.href = url;
-            const ext = slot.audioBlob.type.includes('mp4') ? 'm4a' : (slot.audioBlob.type.includes('wav') ? 'wav' : 'webm');
-            const safeLabel = (slot.label || 'voice').replace(/[\\/:*?"<>|]/g, '_');
-            a.download = `${safeLabel}.${ext}`;
-            a.click();
-            setTimeout(() => BlobUrlTracker.revoke(url), 1000);
+    /**
+     * 💾 ① ボタン設定内：ボタンの音声（WAV）を保存
+     * 録音音声もAI打ち込み音声も高品質 16-bit PCM WAVとして端末に直接保存（Premiere/DaVinciなど動画編集ソフト即対応）
+     */
+    async saveSlotAudioWav(slotId) {
+        const targetId = slotId !== undefined ? slotId : this.editingSlotId;
+        let slot = this.slots.find(s => s.id === targetId || String(s.id) === String(targetId));
+        if (!slot && typeof targetId === 'number' && targetId > 0 && targetId <= this.slots.length) {
+            slot = this.slots[targetId - 1];
         }
+        if (!slot) return;
+
+        const wavBlob = await this.getSlotWavBlob(slot);
+        if (!wavBlob) {
+            this.showToast('⚠️ このボタンには音声データ（録音またはAI音声）がありません');
+            return;
+        }
+
+        const safeLabel = (slot.label || `スイッチ${slot.id}`).replace(/[\\/:*?"<>|]/g, '_');
+        const fileName = `VoicePad_${safeLabel}.wav`;
+
+        this.downloadBlobDirect(wavBlob, fileName);
+        this.showToast(`🎉 ボタン音声「${fileName}」を保存しました！動画編集ソフトでお使いいただけます。`);
+    }
+
+    async downloadSlotAudio() {
+        return this.saveSlotAudioWav(this.editingSlotId);
     }
 
     async handleSlotAudioUpload(file) {
@@ -11092,20 +11254,26 @@ class VoicePadApp {
             });
         }
 
-        if (data.type === 'vpad_wav_master') {
-            const fName = data.fileName || fileName || 'VoicePad_全音声結合マスター.wav';
-            if (titleEl) titleEl.innerText = `🎵 映像編集用 統合マスターWAVを受信`;
+        if (data.type === 'vpad_wav_master' || data.type === 'vpad_slot_wav') {
+            const isSlot = data.type === 'vpad_slot_wav';
+            const fName = data.fileName || fileName || (isSlot ? 'VoicePad_ボタン音声.wav' : 'VoicePad_全音声結合マスター.wav');
+            if (titleEl) titleEl.innerText = isSlot ? `🎵 ボタン音声WAVを受信` : `🎵 映像編集用 統合マスターWAVを受信`;
             if (targetGroup) targetGroup.style.display = 'none';
             if (addCurrentBtn) addCurrentBtn.style.display = 'none';
             const addNewBtn = document.getElementById('btn-incoming-add-new-scroll');
             if (addNewBtn) addNewBtn.style.display = 'none';
 
+            const icon = isSlot ? '🎵' : '🎬';
+            const subTitle = isSlot
+                ? `高品質 16-bit PCM WAV (動画編集ソフト即対応) | 再生時間: ${(data.duration || 0).toFixed(1)}秒`
+                : `高品質 16-bit PCM WAV (全音声結合マスター) | 再生時間: ${(data.duration || 0).toFixed(1)}秒`;
+
             previewCard.innerHTML = `
                 <div class="incoming-preview-slot">
-                    <div class="incoming-slot-icon" style="font-size:28px;">🎬</div>
+                    <div class="incoming-slot-icon" style="font-size:28px;">${icon}</div>
                     <div class="incoming-slot-meta">
                         <div class="incoming-slot-title">${this.escapeHtml(fName)}</div>
-                        <div class="incoming-slot-sub">高品質 16-bit PCM WAV (全音声結合マスター) | 再生時間: ${(data.duration || 0).toFixed(1)}秒</div>
+                        <div class="incoming-slot-sub">${subTitle}</div>
                     </div>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
