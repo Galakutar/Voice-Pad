@@ -979,6 +979,20 @@ body, html {
 .pad-grid.grid-count-16 .pad-label {
     font-size: clamp(10.5px, 1.8vh, 16px);
 }
+.pad-grid.grid-count-16 .pad-action-btn {
+    min-width: 25px;
+    min-height: 25px;
+    font-size: 13.5px;
+    padding: 2px 4px;
+    border-radius: 7px;
+}
+.pad-grid.grid-count-16 .slot-badge {
+    min-width: 24px;
+    min-height: 24px;
+    font-size: 11.5px;
+    padding: 2px 6px;
+    border-radius: 7px;
+}
 
 /* 24個・32個表示 */
 .pad-grid.grid-count-24 .pad-emoji,
@@ -988,6 +1002,66 @@ body, html {
 .pad-grid.grid-count-24 .pad-label,
 .pad-grid.grid-count-32 .pad-label {
     font-size: clamp(9.5px, 1.5vh, 13px);
+}
+.pad-grid.grid-count-24 .pad-action-btn,
+.pad-grid.grid-count-32 .pad-action-btn {
+    min-width: 22px;
+    min-height: 22px;
+    font-size: 11.5px;
+    padding: 1.5px 3.5px;
+    border-radius: 6px;
+}
+.pad-grid.grid-count-24 .pad-action-btn .tts-letter-badge,
+.pad-grid.grid-count-32 .pad-action-btn .tts-letter-badge {
+    font-size: 11.5px;
+}
+.pad-grid.grid-count-24 .slot-badge,
+.pad-grid.grid-count-32 .slot-badge {
+    min-width: 20px;
+    min-height: 20px;
+    font-size: 10.5px;
+    padding: 1.5px 5px;
+    border-radius: 6px;
+}
+.pad-grid.grid-count-24 .pad-actions-group,
+.pad-grid.grid-count-32 .pad-actions-group {
+    gap: 2px;
+    padding: 1px 1px 2px 1px;
+}
+
+/* 48個・64個表示 */
+.pad-grid.grid-count-48 .pad-emoji,
+.pad-grid.grid-count-64 .pad-emoji {
+    font-size: clamp(12px, 2.2vh, 22px);
+}
+.pad-grid.grid-count-48 .pad-label,
+.pad-grid.grid-count-64 .pad-label {
+    font-size: clamp(8.5px, 1.2vh, 11px);
+}
+.pad-grid.grid-count-48 .pad-action-btn,
+.pad-grid.grid-count-64 .pad-action-btn {
+    min-width: 18px;
+    min-height: 18px;
+    font-size: 10px;
+    padding: 1px 2px;
+    border-radius: 5px;
+}
+.pad-grid.grid-count-48 .pad-action-btn .tts-letter-badge,
+.pad-grid.grid-count-64 .pad-action-btn .tts-letter-badge {
+    font-size: 9.5px;
+}
+.pad-grid.grid-count-48 .slot-badge,
+.pad-grid.grid-count-64 .slot-badge {
+    min-width: 17px;
+    min-height: 17px;
+    font-size: 9px;
+    padding: 1px 3.5px;
+    border-radius: 5px;
+}
+.pad-grid.grid-count-48 .pad-actions-group,
+.pad-grid.grid-count-64 .pad-actions-group {
+    gap: 1.5px;
+    padding: 0 0 1px 0;
 }
 
 /* ==================== スイッチカード（パッド） ==================== */
@@ -1002,7 +1076,7 @@ body, html {
     padding: 3px 5px;
     cursor: pointer;
     overflow: hidden;
-    touch-action: none;
+    touch-action: pan-x pan-y;
     transition: transform 0.1s ease, border-color 0.15s ease, box-shadow 0.15s ease;
     -webkit-user-select: none;
     user-select: none;
@@ -1127,21 +1201,38 @@ body.mode-record .pad-card:not(.recording):hover {
 .pad-actions-group {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     pointer-events: auto;
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    touch-action: pan-x;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56, 189, 248, 0.45) transparent;
+    touch-action: pan-x pan-y !important;
     max-width: 100%;
     flex-shrink: 1;
     min-width: 0;
-    padding: 2px 2px 2px 4px;
+    padding: 2px 2px 3px 2px;
+    overscroll-behavior-x: contain;
 }
 
 .pad-actions-group::-webkit-scrollbar {
-    display: none;
+    display: block;
+    height: 3px;
+}
+
+.pad-actions-group::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 3px;
+}
+
+.pad-actions-group::-webkit-scrollbar-thumb {
+    background: rgba(56, 189, 248, 0.55);
+    border-radius: 3px;
+}
+
+.pad-actions-group::-webkit-scrollbar-thumb:hover {
+    background: rgba(56, 189, 248, 0.9);
 }
 
 .pad-action-btn {
@@ -1984,10 +2075,10 @@ body.mode-record .pad-card:not(.recording):hover {
     font-weight: 700;
 }
 
-/* ==================== 縦向き極小画面（スマホ）最適化 ==================== */
-@media (max-width: 480px) {
+/* ==================== 縦向き画面（スマホ・タブレット縦）最適化 ==================== */
+@media (max-width: 600px) {
     .app-header {
-        gap: 3px;
+        gap: 4px;
     }
     .mode-toggle-btn {
         padding: 3px 8px;
@@ -1999,8 +2090,8 @@ body.mode-record .pad-card:not(.recording):hover {
         padding: 4px 5px;
     }
     .header-action-btn {
-        padding: 4px 7px;
-        font-size: 11px;
+        padding: 4px 8px;
+        font-size: 12px;
     }
     .header-action-btn .btn-text {
         display: none;
@@ -3362,6 +3453,16 @@ body.theme-mint {
     background: linear-gradient(90deg, transparent, #34d399, #10b981, transparent);
     box-shadow: 0 0 12px #34d399;
     animation: scanLaser 2s ease-in-out infinite;
+}
+
+/* 📤 スクロール保存・送信モーダル専用カードスタイル */
+.share-choice-card {
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.share-choice-card:hover {
+    transform: translateY(-1.5px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    border-color: rgba(56, 189, 248, 0.6) !important;
 }
 
 @keyframes scanLaser {

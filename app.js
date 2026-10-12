@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.10.12.2350';
+const APP_VERSION = '2026.10.13.0025';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -3145,57 +3145,78 @@ class QrEngine {
         const manualBtns = document.querySelectorAll('.btn-manual-camera-start');
         manualBtns.forEach(btn => btn.style.display = 'none');
 
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            this.stopCameraScanner();
+            const secureHint = (!window.isSecureContext && location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1')
+                ? '（HTTPSまたはlocalhostでアクセスしてください）'
+                : '';
+            const msg = `⚠️ このブラウザまたは接続環境ではカメラが利用できません ${secureHint}`;
+            if (onStatus) onStatus(msg);
+            manualBtns.forEach(btn => btn.style.display = 'inline-flex');
+            throw new Error(msg);
+        }
+
         let stream = null;
-        // 4段階の即時フォールバックでカメラストリームを確実に取得（iOS Safariのユーザー操作トークンを逃さず即時実行）
-        try {
-            // 第1希望: 背面カメラ 720p
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: { ideal: 'environment' },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                },
-                audio: false
-            });
-        } catch (err1) {
-            console.warn('Camera tier 1 failed, trying tier 2 (facingMode ideal environment):', err1);
+        const isMobile = /iPad|iPhone|Android|Mobile/i.test(navigator.userAgent);
+
+        // 許可プロンプトが表示されている場合の親切な案内タイマー（2秒後に表示）
+        let promptTimer = setTimeout(() => {
+            if (this.isScanning && !stream && onStatus) {
+                onStatus('👆 画面上部（アドレスバー付近）に「カメラの許可」が出ている場合は【許可】をクリックしてください');
+            }
+        }, 2000);
+
+        // 試行するカメラ制約リスト（モバイルは背面優先、PCは汎用Webカメラ優先）
+        const constraintTiers = isMobile ? [
+            { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+            { video: { facingMode: { ideal: 'environment' } }, audio: false },
+            { video: { facingMode: 'environment' }, audio: false },
+            { video: true, audio: false }
+        ] : [
+            { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+            { video: true, audio: false },
+            { video: { facingMode: 'user' }, audio: false },
+            { video: { facingMode: { ideal: 'environment' } }, audio: false }
+        ];
+
+        let lastErr = null;
+        for (let i = 0; i < constraintTiers.length; i++) {
             try {
-                // 第2希望: 背面カメラ制約なし (ideal)
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: { ideal: 'environment' } },
-                    audio: false
-                });
-            } catch (err2) {
-                console.warn('Camera tier 2 failed, trying tier 3 (facingMode string):', err2);
-                try {
-                    // 第3希望: 背面カメラ文字列
-                    stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'environment' },
-                        audio: false
-                    });
-                } catch (err3) {
-                    console.warn('Camera tier 3 failed, trying tier 4 (generic video):', err3);
-                    try {
-                        // 第4希望: 任意のカメラ (video: true)
-                        stream = await navigator.mediaDevices.getUserMedia({
-                            video: true,
-                            audio: false
-                        });
-                    } catch (err4) {
-                        console.error('All camera attempts failed:', err4);
-                        this.stopCameraScanner();
-                        if (onStatus) onStatus('⚠️ カメラの起動に失敗しました。下の「📷 カメラを起動する」ボタンを押してください。');
-                        manualBtns.forEach(btn => btn.style.display = 'inline-flex');
-                        throw err4;
-                    }
+                stream = await navigator.mediaDevices.getUserMedia(constraintTiers[i]);
+                if (stream) break;
+            } catch (err) {
+                lastErr = err;
+                console.warn(`Camera tier ${i + 1} failed:`, err);
+                // ユーザー明示的拒否（NotAllowedError）の場合はフォールバックしても同じなので早期脱出
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    break;
                 }
             }
+        }
+
+        clearTimeout(promptTimer);
+
+        if (!stream) {
+            this.stopCameraScanner();
+            let friendlyMsg = '⚠️ カメラの起動に失敗しました。下の「📷 カメラを起動する」ボタンを押してください。';
+            if (lastErr) {
+                if (lastErr.name === 'NotAllowedError' || lastErr.name === 'PermissionDeniedError') {
+                    friendlyMsg = '⚠️ カメラへのアクセスがブロックされています。ブラウザのアドレスバーの「カメラ（📷）」アイコンから【許可】にしてください。';
+                } else if (lastErr.name === 'NotFoundError' || lastErr.name === 'DevicesNotFoundError') {
+                    friendlyMsg = '⚠️ カメラが見つかりません。Webカメラがパソコンに接続されているか確認してください。';
+                } else if (lastErr.name === 'NotReadableError' || lastErr.name === 'TrackStartError') {
+                    friendlyMsg = '⚠️ カメラを起動できません。他のアプリ（ZoomやTeamsなど）でカメラを使用中か確認してください。';
+                }
+            }
+            if (onStatus) onStatus(friendlyMsg);
+            manualBtns.forEach(btn => btn.style.display = 'inline-flex');
+            throw (lastErr || new Error(friendlyMsg));
         }
 
         try {
             this.scannerStream = stream;
 
-            // iOS WebKit 必須プロパティ＆属性の設定
+            // iOS WebKit / PC 共通プロパティ＆属性の設定
             videoEl.muted = true;
             videoEl.playsInline = true;
             videoEl.autoplay = true;
@@ -3205,15 +3226,19 @@ class QrEngine {
             videoEl.setAttribute('muted', 'true');
             videoEl.srcObject = stream;
 
-            // iOS WebKit: メタデータ読み込みを待機してから再生
+            // メタデータ読み込みを待機してから再生（USBカメラ等の初期化遅延に配慮し最大1500ms待機）
             await new Promise((resolve) => {
                 if (videoEl.readyState >= 2) return resolve();
+                let timer = null;
                 const onMeta = () => {
                     videoEl.removeEventListener('loadedmetadata', onMeta);
+                    videoEl.removeEventListener('canplay', onMeta);
+                    clearTimeout(timer);
                     resolve();
                 };
                 videoEl.addEventListener('loadedmetadata', onMeta);
-                setTimeout(resolve, 300);
+                videoEl.addEventListener('canplay', onMeta);
+                timer = setTimeout(onMeta, 1500);
             });
 
             try {
@@ -3793,10 +3818,42 @@ class P2PDataEngine {
                 this.activeSenderConn = conn;
                 if (onStatus) onStatus('⚡ 接続確立！Wi-Fi経由でデータを送信中...');
 
-                const sendData = () => {
+                const sendData = async () => {
                     try {
-                        conn.send(exportObj);
-                        console.log('[P2P Wi-Fi Sender] Data sent over DataChannel');
+                        const jsonStr = JSON.stringify(exportObj);
+                        const CHUNK_SIZE = 16384; // 16KB safe chunk size across mobile browsers
+                        if (jsonStr.length <= CHUNK_SIZE) {
+                            conn.send(exportObj);
+                            console.log('[P2P Wi-Fi Sender] Payload sent directly');
+                            if (onStatus) onStatus('⚡ データを送信しました！相手の確認を待っています...');
+                        } else {
+                            const totalChunks = Math.ceil(jsonStr.length / CHUNK_SIZE);
+                            const transferId = 'xfer_' + Date.now().toString(36);
+                            console.log(`[P2P Wi-Fi Sender] Chunking large payload: ${jsonStr.length} bytes into ${totalChunks} chunks`);
+
+                            for (let i = 0; i < totalChunks; i++) {
+                                const chunkData = jsonStr.substr(i * CHUNK_SIZE, CHUNK_SIZE);
+                                conn.send({
+                                    type: 'vpad_chunk',
+                                    id: transferId,
+                                    idx: i,
+                                    tot: totalChunks,
+                                    chunk: chunkData
+                                });
+
+                                if (i % 2 === 0 || i === totalChunks - 1) {
+                                    const percent = Math.round(((i + 1) / totalChunks) * 100);
+                                    if (onStatus) onStatus(`⚡ 音声データを送信中... ${percent}% (${Math.round((i + 1) * CHUNK_SIZE / 1024)} / ${Math.round(jsonStr.length / 1024)} KB)`);
+                                }
+
+                                if (conn.dataChannel && conn.dataChannel.bufferedAmount > 65536) {
+                                    await new Promise(r => setTimeout(r, 40));
+                                } else if (i % 8 === 0) {
+                                    await new Promise(r => setTimeout(r, 8));
+                                }
+                            }
+                            if (onStatus) onStatus('⚡ 全データ送信完了！受信端末の保存を待っています...');
+                        }
                     } catch (e) {
                         console.error('[P2P Wi-Fi Sender] Send error:', e);
                         if (onStatus) onStatus(`⚠️ 送信エラー: ${e.message}`);
@@ -3889,8 +3946,57 @@ class P2PDataEngine {
                     if (onStatus) onStatus('📥 ボタンデータを受信中...');
                 });
 
+                const chunkMap = {};
+
                 conn.on('data', (data) => {
-                    if (!isCompleted && data && (data.slot || data.type === 'voicepad_slot' || data.type === 'voicepad_scroll' || data.label)) {
+                    if (isCompleted || !data) return;
+
+                    if (data.type === 'vpad_chunk') {
+                        const { id, idx, tot, chunk } = data;
+                        if (!chunkMap[id]) {
+                            chunkMap[id] = {
+                                chunks: new Array(tot),
+                                receivedCount: 0,
+                                total: tot
+                            };
+                        }
+                        const entry = chunkMap[id];
+                        if (entry.chunks[idx] === undefined) {
+                            entry.chunks[idx] = chunk;
+                            entry.receivedCount++;
+                        }
+
+                        if (entry.receivedCount % 2 === 0 || entry.receivedCount === tot) {
+                            const percent = Math.round((entry.receivedCount / tot) * 100);
+                            if (onStatus) onStatus(`📥 音声データを受信中... ${percent}% (${entry.receivedCount}/${tot})`);
+                        }
+
+                        if (entry.receivedCount === tot) {
+                            isCompleted = true;
+                            clearTimeout(timeoutId);
+                            try {
+                                const fullJson = entry.chunks.join('');
+                                const parsed = JSON.parse(fullJson);
+
+                                try { conn.send({ type: 'ack', ok: true }); } catch (e) {}
+
+                                if (onStatus) onStatus('✅ 受信完了！データを展開・保存しています...');
+                                if (onDataReceived) onDataReceived(parsed);
+
+                                setTimeout(() => {
+                                    try { rcvPeer.destroy(); } catch (e) {}
+                                    if (this.activeReceiverPeer === rcvPeer) {
+                                        this.activeReceiverPeer = null;
+                                    }
+                                }, 1200);
+                                resolve(true);
+                            } catch (err) {
+                                console.error('[P2P Receiver] JSON parse error:', err);
+                                if (onStatus) onStatus('⚠️ 受信データの復元に失敗しました');
+                                resolve(false);
+                            }
+                        }
+                    } else if (data.slot || data.type === 'voicepad_slot' || data.type === 'voicepad_scroll' || data.label) {
                         isCompleted = true;
                         clearTimeout(timeoutId);
 
@@ -5165,11 +5271,7 @@ class VoicePadApp {
 
             const actionsGroup = card.querySelector('.pad-actions-group');
             if (actionsGroup) {
-                ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'mousedown'].forEach(evtName => {
-                    actionsGroup.addEventListener(evtName, (e) => {
-                        e.stopPropagation();
-                    }, { passive: true });
-                });
+                this.initPadActionsGroupSliding(actionsGroup);
             }
 
             this.attachPadDragListeners(card, slot.id);
@@ -5194,6 +5296,120 @@ class VoicePadApp {
         if (this.aacScanActive && this.aacScanIndex >= 0) {
             this.updateAACScanFocusUI();
         }
+    }
+
+    /**
+     * 👆 スロットカード上部アクションボタングループの横スライド操作（タッチスワイプ・マウスドラッグ・ホイール対応）
+     * - スイッチ数増加時や狭いカード内でも、左右スライドで全ボタン（声質・環境・AI音声・設定/ロック）をスムーズに操作可能
+     * - スライド中の誤タップを完全防止
+     */
+    initPadActionsGroupSliding(actionsGroup) {
+        if (!actionsGroup) return;
+
+        let startX = 0;
+        let startScroll = 0;
+        let isMouseDown = false;
+        let isMouseMoved = false;
+        let isTouchDown = false;
+        let isTouchMoved = false;
+        let suppressClick = false;
+
+        // 🖱️ マウスホイールでスムーズ左右スライド
+        actionsGroup.addEventListener('wheel', (e) => {
+            const delta = (Math.abs(e.deltaX) > Math.abs(e.deltaY)) ? e.deltaX : e.deltaY;
+            if (delta !== 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                actionsGroup.scrollLeft += delta;
+            }
+        }, { passive: false });
+
+        // 🖱️ マウスドラッグで左右スライド
+        actionsGroup.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            isMouseDown = true;
+            isMouseMoved = false;
+            startX = e.clientX;
+            startScroll = actionsGroup.scrollLeft;
+            e.stopPropagation();
+        });
+
+        const onMouseMove = (e) => {
+            if (!isMouseDown) return;
+            const diffX = e.clientX - startX;
+            if (Math.abs(diffX) > 4) {
+                isMouseMoved = true;
+                suppressClick = true;
+                actionsGroup.setAttribute('data-is-sliding', 'true');
+                actionsGroup.scrollLeft = startScroll - diffX;
+                e.preventDefault();
+            }
+        };
+
+        const onMouseUp = () => {
+            if (isMouseDown) {
+                isMouseDown = false;
+                if (isMouseMoved) {
+                    setTimeout(() => {
+                        suppressClick = false;
+                        actionsGroup.removeAttribute('data-is-sliding');
+                    }, 100);
+                } else {
+                    actionsGroup.removeAttribute('data-is-sliding');
+                }
+            }
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+
+        // 📱 タッチスワイプで左右スライド
+        actionsGroup.addEventListener('touchstart', (e) => {
+            if (e.touches && e.touches.length === 1) {
+                isTouchDown = true;
+                isTouchMoved = false;
+                startX = e.touches[0].clientX;
+                startScroll = actionsGroup.scrollLeft;
+            }
+            e.stopPropagation();
+        }, { passive: true });
+
+        actionsGroup.addEventListener('touchmove', (e) => {
+            if (!isTouchDown || !e.touches || e.touches.length !== 1) return;
+            const diffX = e.touches[0].clientX - startX;
+            if (Math.abs(diffX) > 4) {
+                isTouchMoved = true;
+                suppressClick = true;
+                actionsGroup.setAttribute('data-is-sliding', 'true');
+                actionsGroup.scrollLeft = startScroll - diffX;
+                if (e.cancelable) e.preventDefault();
+            }
+            e.stopPropagation();
+        }, { passive: false });
+
+        actionsGroup.addEventListener('touchend', (e) => {
+            isTouchDown = false;
+            if (isTouchMoved) {
+                setTimeout(() => {
+                    suppressClick = false;
+                    actionsGroup.removeAttribute('data-is-sliding');
+                }, 100);
+            } else {
+                actionsGroup.removeAttribute('data-is-sliding');
+            }
+            e.stopPropagation();
+        }, { passive: true });
+
+        // 🛡️ スライド操作直後の誤クリック（誤操作）を完全防止
+        actionsGroup.addEventListener('click', (e) => {
+            if (suppressClick || isMouseMoved || isTouchMoved) {
+                e.preventDefault();
+                e.stopPropagation();
+                suppressClick = false;
+                isMouseMoved = false;
+                isTouchMoved = false;
+            }
+        }, true);
     }
 
     attachButtonLockListeners(btnLock, slot) {
@@ -5238,7 +5454,7 @@ class VoicePadApp {
         btnLock.addEventListener('pointermove', movePress);
         btnLock.addEventListener('pointerup', (e) => {
             cancelPress();
-            if (!isLongPress) {
+            if (!isLongPress && btnLock.closest('.pad-actions-group')?.getAttribute('data-is-sliding') !== 'true') {
                 e.stopPropagation();
                 if (slot.isLocked) {
                     this.showToast(`🔒 ロックされています。解除するには長押し（約1秒）してください`);
@@ -5516,6 +5732,11 @@ class VoicePadApp {
 
         // 📜 スクロールタブバーの横スライド操作（◀ / ▶ナビ、マウスホイール、ドラッグスライド）
         this.initScrollTabsEvents();
+
+        // 📤 スクロール保存・送信ボタン（ヘッダー）
+        document.getElementById('header-export-btn')?.addEventListener('click', () => {
+            this.openScrollShareModal(this.currentScrollId);
+        });
 
         document.getElementById('header-import-btn')?.addEventListener('click', () => {
             document.getElementById('global-import-input')?.click();
@@ -7099,6 +7320,7 @@ class VoicePadApp {
     async openP2pSendScrollModal(scrollId) {
         this.stopP2pScanner();
         this.closeScrollModal();
+        this.closeScrollShareModal();
 
         const scroll = this.scrolls.find(s => s.id === scrollId);
         if (!scroll) return;
@@ -7187,7 +7409,15 @@ class VoicePadApp {
         } catch (e) {
             window._lastCameraError = (e ? (e.name + ': ' + e.message) : 'Unknown') + '\n' + (e?.stack || '');
             console.error('Camera start in receive modal error:', e);
-            this.showToast('⚠️ カメラへのアクセスが拒否されたか利用できません');
+            let toastMsg = '⚠️ カメラへのアクセスが拒否されたか利用できません';
+            if (e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError') {
+                toastMsg = '⚠️ ブラウザのアドレスバーからカメラを【許可】してください';
+            } else if (e?.name === 'NotReadableError' || e?.name === 'TrackStartError') {
+                toastMsg = '⚠️ 他のアプリ（Zoom等）でカメラ使用中の可能性があります';
+            } else if (e?.name === 'NotFoundError') {
+                toastMsg = '⚠️ カメラが見つかりませんでした';
+            }
+            this.showToast(toastMsg);
         }
     }
 
@@ -7330,6 +7560,98 @@ class VoicePadApp {
         const safeName = (scroll.name || 'スクロール').replace(/[\\/:*?"<>|]/g, '_');
         const fileName = `VoicePad_スクロール_${safeName}.vpad-page`;
         await this.shareOrDownloadFile(fileName, JSON.stringify(exportData, null, 2), 'スクロール');
+    }
+
+    // 📤 スクロール共有・保存モーダルを開く
+    openScrollShareModal(scrollId) {
+        const targetId = scrollId || this.currentScrollId;
+        const scroll = this.scrolls.find(s => s.id === targetId);
+        if (!scroll) {
+            this.showToast('⚠️ スクロールが見つかりません');
+            return;
+        }
+
+        this.activeScrollShareId = targetId;
+        const targetSlots = this.slots.filter(s => s.scrollId === targetId);
+        const recordedCount = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64)).length;
+        const ttsCount = targetSlots.filter(s => !!s.ttsText).length;
+
+        const nameEl = document.getElementById('scroll-share-target-name');
+        if (nameEl) nameEl.innerText = scroll.name || '名称未設定スクロール';
+
+        const badgeEl = document.getElementById('scroll-share-slot-count-badge');
+        if (badgeEl) badgeEl.innerText = `ボタン ${targetSlots.length}個`;
+
+        const statsEl = document.getElementById('scroll-share-target-stats');
+        if (statsEl) {
+            statsEl.innerText = `🎙️ 録音音声: ${recordedCount}個 | 🤖 打ち込みAI音声: ${ttsCount}個`;
+        }
+
+        const audioBtn = document.getElementById('btn-scroll-share-audios');
+        if (audioBtn) {
+            if (recordedCount > 0) {
+                audioBtn.innerText = `🎵 録音音声（${recordedCount}個）をすべてダウンロード`;
+                audioBtn.style.opacity = '1';
+            } else {
+                audioBtn.innerText = '🎵 録音音声なし（AI音声のみ/未録音）';
+                audioBtn.style.opacity = '0.7';
+            }
+        }
+
+        document.getElementById('scroll-share-modal-backdrop')?.classList.add('open');
+    }
+
+    closeScrollShareModal() {
+        document.getElementById('scroll-share-modal-backdrop')?.classList.remove('open');
+        this.activeScrollShareId = null;
+    }
+
+    // 🎵 スクロール内の全録音音声を一括ダウンロード（各ボタンの音声を連番＆ボタン名で個別保存）
+    async downloadAllScrollAudios(scrollId) {
+        const targetId = scrollId || this.activeScrollShareId || this.currentScrollId;
+        const scroll = this.scrolls.find(s => s.id === targetId);
+        if (!scroll) return;
+
+        const targetSlots = this.slots.filter(s => s.scrollId === targetId);
+        const audioSlots = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64));
+
+        if (audioSlots.length === 0) {
+            this.showToast('⚠️ このスクロールには保存対象の録音音声がありません');
+            return;
+        }
+
+        const scrollSafeName = (scroll.name || 'スクロール').replace(/[\\/:*?"<>|]/g, '_');
+        this.showToast(`🎵 ${audioSlots.length}個の録音音声を一括保存しています...`);
+
+        let savedCount = 0;
+        for (let i = 0; i < audioSlots.length; i++) {
+            const slot = audioSlots[i];
+            const blob = this.extractAudioBlob(slot);
+            if (!blob) continue;
+
+            const ext = blob.type.includes('mp4') || blob.type.includes('aac') ? 'm4a' : (blob.type.includes('wav') ? 'wav' : 'webm');
+            const slotLabel = (slot.label || `ボタン_${i + 1}`).replace(/[\\/:*?"<>|]/g, '_');
+            const fileName = `${scrollSafeName}_${String(i + 1).padStart(2, '0')}_${slotLabel}.${ext}`;
+
+            const url = BlobUrlTracker.create(blob, 'download');
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            savedCount++;
+            setTimeout(() => BlobUrlTracker.revoke(url), 2000);
+
+            // iOS/Safari/Chromeの複数ファイルダウンロード制限対策
+            if (i < audioSlots.length - 1) {
+                await new Promise(r => setTimeout(r, 260));
+            }
+        }
+
+        this.showToast(`🎉 ${savedCount}個の録音音声をすべて保存しました！`);
+        this.closeScrollShareModal();
     }
 
     // ③ アプリ全体の完全エクスポート (.vpad)
@@ -7692,6 +8014,31 @@ class VoicePadApp {
         // 📡 生徒側/端末間 WebRTC P2P スクロール直接送信ボタン
         document.getElementById('btn-scroll-webrtc-send')?.addEventListener('click', () => {
             if (this.editingScrollId) this.openP2pSendScrollModal(this.editingScrollId);
+        });
+
+        // 📤 スクロール保存・送信モーダル（ヘッダー保存・送信ボタン連携）
+        document.getElementById('close-scroll-share-modal-btn')?.addEventListener('click', () => {
+            this.closeScrollShareModal();
+        });
+        document.getElementById('close-scroll-share-bottom-btn')?.addEventListener('click', () => {
+            this.closeScrollShareModal();
+        });
+        document.getElementById('scroll-share-modal-backdrop')?.addEventListener('click', (e) => {
+            if (e.target.id === 'scroll-share-modal-backdrop') this.closeScrollShareModal();
+        });
+        document.getElementById('btn-scroll-share-p2p')?.addEventListener('click', () => {
+            const targetId = this.activeScrollShareId || this.currentScrollId;
+            this.closeScrollShareModal();
+            this.openP2pSendScrollModal(targetId);
+        });
+        document.getElementById('btn-scroll-share-file')?.addEventListener('click', async () => {
+            const targetId = this.activeScrollShareId || this.currentScrollId;
+            this.closeScrollShareModal();
+            await this.exportScroll(targetId);
+        });
+        document.getElementById('btn-scroll-share-audios')?.addEventListener('click', async () => {
+            const targetId = this.activeScrollShareId || this.currentScrollId;
+            await this.downloadAllScrollAudios(targetId);
         });
         // 📡 先生側/端末間 WebRTC P2Pインポートボタン（QRカメラ読取）
         document.getElementById('btn-scroll-webrtc-import')?.addEventListener('click', () => {
