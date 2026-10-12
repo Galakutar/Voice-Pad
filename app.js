@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.10.13.0040';
+const APP_VERSION = '2026.10.13.0145';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -272,6 +272,46 @@ class AudioUtils {
         }
         
         return new Blob([arrayBuffer], { type: 'audio/wav' });
+    }
+
+    /**
+     * 複数の AudioBuffer を指定秒数の無音間隔で1つのマスター AudioBuffer へ結合
+     */
+    static concatenateAudioBuffers(ctx, bufferList, gapSeconds = 0.8) {
+        if (!bufferList || bufferList.length === 0) return null;
+        const sampleRate = ctx.sampleRate || bufferList[0].sampleRate || 44100;
+        const gapFrames = Math.max(0, Math.floor(sampleRate * gapSeconds));
+
+        let totalFrames = 0;
+        for (let i = 0; i < bufferList.length; i++) {
+            totalFrames += bufferList[i].length;
+            if (i < bufferList.length - 1) {
+                totalFrames += gapFrames;
+            }
+        }
+
+        const masterBuffer = ctx.createBuffer(2, Math.max(1, totalFrames), sampleRate);
+        const masterLeft = masterBuffer.getChannelData(0);
+        const masterRight = masterBuffer.getChannelData(1);
+
+        let currentOffset = 0;
+        for (let i = 0; i < bufferList.length; i++) {
+            const buf = bufferList[i];
+            const srcLeft = buf.getChannelData(0);
+            const srcRight = buf.numberOfChannels > 1 ? buf.getChannelData(1) : srcLeft;
+
+            for (let j = 0; j < buf.length; j++) {
+                masterLeft[currentOffset + j] = srcLeft[j];
+                masterRight[currentOffset + j] = srcRight[j];
+            }
+
+            currentOffset += buf.length;
+            if (i < bufferList.length - 1) {
+                currentOffset += gapFrames;
+            }
+        }
+
+        return masterBuffer;
     }
 
     /**
@@ -7198,6 +7238,19 @@ class VoicePadApp {
         this.showToast(`📥 「${fileName}」を保存しました`);
     }
 
+    // Blob 直接ダウンロード保存（WAV音声・マルチメディアファイル直接保存）
+    downloadBlobDirect(blob, fileName) {
+        if (!blob) return;
+        const url = BlobUrlTracker.create(blob, 'download');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => BlobUrlTracker.revoke(url), 3000);
+    }
+
     // ボタンの完全エクスポートオブジェクト構築ヘルパー
     async buildSlotExportObject(slot) {
         if (!slot) return null;
@@ -7265,6 +7318,9 @@ class VoicePadApp {
         const slot = this.slots.find(s => s.id === slotId);
         if (!slot) return;
 
+        this.activeP2pScrollId = null;
+        this.activeP2pScrollMode = null;
+
         const modal = document.getElementById('p2p-send-modal-backdrop');
         const modalTitle = document.getElementById('p2p-send-modal-title');
         const canvas = document.getElementById('p2p-send-qr-canvas');
@@ -7273,8 +7329,11 @@ class VoicePadApp {
         const metaEl = document.getElementById('p2p-send-slot-meta');
         const statusText = document.getElementById('p2p-send-status-text');
         const loadingSpinner = document.getElementById('p2p-send-qr-loading');
+        const datatypeBar = document.getElementById('p2p-scroll-datatype-bar');
 
         if (!modal || !canvas) return;
+
+        if (datatypeBar) datatypeBar.style.display = 'none';
 
         if (modalTitle) modalTitle.innerText = '📡 ボタン Wi-Fi 直接送信';
         if (nameEl) nameEl.innerText = slot.label || 'ボタン';
@@ -7315,8 +7374,8 @@ class VoicePadApp {
         );
     }
 
-    // ==================== 📡 スクロール Wi-Fi 直接送信モーダル（スクロール丸ごと） ====================
-    async openP2pSendScrollModal(scrollId) {
+    // ==================== 📡 スクロール Wi-Fi 直接送信モーダル（選択式：ボタンデータ / 結合WAV / 個別連番WAV） ====================
+    async openP2pSendScrollModal(scrollId, mode = 'buttons') {
         this.stopP2pScanner();
         this.closeScrollModal();
         this.closeScrollShareModal();
@@ -7324,7 +7383,11 @@ class VoicePadApp {
         const scroll = this.scrolls.find(s => s.id === scrollId);
         if (!scroll) return;
 
+        this.activeP2pScrollId = scrollId;
+        this.activeP2pScrollMode = mode;
+
         const targetSlots = this.slots.filter(s => s.scrollId === scrollId);
+        const audioSlots = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64 || s.ttsText));
 
         const modal = document.getElementById('p2p-send-modal-backdrop');
         const modalTitle = document.getElementById('p2p-send-modal-title');
@@ -7334,22 +7397,119 @@ class VoicePadApp {
         const metaEl = document.getElementById('p2p-send-slot-meta');
         const statusText = document.getElementById('p2p-send-status-text');
         const loadingSpinner = document.getElementById('p2p-send-qr-loading');
+        const datatypeBar = document.getElementById('p2p-scroll-datatype-bar');
 
         if (!modal || !canvas) return;
 
-        if (modalTitle) modalTitle.innerText = '📡 スクロール Wi-Fi 直接送信';
-        if (nameEl) nameEl.innerText = `🗂️ ${scroll.name || 'スクロール'}`;
-        if (emojiEl) emojiEl.innerText = '📂';
-        if (metaEl) {
-            const audioCount = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64)).length;
-            metaEl.innerText = `スイッチ数: ${targetSlots.length}個 (録音済: ${audioCount}個) | 全データ丸ごと転送`;
+        // スクロール送信時はデータ種別選択タブを表示＆アクティブ化
+        if (datatypeBar) {
+            datatypeBar.style.display = 'block';
+            document.getElementById('p2p-type-btn-buttons')?.classList.toggle('active', mode === 'buttons');
+            document.getElementById('p2p-type-btn-wav-master')?.classList.toggle('active', mode === 'wav-master');
+            document.getElementById('p2p-type-btn-wav-batch')?.classList.toggle('active', mode === 'wav-batch');
         }
 
         modal.classList.add('open');
         if (loadingSpinner) loadingSpinner.style.display = 'flex';
         if (statusText) statusText.innerText = 'Wi-Fi待受QRコードを準備中...';
 
-        const exportObj = await this.buildScrollExportObject(scrollId);
+        let exportObj = null;
+        const safeScrollName = (scroll.name || 'スクロール').replace(/[\\/:*?"<>|]/g, '_');
+
+        if (mode === 'wav-master') {
+            if (modalTitle) modalTitle.innerText = '📡 音声データ Wi-Fi 送信（結合マスターWAV）';
+            if (emojiEl) emojiEl.innerText = '🎬';
+            if (nameEl) nameEl.innerText = `VoicePad_${safeScrollName}_全音声結合マスター.wav`;
+            if (metaEl) metaEl.innerText = `全${audioSlots.length}音声を1本に結合した 16-bit PCM WAV (映像編集用)`;
+
+            if (audioSlots.length === 0) {
+                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                if (statusText) statusText.innerText = '⚠️ このスクロールには音声データがありません';
+                this.showToast('⚠️ このスクロールには音声データがありません');
+                return;
+            }
+
+            const ctx = AudioUnlocker.getContext();
+            const bufferList = [];
+            for (const slot of audioSlots) {
+                const buf = await this.getSlotAudioBuffer(slot);
+                if (buf) bufferList.push(buf);
+            }
+            if (bufferList.length === 0) {
+                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                if (statusText) statusText.innerText = '⚠️ 音声の変換に失敗しました';
+                return;
+            }
+
+            const masterBuffer = AudioUtils.concatenateAudioBuffers(ctx, bufferList, 0.8);
+            const wavBlob = AudioUtils.audioBufferToWav(masterBuffer);
+            const dataBase64 = await this.blobToBase64(wavBlob);
+            const fileName = `VoicePad_${safeScrollName}_全音声結合マスター.wav`;
+
+            exportObj = {
+                type: 'vpad_wav_master',
+                scrollId: scroll.id,
+                scrollName: scroll.name,
+                fileName: fileName,
+                mimeType: 'audio/wav',
+                duration: masterBuffer.duration,
+                dataBase64: dataBase64
+            };
+
+        } else if (mode === 'wav-batch') {
+            if (modalTitle) modalTitle.innerText = '📡 音声データ Wi-Fi 送信（個別連番WAV）';
+            if (emojiEl) emojiEl.innerText = '📁';
+            if (nameEl) nameEl.innerText = `${safeScrollName}（個別連番WAVセット）`;
+            if (metaEl) metaEl.innerText = `各ボタンの音声を連番 16-bit PCM WAV（計${audioSlots.length}ファイル）として送信`;
+
+            if (audioSlots.length === 0) {
+                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                if (statusText) statusText.innerText = '⚠️ このスクロールには音声データがありません';
+                this.showToast('⚠️ このスクロールには音声データがありません');
+                return;
+            }
+
+            const files = [];
+            for (let i = 0; i < audioSlots.length; i++) {
+                const slot = audioSlots[i];
+                const wavBlob = await this.getSlotWavBlob(slot);
+                if (wavBlob) {
+                    const slotLabel = (slot.label || `ボタン_${i + 1}`).replace(/[\\/:*?"<>|]/g, '_');
+                    const fileName = `${safeScrollName}_${String(i + 1).padStart(2, '0')}_${slotLabel}.wav`;
+                    const dataBase64 = await this.blobToBase64(wavBlob);
+                    files.push({
+                        fileName: fileName,
+                        dataBase64: dataBase64,
+                        label: slot.label,
+                        index: i + 1,
+                        duration: slot.duration || 0
+                    });
+                }
+            }
+
+            if (files.length === 0) {
+                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                if (statusText) statusText.innerText = '⚠️ 音声の変換に失敗しました';
+                return;
+            }
+
+            exportObj = {
+                type: 'vpad_wav_batch',
+                scrollId: scroll.id,
+                scrollName: scroll.name,
+                files: files
+            };
+
+        } else {
+            // mode === 'buttons' (デフォルト)
+            if (modalTitle) modalTitle.innerText = '📡 スクロール Wi-Fi 送信（ボタンデータ）';
+            if (emojiEl) emojiEl.innerText = '🗂️';
+            if (nameEl) nameEl.innerText = `🗂️ ${scroll.name || 'スクロール'}`;
+            if (metaEl) metaEl.innerText = `スイッチ数: ${targetSlots.length}個 (音声あり: ${audioSlots.length}個) | 全設定・音声を丸ごと転送`;
+
+            exportObj = await this.buildScrollExportObject(scrollId);
+        }
+
         if (loadingSpinner) loadingSpinner.style.display = 'none';
 
         if (!exportObj) {
@@ -7368,8 +7528,13 @@ class VoicePadApp {
                 if (statusText) statusText.innerText = statusMsg;
             },
             (completedObj) => {
-                if (statusText) statusText.innerText = '🎉 スクロールの送信が完了しました！';
-                this.showToast(`🎉 スクロール「${scroll.name || 'スクロール'}」のWi-Fi送信が完了しました！`);
+                const completionMsg = mode === 'wav-master'
+                    ? `🎉 統合マスターWAV「${exportObj.fileName}」のWi-Fi送信が完了しました！`
+                    : mode === 'wav-batch'
+                    ? `🎉 個別連番WAV（計${exportObj.files.length}件）のWi-Fi送信が完了しました！`
+                    : `🎉 スクロール「${scroll.name || 'スクロール'}」のWi-Fi送信が完了しました！`;
+                if (statusText) statusText.innerText = completionMsg;
+                this.showToast(completionMsg);
             }
         );
     }
@@ -7377,6 +7542,8 @@ class VoicePadApp {
     cancelP2pSend() {
         QrEngine.stopCameraScanner();
         P2PDataEngine.stopWifiSession();
+        this.activeP2pScrollId = null;
+        this.activeP2pScrollMode = null;
         document.getElementById('p2p-send-modal-backdrop')?.classList.remove('open');
     }
 
@@ -7443,18 +7610,38 @@ class VoicePadApp {
                 async (receivedData) => {
                     try {
                         this.stopP2pScanner();
-                        const isScroll = receivedData.type === 'voicepad_scroll' || !!receivedData.scroll;
-                        const label = isScroll
-                            ? (receivedData.scroll?.name || 'スクロール')
-                            : (receivedData.slot?.label || receivedData.label || 'ボタン');
-                        const fileName = isScroll
-                            ? `VoicePad_スクロール_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-page`
-                            : `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
-                        const jsonStr = JSON.stringify(receivedData, null, 2);
-                        this.downloadFileDirect(fileName, jsonStr);
+                        if (receivedData.type === 'vpad_wav_master') {
+                            const blob = this.base64ToBlob(receivedData.dataBase64);
+                            const fileName = receivedData.fileName || 'VoicePad_全音声結合マスター.wav';
+                            this.downloadBlobDirect(blob, fileName);
+                            await this.showIncomingShareModal(receivedData, fileName);
+                            this.showToast(`🎉 統合マスターWAV「${fileName}」を受信・保存しました！`);
+                        } else if (receivedData.type === 'vpad_wav_batch') {
+                            const files = receivedData.files || [];
+                            for (let i = 0; i < files.length; i++) {
+                                const f = files[i];
+                                const blob = this.base64ToBlob(f.dataBase64);
+                                this.downloadBlobDirect(blob, f.fileName);
+                                if (i < files.length - 1) {
+                                    await new Promise(r => setTimeout(r, 180));
+                                }
+                            }
+                            await this.showIncomingShareModal(receivedData, `${receivedData.scrollName || 'スクロール'}_個別連番WAV`);
+                            this.showToast(`🎉 個別連番WAV（計${files.length}件）を受信・一括保存しました！`);
+                        } else {
+                            const isScroll = receivedData.type === 'voicepad_scroll' || !!receivedData.scroll;
+                            const label = isScroll
+                                ? (receivedData.scroll?.name || 'スクロール')
+                                : (receivedData.slot?.label || receivedData.label || 'ボタン');
+                            const fileName = isScroll
+                                ? `VoicePad_スクロール_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-page`
+                                : `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`;
+                            const jsonStr = JSON.stringify(receivedData, null, 2);
+                            this.downloadFileDirect(fileName, jsonStr);
 
-                        await this.showIncomingShareModal(receivedData, fileName);
-                        this.showToast(`🎉 ${isScroll ? 'スクロール' : 'ボタン'}「${label}」を受信・保存しました！`);
+                            await this.showIncomingShareModal(receivedData, fileName);
+                            this.showToast(`🎉 ${isScroll ? 'スクロール' : 'ボタン'}「${label}」を受信・保存しました！`);
+                        }
                     } catch (err) {
                         console.error('P2P receive handle error:', err);
                     }
@@ -7471,18 +7658,36 @@ class VoicePadApp {
                 this.stopP2pScanner();
 
                 const data = res.data;
-                const isScroll = data.type === 'voicepad_scroll' || !!data.scroll;
-                const label = isScroll
-                    ? (data.scroll?.name || 'スクロール')
-                    : (data.slot?.label || data.label || 'ボタン');
-                const fileName = res.fileName || (isScroll
-                    ? `VoicePad_スクロール_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-page`
-                    : `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`);
-                const jsonStr = JSON.stringify(data, null, 2);
-                this.downloadFileDirect(fileName, jsonStr);
+                if (data.type === 'vpad_wav_master') {
+                    const blob = this.base64ToBlob(data.dataBase64);
+                    const fileName = data.fileName || 'VoicePad_全音声結合マスター.wav';
+                    this.downloadBlobDirect(blob, fileName);
+                    await this.showIncomingShareModal(data, fileName);
+                    this.showToast(`🎉 統合マスターWAV「${fileName}」を受信・保存しました！`);
+                } else if (data.type === 'vpad_wav_batch') {
+                    const files = data.files || [];
+                    for (let i = 0; i < files.length; i++) {
+                        const f = files[i];
+                        const blob = this.base64ToBlob(f.dataBase64);
+                        this.downloadBlobDirect(blob, f.fileName);
+                        if (i < files.length - 1) await new Promise(r => setTimeout(r, 180));
+                    }
+                    await this.showIncomingShareModal(data, `${data.scrollName || 'スクロール'}_個別連番WAV`);
+                    this.showToast(`🎉 個別連番WAV（計${files.length}件）を受信・一括保存しました！`);
+                } else {
+                    const isScroll = data.type === 'voicepad_scroll' || !!data.scroll;
+                    const label = isScroll
+                        ? (data.scroll?.name || 'スクロール')
+                        : (data.slot?.label || data.label || 'ボタン');
+                    const fileName = res.fileName || (isScroll
+                        ? `VoicePad_スクロール_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-page`
+                        : `VoicePad_ボタン_${label.replace(/[\\/:*?"<>|]/g, '_')}.vpad-button`);
+                    const jsonStr = JSON.stringify(data, null, 2);
+                    this.downloadFileDirect(fileName, jsonStr);
 
-                await this.showIncomingShareModal(data, fileName);
-                this.showToast(`🎉 ${isScroll ? 'スクロール' : 'ボタン'}「${label}」を受信・保存しました！`);
+                    await this.showIncomingShareModal(data, fileName);
+                    this.showToast(`🎉 ${isScroll ? 'スクロール' : 'ボタン'}「${label}」を受信・保存しました！`);
+                }
             } catch (err) {
                 console.error('P2P QR receive error:', err);
             }
@@ -7605,34 +7810,196 @@ class VoicePadApp {
         this.activeScrollShareId = null;
     }
 
-    // 🎵 スクロール内の全録音音声を一括ダウンロード（各ボタンの音声を連番＆ボタン名で個別保存）
-    async downloadAllScrollAudios(scrollId) {
-        const targetId = scrollId || this.activeScrollShareId || this.currentScrollId;
+    /**
+     * スロットから AudioBuffer を安全取得（録音音声 または AIテキスト音声）
+     */
+    async getSlotAudioBuffer(slot) {
+        if (!slot) return null;
+        const ctx = AudioUnlocker.getContext();
+        if (!ctx) return null;
+
+        // ① 録音音声 / ファイルインポート音声
+        const rawBlob = this.extractAudioBlob(slot);
+        if (rawBlob && rawBlob.size > 0) {
+            try {
+                const arrayBuffer = await rawBlob.arrayBuffer();
+                const audioBuffer = await AudioUtils.decodeAudioDataSafe(ctx, arrayBuffer);
+                if (audioBuffer) return audioBuffer;
+            } catch (e) {
+                console.warn('getSlotAudioBuffer decode error:', e);
+            }
+        }
+
+        // ② AIテキスト音声 (TTS)
+        if (slot.ttsText && typeof TtsEngine !== 'undefined') {
+            try {
+                const ttsBuffer = TtsEngine.synthesizeToBuffer(
+                    slot.ttsText,
+                    ctx,
+                    slot.ttsVoice || 'girl',
+                    slot.ttsRate || 1.0,
+                    slot.ttsPitch || 1.0
+                );
+                if (ttsBuffer) return ttsBuffer;
+            } catch (e) {
+                console.warn('TTS synthesizeToBuffer error:', e);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * スロットの音声を 16-bit PCM WAV Blob として取得（映像編集ソフト100%互換）
+     */
+    async getSlotWavBlob(slot) {
+        const audioBuffer = await this.getSlotAudioBuffer(slot);
+        if (!audioBuffer) return null;
+        return AudioUtils.audioBufferToWav(audioBuffer);
+    }
+
+    /**
+     * 💾 スクロール内の全ボタン音声を結合したマスターWAVファイルを端末に直接保存（独立スイッチ）
+     */
+    async saveScrollWavMaster(scrollId) {
+        const targetId = scrollId || this.editingScrollId || this.activeScrollShareId || this.currentScrollId;
         const scroll = this.scrolls.find(s => s.id === targetId);
         if (!scroll) return;
 
         const targetSlots = this.slots.filter(s => s.scrollId === targetId);
-        const audioSlots = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64));
+        const audioSlots = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64 || s.ttsText));
 
         if (audioSlots.length === 0) {
-            this.showToast('⚠️ このスクロールには保存対象の録音音声がありません');
+            this.showToast('⚠️ このスクロールには音声データ（録音またはAI音声）がありません');
             return;
         }
 
-        const scrollSafeName = (scroll.name || 'スクロール').replace(/[\\/:*?"<>|]/g, '_');
-        this.showToast(`🎵 ${audioSlots.length}個の録音音声を一括保存しています...`);
+        this.showToast(`🎵 映像編集用マスターWAV（全${audioSlots.length}音声を結合）を生成中...`);
+
+        const ctx = AudioUnlocker.getContext();
+        const bufferList = [];
+        for (const slot of audioSlots) {
+            const buf = await this.getSlotAudioBuffer(slot);
+            if (buf) bufferList.push(buf);
+        }
+
+        if (bufferList.length === 0) {
+            this.showToast('⚠️ 音声データの変換に失敗しました');
+            return;
+        }
+
+        const masterBuffer = AudioUtils.concatenateAudioBuffers(ctx, bufferList, 0.8);
+        const wavBlob = AudioUtils.audioBufferToWav(masterBuffer);
+
+        const safeScrollName = (scroll.name || 'スクロール').replace(/[\\/:*?"<>|]/g, '_');
+        const fileName = `VoicePad_${safeScrollName}_全音声結合マスター.wav`;
+
+        this.downloadBlobDirect(wavBlob, fileName);
+        this.showToast(`🎉 統合マスターWAV「${fileName}」を保存しました！動画編集ソフトでお使いいただけます。`);
+    }
+
+    /**
+     * 💾 スクロール内の全ボタン音声を個別の連番WAVファイルとして端末に直接保存（独立スイッチ）
+     */
+    async saveScrollIndividualWavs(scrollId) {
+        return this.exportScrollIndividualWavs(scrollId);
+    }
+
+    /**
+     * 🎬 スクロール内の全ボタン音声を1本の高音質マスターWAV（無音0.8秒間隔で結合）として出力
+     * AirDrop送信 / ファイル保存対応（Premiere / DaVinci Resolve 等の映像編集ソフト用）
+     */
+    async exportScrollWavMaster(scrollId) {
+        const targetId = scrollId || this.editingScrollId || this.activeScrollShareId || this.currentScrollId;
+        const scroll = this.scrolls.find(s => s.id === targetId);
+        if (!scroll) return;
+
+        const targetSlots = this.slots.filter(s => s.scrollId === targetId);
+        const audioSlots = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64 || s.ttsText));
+
+        if (audioSlots.length === 0) {
+            this.showToast('⚠️ このスクロールには音声データ（録音またはAI音声）がありません');
+            return;
+        }
+
+        this.showToast(`🎵 映像編集用マスターWAV（全${audioSlots.length}音声を結合）を生成中...`);
+
+        const ctx = AudioUnlocker.getContext();
+        const bufferList = [];
+        for (const slot of audioSlots) {
+            const buf = await this.getSlotAudioBuffer(slot);
+            if (buf) bufferList.push(buf);
+        }
+
+        if (bufferList.length === 0) {
+            this.showToast('⚠️ 音声データの変換に失敗しました');
+            return;
+        }
+
+        const masterBuffer = AudioUtils.concatenateAudioBuffers(ctx, bufferList, 0.8);
+        const wavBlob = AudioUtils.audioBufferToWav(masterBuffer);
+
+        const safeScrollName = (scroll.name || 'スクロール').replace(/[\\/:*?"<>|]/g, '_');
+        const fileName = `VoicePad_${safeScrollName}_全音声結合マスター.wav`;
+
+        const file = new File([wavBlob], fileName, { type: 'audio/wav' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+                await navigator.share({
+                    files: [file],
+                    title: fileName,
+                    text: `Voice Pad スクロール「${scroll.name || ''}」全ボタン音声マスター (映像編集用 WAV)`
+                });
+                this.showToast(`🎉 統合マスターWAVをAirDrop/送信しました！`);
+                return;
+            } catch (shareErr) {
+                if (shareErr.name === 'AbortError') return;
+                console.warn('Share error, fallback to direct download:', shareErr);
+            }
+        }
+
+        // ブラウザ直接ダウンロード
+        const url = BlobUrlTracker.create(wavBlob, 'download');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => BlobUrlTracker.revoke(url), 3000);
+
+        this.showToast(`🎉 統合マスターWAV「${fileName}」を保存しました！動画編集ソフトでお使いいただけます。`);
+    }
+
+    /**
+     * 📁 スクロール内の全ボタン音声を個別の連番 16-bit PCM WAV ファイルとして一括保存
+     */
+    async exportScrollIndividualWavs(scrollId) {
+        const targetId = scrollId || this.editingScrollId || this.activeScrollShareId || this.currentScrollId;
+        const scroll = this.scrolls.find(s => s.id === targetId);
+        if (!scroll) return;
+
+        const targetSlots = this.slots.filter(s => s.scrollId === targetId);
+        const audioSlots = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64 || s.ttsText));
+
+        if (audioSlots.length === 0) {
+            this.showToast('⚠️ このスクロールには音声データ（録音またはAI音声）がありません');
+            return;
+        }
+
+        const safeScrollName = (scroll.name || 'スクロール').replace(/[\\/:*?"<>|]/g, '_');
+        this.showToast(`🎵 各ボタンのWAV音声データ（全${audioSlots.length}個）を出力中...`);
 
         let savedCount = 0;
         for (let i = 0; i < audioSlots.length; i++) {
             const slot = audioSlots[i];
-            const blob = this.extractAudioBlob(slot);
-            if (!blob) continue;
+            const wavBlob = await this.getSlotWavBlob(slot);
+            if (!wavBlob) continue;
 
-            const ext = blob.type.includes('mp4') || blob.type.includes('aac') ? 'm4a' : (blob.type.includes('wav') ? 'wav' : 'webm');
             const slotLabel = (slot.label || `ボタン_${i + 1}`).replace(/[\\/:*?"<>|]/g, '_');
-            const fileName = `${scrollSafeName}_${String(i + 1).padStart(2, '0')}_${slotLabel}.${ext}`;
+            const fileName = `${safeScrollName}_${String(i + 1).padStart(2, '0')}_${slotLabel}.wav`;
 
-            const url = BlobUrlTracker.create(blob, 'download');
+            const url = BlobUrlTracker.create(wavBlob, 'download');
             const a = document.createElement('a');
             a.href = url;
             a.download = fileName;
@@ -7649,8 +8016,13 @@ class VoicePadApp {
             }
         }
 
-        this.showToast(`🎉 ${savedCount}個の録音音声をすべて保存しました！`);
+        this.showToast(`🎉 ${savedCount}個のWAV音声データをすべて保存しました！映像編集ソフトに読み込めます。`);
         this.closeScrollShareModal();
+    }
+
+    // 🎵 各ボタンの音声を一括保存（下位互換エイリアス）
+    async downloadAllScrollAudios(scrollId) {
+        return this.exportScrollIndividualWavs(scrollId);
     }
 
     // ③ アプリ全体の完全エクスポート (.vpad)
@@ -8010,9 +8382,37 @@ class VoicePadApp {
         document.getElementById('export-scroll-btn')?.addEventListener('click', () => {
             if (this.editingScrollId) this.exportScroll(this.editingScrollId);
         });
-        // 📡 生徒側/端末間 WebRTC P2P スクロール直接送信ボタン
+        // 💾 ①【独立スイッチ】スクロール設定モーダル内の WAV 音声保存ボタン
+        document.getElementById('btn-scroll-save-wav-master')?.addEventListener('click', async () => {
+            if (this.editingScrollId) await this.saveScrollWavMaster(this.editingScrollId);
+        });
+        document.getElementById('btn-scroll-save-wav-batch')?.addEventListener('click', async () => {
+            if (this.editingScrollId) await this.saveScrollIndividualWavs(this.editingScrollId);
+        });
+        document.getElementById('save-scroll-wav-btn')?.addEventListener('click', async () => {
+            if (this.editingScrollId) await this.saveScrollWavMaster(this.editingScrollId);
+        });
+
+        // 📡 ② スクロール設定モーダル内の QR 送信ボタン（ボタンデータ / 結合マスターWAV / 個別連番WAV）
         document.getElementById('btn-scroll-webrtc-send')?.addEventListener('click', () => {
-            if (this.editingScrollId) this.openP2pSendScrollModal(this.editingScrollId);
+            if (this.editingScrollId) this.openP2pSendScrollModal(this.editingScrollId, 'buttons');
+        });
+        document.getElementById('btn-scroll-webrtc-send-wav-master')?.addEventListener('click', () => {
+            if (this.editingScrollId) this.openP2pSendScrollModal(this.editingScrollId, 'wav-master');
+        });
+        document.getElementById('btn-scroll-webrtc-send-wav-batch')?.addEventListener('click', () => {
+            if (this.editingScrollId) this.openP2pSendScrollModal(this.editingScrollId, 'wav-batch');
+        });
+
+        // 📡 P2P送信モーダル内：データ種別タブ切り替え
+        document.getElementById('p2p-type-btn-buttons')?.addEventListener('click', () => {
+            if (this.activeP2pScrollId) this.openP2pSendScrollModal(this.activeP2pScrollId, 'buttons');
+        });
+        document.getElementById('p2p-type-btn-wav-master')?.addEventListener('click', () => {
+            if (this.activeP2pScrollId) this.openP2pSendScrollModal(this.activeP2pScrollId, 'wav-master');
+        });
+        document.getElementById('p2p-type-btn-wav-batch')?.addEventListener('click', () => {
+            if (this.activeP2pScrollId) this.openP2pSendScrollModal(this.activeP2pScrollId, 'wav-batch');
         });
 
         // 📤 スクロール保存・送信モーダル（ヘッダー保存・送信ボタン連携）
@@ -8028,16 +8428,30 @@ class VoicePadApp {
         document.getElementById('btn-scroll-share-p2p')?.addEventListener('click', () => {
             const targetId = this.activeScrollShareId || this.currentScrollId;
             this.closeScrollShareModal();
-            this.openP2pSendScrollModal(targetId);
+            this.openP2pSendScrollModal(targetId, 'buttons');
+        });
+        document.getElementById('btn-scroll-share-p2p-wav-master')?.addEventListener('click', () => {
+            const targetId = this.activeScrollShareId || this.currentScrollId;
+            this.closeScrollShareModal();
+            this.openP2pSendScrollModal(targetId, 'wav-master');
+        });
+        document.getElementById('btn-scroll-share-p2p-wav-batch')?.addEventListener('click', () => {
+            const targetId = this.activeScrollShareId || this.currentScrollId;
+            this.closeScrollShareModal();
+            this.openP2pSendScrollModal(targetId, 'wav-batch');
         });
         document.getElementById('btn-scroll-share-file')?.addEventListener('click', async () => {
             const targetId = this.activeScrollShareId || this.currentScrollId;
             this.closeScrollShareModal();
             await this.exportScroll(targetId);
         });
+        document.getElementById('btn-scroll-share-wav-master')?.addEventListener('click', async () => {
+            const targetId = this.activeScrollShareId || this.currentScrollId;
+            await this.saveScrollWavMaster(targetId);
+        });
         document.getElementById('btn-scroll-share-audios')?.addEventListener('click', async () => {
             const targetId = this.activeScrollShareId || this.currentScrollId;
-            await this.downloadAllScrollAudios(targetId);
+            await this.saveScrollIndividualWavs(targetId);
         });
         // 📡 先生側/端末間 WebRTC P2Pインポートボタン（QRカメラ読取）
         document.getElementById('btn-scroll-webrtc-import')?.addEventListener('click', () => {
@@ -10678,7 +11092,71 @@ class VoicePadApp {
             });
         }
 
-        if (data.type === 'voicepad_slot' || data.slot || (!data.scroll && (data.label || data.audioBase64))) {
+        if (data.type === 'vpad_wav_master') {
+            const fName = data.fileName || fileName || 'VoicePad_全音声結合マスター.wav';
+            if (titleEl) titleEl.innerText = `🎵 映像編集用 統合マスターWAVを受信`;
+            if (targetGroup) targetGroup.style.display = 'none';
+            if (addCurrentBtn) addCurrentBtn.style.display = 'none';
+            const addNewBtn = document.getElementById('btn-incoming-add-new-scroll');
+            if (addNewBtn) addNewBtn.style.display = 'none';
+
+            previewCard.innerHTML = `
+                <div class="incoming-preview-slot">
+                    <div class="incoming-slot-icon" style="font-size:28px;">🎬</div>
+                    <div class="incoming-slot-meta">
+                        <div class="incoming-slot-title">${this.escapeHtml(fName)}</div>
+                        <div class="incoming-slot-sub">高品質 16-bit PCM WAV (全音声結合マスター) | 再生時間: ${(data.duration || 0).toFixed(1)}秒</div>
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+                    <button type="button" id="btn-incoming-preview-audio" class="action-btn download-btn">
+                        ▶️ 音声を試聴する
+                    </button>
+                    <button type="button" id="btn-incoming-resave-wav" class="action-btn save-btn">
+                        💾 WAVファイルを再保存する
+                    </button>
+                </div>
+            `;
+            document.getElementById('btn-incoming-preview-audio')?.addEventListener('click', () => {
+                this.previewIncomingAudio(data.dataBase64);
+            });
+            document.getElementById('btn-incoming-resave-wav')?.addEventListener('click', () => {
+                const blob = this.base64ToBlob(data.dataBase64);
+                this.downloadBlobDirect(blob, fName);
+                this.showToast(`📥 「${fName}」を再保存しました`);
+            });
+
+        } else if (data.type === 'vpad_wav_batch') {
+            const files = data.files || [];
+            if (titleEl) titleEl.innerText = `📁 映像編集用 個別連番WAV（${files.length}件）を受信`;
+            if (targetGroup) targetGroup.style.display = 'none';
+            if (addCurrentBtn) addCurrentBtn.style.display = 'none';
+            const addNewBtn = document.getElementById('btn-incoming-add-new-scroll');
+            if (addNewBtn) addNewBtn.style.display = 'none';
+
+            previewCard.innerHTML = `
+                <div class="incoming-preview-slot">
+                    <div class="incoming-slot-icon" style="font-size:28px;">📁</div>
+                    <div class="incoming-slot-meta">
+                        <div class="incoming-slot-title">${this.escapeHtml(data.scrollName || 'スクロール')} の個別連番WAV</div>
+                        <div class="incoming-slot-sub">全 ${files.length} 件の 16-bit PCM WAV 音声ファイルを一括保存しました</div>
+                    </div>
+                </div>
+                <button type="button" id="btn-incoming-resave-wav-batch" class="action-btn save-btn" style="margin-top:8px;">
+                    💾 もう一度すべてのWAVファイルを一括保存する
+                </button>
+            `;
+            document.getElementById('btn-incoming-resave-wav-batch')?.addEventListener('click', async () => {
+                for (let i = 0; i < files.length; i++) {
+                    const f = files[i];
+                    const blob = this.base64ToBlob(f.dataBase64);
+                    this.downloadBlobDirect(blob, f.fileName);
+                    if (i < files.length - 1) await new Promise(r => setTimeout(r, 180));
+                }
+                this.showToast(`📥 全 ${files.length} 件のWAVファイルを再保存しました`);
+            });
+
+        } else if (data.type === 'voicepad_slot' || data.slot || (!data.scroll && (data.label || data.audioBase64))) {
             const s = data.slot || data;
             if (titleEl) titleEl.innerText = `📲 ボタン「${s.label || 'ボタン'}」を受信`;
             if (targetGroup) targetGroup.style.display = 'block';
@@ -10746,6 +11224,12 @@ class VoicePadApp {
     closeIncomingShareModal() {
         this.stopIncomingAudioPreview();
         document.getElementById('incoming-share-modal')?.classList.remove('open');
+        const targetGroup = document.getElementById('incoming-scroll-target-group');
+        const addCurrentBtn = document.getElementById('btn-incoming-add-current');
+        const addNewBtn = document.getElementById('btn-incoming-add-new-scroll');
+        if (targetGroup) targetGroup.style.display = 'block';
+        if (addCurrentBtn) addCurrentBtn.style.display = 'block';
+        if (addNewBtn) addNewBtn.style.display = 'block';
         this.incomingData = null;
     }
 

@@ -17,7 +17,7 @@
     <meta http-equiv="Expires" content="0">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20261013_0040">
+    <link rel="stylesheet" href="style.css?v=20261013_0145">
 </head>
 <body>
     <div id="app-container">
@@ -1105,17 +1105,40 @@
                     </div>
                 </div>
 
-                <!-- スクロールを送信・共有セクション (Wi-Fi直接送信) -->
-                <div class="form-group p2p-export-group" style="margin-top: 10px; padding: 10px; background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.3); border-radius: 10px;">
+                <!-- 📡 スクロールを送信・共有セクション (Wi-Fi QR直接送信) -->
+                <div class="form-group p2p-export-group" style="margin-top: 10px; padding: 12px; background: rgba(14, 165, 233, 0.08); border: 1.5px solid rgba(14, 165, 233, 0.35); border-radius: 12px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span class="opt-label" style="font-size: 12px; font-weight: 800; color: #38bdf8;">📤 このスクロールをWi-Fi送信 (生徒➜先生 / 端末間)</span>
-                        <span class="badge-tag" style="background: rgba(14, 165, 233, 0.25); color: #7dd3fc; border-color: #38bdf8;">QR直接転送</span>
+                        <span class="opt-label" style="font-size: 12.5px; font-weight: 800; color: #38bdf8;">📡 このスクロールをQR送信 (Wi-Fi直接転送)</span>
+                        <span class="badge-tag" style="background: rgba(14, 165, 233, 0.25); color: #7dd3fc; border-color: #38bdf8;">送信内容を選択</span>
                     </div>
-                    <button type="button" id="btn-scroll-webrtc-send" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb); font-weight: 800; padding: 10px 14px;">
-                        <span class="btn-icon">📡</span> このスクロールをQR送信（1ステップ直接転送）
-                    </button>
-                    <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
-                        ※ 押すとQRコードが表示され、相手のカメラで1回読み取るだけでこのスクロール（全ボタン・音声・設定）がWi-Fi経由で丸ごと送信されます。
+                    <div style="font-size: 11px; color: #cbd5e1; margin-bottom: 8px; line-height: 1.45;">
+                        相手の端末（先生や動画編集用PC）のカメラでQRコードを読み取るだけで、Wi-Fi経由で直接転送します。送信するデータを選択してください：
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 7px;">
+                        <!-- ① ボタンデータ -->
+                        <button type="button" id="btn-scroll-webrtc-send" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb); font-weight: 800; padding: 10px 14px; text-align: left; display: flex; align-items: center; gap: 9px;">
+                            <span class="btn-icon" style="font-size: 18px;">🎴</span>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-size: 12.5px; font-weight: 800;">ボタンデータをQR送信</div>
+                                <div style="font-size: 10.5px; opacity: 0.85; font-weight: 400;">ボタン設定・写真・音声をVoicePad形式で丸ごと転送</div>
+                            </div>
+                        </button>
+                        <!-- ② 音声データ：結合マスターWAV -->
+                        <button type="button" id="btn-scroll-webrtc-send-wav-master" class="action-btn" style="background: linear-gradient(135deg, #7c3aed, #9333ea); color: #ffffff; font-weight: 800; padding: 10px 14px; text-align: left; display: flex; align-items: center; gap: 9px; border: none; border-radius: 9px; cursor: pointer; box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);">
+                            <span class="btn-icon" style="font-size: 18px;">🎬</span>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-size: 12.5px; font-weight: 800;">音声データ（結合マスターWAV）をQR送信</div>
+                                <div style="font-size: 10.5px; opacity: 0.85; font-weight: 400;">全ボタン音声を1本に結合した16bit PCM WAVを送信</div>
+                            </div>
+                        </button>
+                        <!-- ③ 音声データ：個別連番WAV -->
+                        <button type="button" id="btn-scroll-webrtc-send-wav-batch" class="action-btn" style="background: linear-gradient(135deg, #0d9488, #14b8a6); color: #ffffff; font-weight: 800; padding: 10px 14px; text-align: left; display: flex; align-items: center; gap: 9px; border: none; border-radius: 9px; cursor: pointer; box-shadow: 0 2px 8px rgba(13, 148, 136, 0.3);">
+                            <span class="btn-icon" style="font-size: 18px;">📁</span>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-size: 12.5px; font-weight: 800;">音声データ（個別連番WAV）をQR送信</div>
+                                <div style="font-size: 10.5px; opacity: 0.85; font-weight: 400;">各ボタンの音声を個別の連番WAVセットとして送信</div>
+                            </div>
+                        </button>
                     </div>
                 </div>
 
@@ -1129,13 +1152,33 @@
                         <span class="btn-icon">📷</span> QRコードからデータを受信（カメラ起動）
                     </button>
                     <div class="webrtc-desc" style="font-size: 11px; color: #94a3b8; margin-top: 5px; line-height: 1.4;">
-                        ※ 相手の画面に表示されたQRコードをカメラで読み取るだけで、ボタン単体もスクロール丸ごとも直接取り込めます。
+                        ※ 相手の画面に表示されたQRコードをカメラで読み取るだけで、ボタン単体・スクロール丸ごと・WAV音声データを受信・保存します。
+                    </div>
+                </div>
+
+                <!-- ①【独立スイッチ】💾 音声データを保存セクション (動画編集用 16-bit PCM WAV) -->
+                <div class="form-group wav-save-group" style="margin-top: 10px; padding: 12px; background: rgba(59, 130, 246, 0.08); border: 1.5px solid rgba(59, 130, 246, 0.35); border-radius: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span class="opt-label" style="font-size: 12.5px; font-weight: 800; color: #60a5fa;">💾 音声データを保存（動画編集用 WAV保存）</span>
+                        <span class="badge-tag" style="background: rgba(59, 130, 246, 0.25); color: #93c5fd; border-color: #60a5fa;">PCM 16bit WAV</span>
+                    </div>
+                    <div style="font-size: 11px; color: #cbd5e1; margin-bottom: 9px; line-height: 1.45;">
+                        Premiere / DaVinci Resolve / Final Cut / CapCut などの動画編集ソフトでそのまま使える高品質な<strong>WAV音声ファイル</strong>を端末に保存します。
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 7px;">
+                        <button type="button" id="btn-scroll-save-wav-master" class="action-btn" style="background: linear-gradient(135deg, #2563eb, #3b82f6); color: #ffffff; font-weight: 800; padding: 11px 14px; text-align: center; border: none; border-radius: 9px; cursor: pointer; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);">
+                            <span class="btn-icon">🎬</span> 全ボタン音声を1本に結合したWAVを保存
+                        </button>
+                        <button type="button" id="btn-scroll-save-wav-batch" class="action-btn" style="background: linear-gradient(135deg, #0284c7, #0ea5e9); color: #ffffff; font-weight: 800; padding: 11px 14px; text-align: center; border: none; border-radius: 9px; cursor: pointer; box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);">
+                            <span class="btn-icon">📁</span> 各ボタンの音声を個別の連番WAVで保存（[番号]_[ボタン名].wav）
+                        </button>
                     </div>
                 </div>
 
                 <div class="modal-actions">
                     <button id="save-scroll-btn" class="action-btn save-btn">💾 スクロール設定を保存</button>
-                    <button id="export-scroll-btn" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb);">📤 📲 AirDrop / 端末間でこのスクロールを送る (.vpad-page)</button>
+                    <button id="export-scroll-btn" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb);">📤 📲 このスクロールをファイル保存・AirDrop (.vpad-page)</button>
+                    <button id="save-scroll-wav-btn" type="button" class="action-btn" style="background: linear-gradient(135deg, #2563eb, #3b82f6); color: #ffffff; font-weight: 800;">💾 🎵 このスクロールの全音声WAVを保存 (.wav)</button>
                     <button id="duplicate-scroll-btn" class="action-btn secondary-btn">📋 このスクロールを丸ごと複製</button>
                     <button id="delete-scroll-btn" class="action-btn delete-btn">🗑️ このスクロールを削除</button>
                 </div>
@@ -1622,6 +1665,24 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                     </div>
                 </div>
 
+                <!-- 送信データ形式選択タブ (スクロール送信時のみ表示) -->
+                <div id="p2p-scroll-datatype-bar" style="display: none; width: 100%; margin-bottom: 2px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #94a3b8; text-align: left; margin-bottom: 4px;">
+                        📡 送信するデータ形式：
+                    </div>
+                    <div style="display: flex; gap: 5px; width: 100%;">
+                        <button type="button" id="p2p-type-btn-buttons" class="action-btn p2p-type-btn active" style="flex: 1; padding: 7px 4px; font-size: 11px; font-weight: 800; border-radius: 8px;">
+                            🎴 ボタンデータ
+                        </button>
+                        <button type="button" id="p2p-type-btn-wav-master" class="action-btn p2p-type-btn" style="flex: 1; padding: 7px 4px; font-size: 11px; font-weight: 800; border-radius: 8px;">
+                            🎬 結合WAV
+                        </button>
+                        <button type="button" id="p2p-type-btn-wav-batch" class="action-btn p2p-type-btn" style="flex: 1; padding: 7px 4px; font-size: 11px; font-weight: 800; border-radius: 8px;">
+                            📁 個別連番WAV
+                        </button>
+                    </div>
+                </div>
+
                 <div style="font-size: 12.5px; color: #cbd5e1; line-height: 1.5;">
                     先生の端末のカメラで、下の <strong>QRコード（1枚）</strong> を読み取ってください。<br>
                     <span style="font-size: 11.5px; color: #38bdf8;">※ 1回スキャンするだけでWi-Fi経由で瞬時にデータが転送されます</span>
@@ -1736,13 +1797,21 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 20px;">📡</span>
                         <div>
-                            <div style="font-size: 13.5px; font-weight: 800; color: #38bdf8;">Wi-Fi 直接送信（QRコード1回読取）</div>
-                            <div style="font-size: 11px; color: #94a3b8; line-height: 1.4;">相手のiPadやPCのカメラでQRコードを読み取るだけで、このスクロールの全音声・写真・設定を直接ワイヤレス転送します。</div>
+                            <div style="font-size: 13.5px; font-weight: 800; color: #38bdf8;">Wi-Fi QR直接送信（カメラで1回読取）</div>
+                            <div style="font-size: 11px; color: #94a3b8; line-height: 1.4;">相手の端末のカメラでQRコードを読み取るだけで、Wi-Fi経由で直接転送します。</div>
                         </div>
                     </div>
-                    <button type="button" id="btn-scroll-share-p2p" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb); padding: 10px 14px; font-weight: 800; font-size: 13px;">
-                        📡 このスクロールをQRコードで送信
-                    </button>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <button type="button" id="btn-scroll-share-p2p" class="action-btn share-btn" style="background: linear-gradient(135deg, #0284c7, #2563eb); padding: 9px 12px; font-weight: 800; font-size: 12.5px; text-align: left; display: flex; align-items: center; gap: 8px;">
+                            <span>🎴</span> <span>ボタンデータをQR送信（VoicePad丸ごと）</span>
+                        </button>
+                        <button type="button" id="btn-scroll-share-p2p-wav-master" class="action-btn" style="background: linear-gradient(135deg, #7c3aed, #9333ea); color: #ffffff; padding: 9px 12px; font-weight: 800; font-size: 12.5px; text-align: left; border: none; border-radius: 9px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                            <span>🎬</span> <span>音声データ（結合マスターWAV）をQR送信</span>
+                        </button>
+                        <button type="button" id="btn-scroll-share-p2p-wav-batch" class="action-btn" style="background: linear-gradient(135deg, #0d9488, #14b8a6); color: #ffffff; padding: 9px 12px; font-weight: 800; font-size: 12.5px; text-align: left; border: none; border-radius: 9px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                            <span>📁</span> <span>音声データ（個別連番WAV）をQR送信</span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 選択肢 2: 💾 スクロール全データをファイル保存 (.vpad-page) -->
@@ -1751,7 +1820,7 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                         <span style="font-size: 20px;">💾</span>
                         <div>
                             <div style="font-size: 13.5px; font-weight: 800; color: #34d399;">スクロール全体をファイル保存 (.vpad-page)</div>
-                            <div style="font-size: 11px; color: #94a3b8; line-height: 1.4;">全ボタンの音声・写真・エフェクト設定を1つのファイルにバックアップ保存。AirDrop送信やファイル保存ができます。</div>
+                            <div style="font-size: 11px; color: #94a3b8; line-height: 1.4;">全ボタンの音声・写真・エフェクト設定を1つのファイルにバックアップ保存。</div>
                         </div>
                     </div>
                     <button type="button" id="btn-scroll-share-file" class="action-btn save-btn" style="background: linear-gradient(135deg, #059669, #10b981); padding: 10px 14px; font-weight: 800; font-size: 13px;">
@@ -1759,18 +1828,23 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
                     </button>
                 </div>
 
-                <!-- 選択肢 3: 🎵 各ボタンの録音音声を一括保存 (音声ファイル) -->
-                <div class="share-choice-card" style="background: rgba(0,0,0,0.3); border: 1.5px solid rgba(168, 85, 247, 0.35); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+                <!-- 選択肢 3: 💾 映像編集用 WAV 音声データを保存 (.wav) -->
+                <div class="share-choice-card" style="background: rgba(0,0,0,0.3); border: 1.5px solid rgba(59, 130, 246, 0.35); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 20px;">🎵</span>
+                        <span style="font-size: 20px;">💾</span>
                         <div>
-                            <div style="font-size: 13.5px; font-weight: 800; color: #c084fc;">各ボタンの音声をまとめて保存 (音声ファイル)</div>
-                            <div style="font-size: 11px; color: #94a3b8; line-height: 1.4;">スクロール内の各ボタンに録音された音声データを、音声ファイル（WAV/M4A）としてまとめてダウンロード保存します。</div>
+                            <div style="font-size: 13.5px; font-weight: 800; color: #60a5fa;">映像編集用 WAV音声データを保存 (.wav)</div>
+                            <div style="font-size: 11px; color: #94a3b8; line-height: 1.4;">Premiere / DaVinci Resolve などの動画編集ソフトでそのまま使える高品質PCM 16bit WAVを端末に保存します。</div>
                         </div>
                     </div>
-                    <button type="button" id="btn-scroll-share-audios" class="action-btn download-btn" style="background: linear-gradient(135deg, #7c3aed, #9333ea); padding: 10px 14px; font-weight: 800; font-size: 13px; color: #ffffff;">
-                        🎵 録音音声をすべてダウンロード
-                    </button>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <button type="button" id="btn-scroll-share-wav-master" class="action-btn" style="background: linear-gradient(135deg, #2563eb, #3b82f6); padding: 10px 14px; font-weight: 800; font-size: 13px; color: #ffffff; border: none; border-radius: 9px; cursor: pointer;">
+                            🎬 全ボタン音声を1本に結合したWAVを保存
+                        </button>
+                        <button type="button" id="btn-scroll-share-audios" class="action-btn download-btn" style="background: linear-gradient(135deg, #0284c7, #0ea5e9); padding: 10px 14px; font-weight: 800; font-size: 13px; color: #ffffff; border: none; border-radius: 9px; cursor: pointer;">
+                            📁 各ボタンの音声を個別の連番WAVで保存（[番号]_[ボタン名].wav）
+                        </button>
+                    </div>
                 </div>
 
                 <div class="modal-actions" style="margin-top: 4px;">
@@ -1805,6 +1879,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <script src="peerjs.min.js"></script>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20261013_0040"></script>
+    <script src="app.js?v=20261013_0145"></script>
 </body>
 </html>
