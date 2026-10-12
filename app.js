@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.10.13.0245';
+const APP_VERSION = '2026.10.13.0335';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -2266,29 +2266,88 @@ class TtsEngine {
         if (!rawText) return '';
         let text = String(rawText);
 
-        // 1. 一般的な頻出漢字・熟語・挨拶の読み替え辞書
+        // 1. AAC・学校・日常生活・感情・頻出漢字・熟語の大規模読み替え辞書
         const words = [
-            ['今日', 'きょう'], ['明日', 'あした'], ['昨日', 'きのう'],
-            ['こんにちは', 'こんにちは'], ['有難う', 'ありがとう'], ['ありがとう', 'ありがとう'],
-            ['おはよう', 'おはよう'], ['お早う', 'おはよう'], ['こんばんは', 'こんばんは'],
-            ['今晩は', 'こんばんは'], ['よろしく', 'よろしく'], ['宜しく', 'よろしく'],
-            ['さようなら', 'さようなら'], ['左様なら', 'さようなら'], ['ごめんなさい', 'ごめんなさい'],
-            ['いただきます', 'いただきます'], ['ごちそうさま', 'ごちそうさま'],
+            // 丁寧な挨拶・会話
+            ['おはようございます', 'おはようございます'], ['お早うございます', 'おはようございます'],
+            ['こんにちは', 'こんにちは'], ['こんばんは', 'こんばんは'], ['今晩は', 'こんばんは'],
+            ['おやすみなさい', 'おやすみなさい'], ['お休みなさい', 'おやすみなさい'],
+            ['ありがとうございます', 'ありがとうございます'], ['有難うございます', 'ありがとうございます'],
+            ['ありがとうございました', 'ありがとうございました'], ['有難うございました', 'ありがとうございました'],
+            ['ありがとう', 'ありがとう'], ['有難う', 'ありがとう'],
+            ['ごめんなさい', 'ごめんなさい'], ['すみません', 'すみません'], ['すいません', 'すいません'],
+            ['いただきます', 'いただきます'], ['ごちそうさまでした', 'ごちそうさまでした'], ['ごちそうさま', 'ごちそうさま'],
+            ['よろしくおねがいします', 'よろしくおねがいします'], ['よろしくお願いします', 'よろしくおねがいします'], ['宜しくお願いします', 'よろしくおねがいします'],
+            ['さようなら', 'さようなら'], ['左様なら', 'さようなら'], ['またね', 'またね'], ['ばいばい', 'ばいばい'],
+            ['はい', 'はい'], ['いいえ', 'いいえ'], ['いいね', 'いいね'], ['だめ', 'だめ'], ['すごい', 'すごい'], ['やばい', 'やばい'],
+
+            // 支援・緊急・体調・感情 (AAC中核語彙)
+            ['トイレに行きたい', 'といれにいきたい'], ['といれにいきたい', 'といれにいきたい'],
+            ['お茶をください', 'おちゃをください'], ['水をください', 'みずをください'],
+            ['ご飯を食べたい', 'ごはんをたべたい'], ['ごはんをたべたい', 'ごはんをたべたい'],
+            ['助けてください', 'たすけてください'], ['たすけてください', 'たすけてください'],
+            ['痛いです', 'いたいです'], ['くるしいです', 'くるしいです'], ['かゆいです', 'かゆいです'],
+            ['お腹が痛い', 'おなかがいたい'], ['頭が痛い', 'あたまがいたい'], ['喉が痛い', 'のどがいたい'],
+            ['気持ち悪い', 'きもちわるい'], ['気分が悪い', 'きぶんがわるい'],
+            ['お腹すいた', 'おなかすいた'], ['喉乾いた', 'のどかわいた'],
+            ['熱がある', 'ねつがある'], ['薬を飲む', 'くすりをのむ'],
             ['助けて', 'たすけて'], ['お願い', 'おねがい'], ['大丈夫', 'だいじょうぶ'],
-            ['私', 'わたし'], ['僕', 'ぼく'], ['俺', 'おれ'], ['貴方', 'あなた'], ['あなた', 'あなた'],
+            ['嬉しい', 'うれしい'], ['楽しい', 'たのしい'], ['悲しい', 'かなしい'],
+            ['怒った', 'おこった'], ['怖い', 'こわい'], ['困った', 'こまった'],
+            ['好き', 'すき'], ['嫌い', 'きらい'], ['面白い', 'おもしろい'],
+            ['疲れた', 'つかれた'], ['眠い', 'ねむい'], ['暑い', 'あつい'], ['寒い', 'さむい'],
+
+            // 要求・動作・指示
+            ['行きたい', 'いきたい'], ['帰りたい', 'かえりたい'], ['遊びたい', 'あそびたい'],
+            ['食べたい', 'たべたい'], ['飲みたい', 'のみたい'], ['見たい', 'みたい'], ['聞きたい', 'ききたい'],
+            ['休みたい', 'やすみたい'], ['寝たい', 'ねたい'], ['したい', 'したい'],
+            ['手伝って', 'てつだって'], ['教えて', 'おしえて'], ['貸して', 'かして'],
+            ['ちょうだい', 'ちょうだい'], ['ください', 'ください'], ['待って', 'まって'], ['やめて', 'やめて'],
+            ['見て', 'みて'], ['聞いて', 'きいて'], ['行くよ', 'いくよ'], ['止まる', 'とまる'], ['止めて', 'とめて'],
+
+            // 人物・家族・関係
             ['先生', 'せんせい'], ['友達', 'ともだち'], ['友だち', 'ともだち'],
             ['お父さん', 'おとうさん'], ['お母さん', 'おかあさん'], ['お兄さん', 'おにいさん'], ['お姉さん', 'おねえさん'],
+            ['弟', 'おとうと'], ['妹', 'いもうと'], ['おじいちゃん', 'おじいちゃん'], ['おばあちゃん', 'おばあちゃん'],
+            ['私', 'わたし'], ['僕', 'ぼく'], ['俺', 'おれ'], ['あなた', 'あなた'], ['貴方', 'あなた'],
+            ['誰', 'だれ'], ['何', 'なに'], ['どこ', 'どこ'], ['いつ', 'いつ'], ['どうして', 'どうして'],
+
+            // 場所・施設・学校
+            ['学校', 'がっこう'], ['教室', 'きょうしつ'], ['保健室', 'ほけんしつ'], ['体育館', 'たいいくかん'],
+            ['公園', 'こうえん'], ['家', 'いえ'], ['部屋', 'へや'], ['病院', 'びょういん'], ['駅', 'えき'],
+            ['車', 'くるま'], ['電車', 'でんしゃ'], ['バス', 'ばす'], ['自転車', 'じてんしゃ'],
+
+            // 飲食・生活物品
+            ['お茶', 'おちゃ'], ['水', 'みず'], ['お水', 'おみず'], ['牛乳', 'ぎゅうにゅう'], ['ジュース', 'じゅーす'],
+            ['ご飯', 'ごはん'], ['朝ごはん', 'あさごはん'], ['昼ごはん', 'ひるごはん'], ['晩ごはん', 'ばんごはん'],
+            ['お弁当', 'おべんとう'], ['パン', 'ぱん'], ['お菓子', 'おかし'], ['薬', 'くすり'],
+            ['本', 'ほん'], ['時計', 'とけい'], ['電話', 'でんわ'], ['写真', 'しゃしん'], ['音楽', 'おんがく'],
+
+            // 時間・日付
+            ['今日', 'きょう'], ['明日', 'あした'], ['昨日', 'きのう'],
+            ['今', 'いま'], ['後で', 'あとで'], ['時間', 'じかん'], ['朝', 'あさ'], ['昼', 'ひる'], ['夜', 'よる'],
+
+            // アプリ・IT用語
             ['音声', 'おんせい'], ['録音', 'ろくおん'], ['再生', 'さいせい'], ['停止', 'ていし'],
+            ['ボタン', 'ぼたん'], ['スイッチ', 'すいっち'], ['スクロール', 'すくろーる'],
+            ['打ち込み', 'うちこみ'], ['打ち込んだ', 'うちこんだ'], ['読み上げ', 'よみあげ'],
             ['怪獣', 'かいじゅう'], ['大聖堂', 'だいせいどう'], ['洞窟', 'どうくつ'],
-            ['宇宙人', 'うちゅうじん'], ['ロボット', 'ろぼっと'], ['電話', 'でんわ'],
-            ['行くよ', 'いくよ'], ['いくよ', 'いくよ'], ['止まる', 'とまる'], ['とまる', 'とまる'],
-            ['見て', 'みて'], ['聞いて', 'きいて'], ['嬉しい', 'うれしい'], ['楽しい', 'たのしい'],
-            ['悲しい', 'かなしい'], ['面白い', 'おもしろい'], ['好き', 'すき'], ['嫌い', 'きらい'],
-            ['疲れた', 'つかれた'], ['眠い', 'ねむい'], ['暑い', 'あつい'], ['寒い', 'さむい'],
-            ['学校', 'がっこう'], ['家', 'いえ'], ['車', 'くるま'], ['電車', 'でんしゃ'],
-            ['時間', 'じかん'], ['今', 'いま'], ['何', 'なに'], ['誰', 'だれ'], ['どこ', 'どこ'],
-            ['はい', 'はい'], ['いいえ', 'いいえ'], ['いいね', 'いいね'], ['すごい', 'すごい'], ['やばい', 'やばい']
+            ['宇宙人', 'うちゅうじん'], ['ロボット', 'ろぼっと'],
+
+            // 頻出単漢字フォールバック（熟語外の単独漢字が「a」に化けるのを防止）
+            ['茶', 'ちゃ'], ['水', 'みず'], ['飯', 'めし'], ['食', 'たべ'], ['飲', 'のみ'],
+            ['行', 'いき'], ['来', 'き'], ['帰', 'かえり'], ['寝', 'ね'], ['起', 'おき'],
+            ['痛', 'いた'], ['薬', 'くすり'], ['熱', 'ねつ'], ['病', 'びょう'], ['院', 'いん'],
+            ['校', 'こう'], ['友', 'とも'], ['先', 'せん'], ['生', 'せい'],
+            ['父', 'ちち'], ['母', 'はは'], ['兄', 'あに'], ['姉', 'あね'],
+            ['家', 'いえ'], ['車', 'くるま'], ['駅', 'えき'], ['犬', 'いぬ'], ['猫', 'ねこ'],
+            ['本', 'ほん'], ['話', 'はなし'], ['見', 'み'], ['聞', 'きき'], ['読', 'よみ'], ['書', 'かき'],
+            ['手', 'て'], ['足', 'あし'], ['目', 'め'], ['耳', 'みみ'], ['口', 'くち'], ['頭', 'あたま'],
+            ['心', 'こころ'], ['体', 'からだ'], ['音', 'おと'], ['声', 'こえ'], ['時', 'とき'], ['分', 'ふん']
         ];
+
+        // 最長一致優先（長い熟語・フレーズから先に置換）
+        words.sort((a, b) => b[0].length - a[0].length);
 
         for (const [k, v] of words) {
             text = text.split(k).join(v);
@@ -2307,7 +2366,7 @@ class TtsEngine {
         const romajiMap = {
             'ok': 'おーけー', 'ai': 'えーあい', 'sos': 'えすおーえす',
             'voice': 'ぼいす', 'pad': 'ぱっど', 'yes': 'いえす', 'no': 'のー',
-            'hello': 'はろー', 'bye': 'ばいばい', 'good': 'ぐっど'
+            'hello': 'はろー', 'bye': 'ばいばい', 'good': 'ぐっど', 'wav': 'うぇーぶ'
         };
         text = text.replace(/\b[a-zA-Z]+\b/g, m => romajiMap[m.toLowerCase()] || m);
 
@@ -2514,6 +2573,11 @@ class TtsEngine {
             }
             currentSample += moraSamples;
         });
+
+        // 🔊 生成された AudioBuffer を 0.98 ピークへ自動ノーマライズ（十分な音量を担保）
+        if (typeof AudioUtils !== 'undefined' && AudioUtils.normalizeAudioBuffer) {
+            AudioUtils.normalizeAudioBuffer(buffer);
+        }
 
         return buffer;
     }
@@ -6840,19 +6904,17 @@ class VoicePadApp {
             this.stopSlot(slot.id);
         };
 
-        // 🚨 iOS Bluetooth CoreAudio セッション競合回避のため、発話開始を microtask / 短ディレイで確実に実行
-        setTimeout(() => {
-            try {
-                if (window.speechSynthesis.paused) {
-                    window.speechSynthesis.resume();
-                }
-                window.speechSynthesis.speak(utter);
-            } catch (err) {
-                console.warn('speechSynthesis.speak() threw error, fallback to WebAudio:', err);
-                cleanupUtterance();
-                this.playTtsViaWebAudio(slot, voiceParams, envParams, speed);
+        // 🛡️ iOS Safari/WebKit のユーザー操作ジェスチャー有効時間内に同期実行（setTimeout遅延による発話遮断を防止）
+        try {
+            if (window.speechSynthesis.paused) {
+                window.speechSynthesis.resume();
             }
-        }, 30);
+            window.speechSynthesis.speak(utter);
+        } catch (err) {
+            console.warn('speechSynthesis.speak() threw error, fallback to WebAudio:', err);
+            cleanupUtterance();
+            this.playTtsViaWebAudio(slot, voiceParams, envParams, speed);
+        }
     }
 
     fallbackPlay(slot, slotId, speed = 1.0) {
@@ -7186,7 +7248,7 @@ class VoicePadApp {
     extractAudioBlob(item) {
         if (!item) return null;
         if (item.audioBlob instanceof Blob) return item.audioBlob;
-        const rawAudio = item.audioBase64 || item.audioData || item.audio || item.audio_base64 || (typeof item.audioBlob === 'string' ? item.audioBlob : null);
+        const rawAudio = item.audioBase64 || item.audioData || item.audio || item.audio_base64 || item.dataBase64 || (typeof item.audioBlob === 'string' ? item.audioBlob : null);
         if (rawAudio) {
             return this.base64ToBlob(rawAudio);
         }
@@ -7350,6 +7412,13 @@ class VoicePadApp {
         }
         if (!slot) return;
 
+        // モーダル編集中の未保存ラベル入力があれば即時反映
+        const pendingLabel = document.getElementById('edit-label')?.value.trim();
+        if (pendingLabel && this.editingSlotId === slot.id) {
+            slot.label = pendingLabel;
+        }
+
+        await AudioUnlocker.unlock().catch(() => {});
         const wavBlob = await this.getSlotWavBlob(slot);
         if (!wavBlob) {
             this.showToast('⚠️ このボタンには音声データ（録音またはAI音声）がありません');
@@ -7365,14 +7434,22 @@ class VoicePadApp {
     // ==================== 📡 Wi-Fi 直接送信モーダル（単体ボタンデータ / 単体WAV音声） ====================
     async openP2pSendModal(slotId, mode = 'button') {
         this.stopP2pScanner();
-        this.closeScrollModal();
-        this.closeEditModal();
 
         let slot = this.slots.find(s => s.id === slotId || String(s.id) === String(slotId));
         if (!slot && typeof slotId === 'number' && slotId > 0 && slotId <= this.slots.length) {
             slot = this.slots[slotId - 1];
         }
         if (!slot) return;
+
+        // モーダル編集中の未保存ラベル入力があれば即時反映
+        const pendingLabel = document.getElementById('edit-label')?.value.trim();
+        if (pendingLabel && this.editingSlotId === slot.id) {
+            slot.label = pendingLabel;
+        }
+
+        this.closeScrollModal();
+        this.closeEditModal();
+        await AudioUnlocker.unlock().catch(() => {});
 
         this.activeP2pScrollId = null;
         this.activeP2pScrollMode = mode;
@@ -7435,8 +7512,9 @@ class VoicePadApp {
                 }
             }
             if (metaEl) {
-                const hasAudio = !!(slot.audioBlob || slot.audioBase64 || slot.ttsText);
-                const dur = slot.duration ? `${slot.duration.toFixed(1)}秒` : (slot.ttsText ? 'AI音声' : '未録音');
+                const hasText = !!(slot.ttsText || (slot.label && !/^(ボタン|スイッチ)\s*\d*$/i.test(slot.label.trim())));
+                const hasAudio = !!(slot.audioBlob || slot.audioBase64 || hasText);
+                const dur = slot.duration ? `${slot.duration.toFixed(1)}秒` : (hasText ? 'AI音声' : '未録音');
                 metaEl.innerText = `🎙️ 音声: ${hasAudio ? dur : 'なし'} | ⚡ ${slot.playbackSpeed && slot.playbackSpeed !== 'inherit' ? slot.playbackSpeed + '倍速' : '標準'}`;
             }
 
@@ -7480,7 +7558,9 @@ class VoicePadApp {
         this.activeP2pScrollMode = mode;
 
         const targetSlots = this.slots.filter(s => s.scrollId === scrollId);
-        const audioSlots = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64 || s.ttsText));
+        const hasSlotAudio = (s) => !!(s.audioBlob || s.audioBase64 || s.audioData || s.ttsText || (s.label && s.label.trim().length > 0 && !/^(ボタン|スイッチ)\s*\d*$/i.test(s.label.trim())));
+        const audioSlots = targetSlots.filter(hasSlotAudio);
+        await AudioUnlocker.unlock().catch(() => {});
 
         const modal = document.getElementById('p2p-send-modal-backdrop');
         const modalTitle = document.getElementById('p2p-send-modal-title');
@@ -7906,10 +7986,11 @@ class VoicePadApp {
     }
 
     /**
-     * スロットから AudioBuffer を安全取得（録音音声 または AIテキスト音声）
+     * スロットから AudioBuffer を安全取得（録音音声 または 打ち込みAIテキスト音声・ラベル音声）
      */
     async getSlotAudioBuffer(slot) {
         if (!slot) return null;
+        await AudioUnlocker.unlock().catch(() => {});
         const ctx = AudioUnlocker.getContext();
         if (!ctx) return null;
 
@@ -7925,17 +8006,43 @@ class VoicePadApp {
             }
         }
 
-        // ② AIテキスト音声 (TTS)
-        if (slot.ttsText && typeof TtsEngine !== 'undefined') {
+        // ② AIテキスト音声 (TTS) または スイッチ名（ラベル）テキストからの自動合成
+        let speechText = (slot.ttsText && typeof slot.ttsText === 'string') ? slot.ttsText.trim() : '';
+        if (!speechText && slot.label && typeof slot.label === 'string') {
+            const trimmed = slot.label.trim();
+            // デフォルトの「ボタン」「ボタン 1」「スイッチ」「スイッチ 1」等のプレースホルダー以外の入力文字列を合成
+            const isPlaceholder = /^(ボタン|スイッチ)\s*\d*$/i.test(trimmed);
+            if (trimmed.length > 0 && !isPlaceholder) {
+                speechText = trimmed;
+            }
+        }
+
+        if (speechText && typeof TtsEngine !== 'undefined') {
             try {
-                const ttsBuffer = TtsEngine.synthesizeToBuffer(
-                    slot.ttsText,
-                    ctx,
-                    slot.ttsVoice || 'girl',
-                    slot.ttsRate || 1.0,
-                    slot.ttsPitch || 1.0
-                );
-                if (ttsBuffer) return ttsBuffer;
+                // ボイスキー互換マッピング（ayumi, haruka, ichiro, sayaka, google）
+                let voiceKey = slot.ttsVoice || 'ayumi';
+                if (voiceKey === 'girl' || voiceKey === 'woman') voiceKey = 'ayumi';
+                if (voiceKey === 'boy' || voiceKey === 'man') voiceKey = 'ichiro';
+
+                const rate = slot.ttsRate || 1.0;
+                const pitch = slot.ttsPitch || 1.0;
+
+                const ttsBuffer = TtsEngine.synthesizeToBuffer(speechText, ctx, voiceKey, rate, pitch);
+                if (ttsBuffer) {
+                    AudioUtils.normalizeAudioBuffer(ttsBuffer);
+
+                    // スロット個別音量の適用
+                    const slotVol = this.getEffectiveSlotVolume ? this.getEffectiveSlotVolume(slot) : 1.0;
+                    if (slotVol !== 1.0 && slotVol > 0) {
+                        for (let ch = 0; ch < ttsBuffer.numberOfChannels; ch++) {
+                            const chData = ttsBuffer.getChannelData(ch);
+                            for (let i = 0; i < chData.length; i++) {
+                                chData[i] = Math.tanh(chData[i] * slotVol);
+                            }
+                        }
+                    }
+                    return ttsBuffer;
+                }
             } catch (e) {
                 console.warn('TTS synthesizeToBuffer error:', e);
             }
@@ -7962,7 +8069,9 @@ class VoicePadApp {
         if (!scroll) return;
 
         const targetSlots = this.slots.filter(s => s.scrollId === targetId);
-        const audioSlots = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64 || s.ttsText));
+        const hasSlotAudio = (s) => !!(s.audioBlob || s.audioBase64 || s.audioData || s.ttsText || (s.label && s.label.trim().length > 0 && !/^(ボタン|スイッチ)\s*\d*$/i.test(s.label.trim())));
+        const audioSlots = targetSlots.filter(hasSlotAudio);
+        await AudioUnlocker.unlock().catch(() => {});
 
         if (audioSlots.length === 0) {
             this.showToast('⚠️ このスクロールには音声データ（録音またはAI音声）がありません');
@@ -8010,7 +8119,9 @@ class VoicePadApp {
         if (!scroll) return;
 
         const targetSlots = this.slots.filter(s => s.scrollId === targetId);
-        const audioSlots = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64 || s.ttsText));
+        const hasSlotAudio = (s) => !!(s.audioBlob || s.audioBase64 || s.audioData || s.ttsText || (s.label && s.label.trim().length > 0 && !/^(ボタン|スイッチ)\s*\d*$/i.test(s.label.trim())));
+        const audioSlots = targetSlots.filter(hasSlotAudio);
+        await AudioUnlocker.unlock().catch(() => {});
 
         if (audioSlots.length === 0) {
             this.showToast('⚠️ このスクロールには音声データ（録音またはAI音声）がありません');
@@ -8075,7 +8186,9 @@ class VoicePadApp {
         if (!scroll) return;
 
         const targetSlots = this.slots.filter(s => s.scrollId === targetId);
-        const audioSlots = targetSlots.filter(s => !!(s.audioBlob || s.audioBase64 || s.ttsText));
+        const hasSlotAudio = (s) => !!(s.audioBlob || s.audioBase64 || s.audioData || s.ttsText || (s.label && s.label.trim().length > 0 && !/^(ボタン|スイッチ)\s*\d*$/i.test(s.label.trim())));
+        const audioSlots = targetSlots.filter(hasSlotAudio);
+        await AudioUnlocker.unlock().catch(() => {});
 
         if (audioSlots.length === 0) {
             this.showToast('⚠️ このスクロールには音声データ（録音またはAI音声）がありません');
@@ -8960,6 +9073,13 @@ class VoicePadApp {
         }
         if (!slot) return;
 
+        // モーダル編集中の未保存ラベル入力があれば即時反映
+        const pendingLabel = document.getElementById('edit-label')?.value.trim();
+        if (pendingLabel && this.editingSlotId === slot.id) {
+            slot.label = pendingLabel;
+        }
+
+        await AudioUnlocker.unlock().catch(() => {});
         const wavBlob = await this.getSlotWavBlob(slot);
         if (!wavBlob) {
             this.showToast('⚠️ このボタンには音声データ（録音またはAI音声）がありません');
@@ -11258,10 +11378,18 @@ class VoicePadApp {
             const isSlot = data.type === 'vpad_slot_wav';
             const fName = data.fileName || fileName || (isSlot ? 'VoicePad_ボタン音声.wav' : 'VoicePad_全音声結合マスター.wav');
             if (titleEl) titleEl.innerText = isSlot ? `🎵 ボタン音声WAVを受信` : `🎵 映像編集用 統合マスターWAVを受信`;
-            if (targetGroup) targetGroup.style.display = 'none';
-            if (addCurrentBtn) addCurrentBtn.style.display = 'none';
+            if (targetGroup) targetGroup.style.display = isSlot ? 'block' : 'none';
+            if (addCurrentBtn) {
+                addCurrentBtn.style.display = isSlot ? 'block' : 'none';
+                addCurrentBtn.innerText = '✅ このボタンを現在のシートに追加';
+            }
             const addNewBtn = document.getElementById('btn-incoming-add-new-scroll');
             if (addNewBtn) addNewBtn.style.display = 'none';
+
+            if (isSlot) {
+                data.label = data.slotLabel || (data.fileName ? data.fileName.replace(/^VoicePad_/, '').replace(/\.wav$/i, '') : 'ボタン');
+                data.audioBlob = this.base64ToBlob(data.dataBase64);
+            }
 
             const icon = isSlot ? '🎵' : '🎬';
             const subTitle = isSlot
@@ -11430,14 +11558,32 @@ class VoicePadApp {
                 );
             }
 
-            const controller = this.playBufferViaHtmlAudio(
-                playBuffer,
-                speed,
-                () => { this.incomingAudioPreviewNode = null; },
-                (err) => console.warn('Incoming preview audio error:', err),
-                customVol
-            );
-            this.incomingAudioPreviewNode = controller;
+            // 🎵 覚醒済み Web Audio API AudioBufferSourceNode で直接再生（iOS Safari の autoplay 規制を100%回避）
+            const source = ctx.createBufferSource();
+            source.buffer = playBuffer;
+            source.playbackRate.value = speed;
+            const gainNode = ctx.createGain();
+            gainNode.gain.value = Math.max(0.0, Math.min(2.0, customVol));
+            source.connect(gainNode);
+            gainNode.connect(ctx.destination);
+
+            source.onended = () => {
+                this.incomingAudioPreviewNode = null;
+            };
+            source.start(0);
+
+            this.incomingAudioPreviewNode = {
+                stop: () => {
+                    try { source.stop(); } catch (e) {}
+                    try { source.disconnect(); } catch (e) {}
+                },
+                pause: () => {
+                    try { source.stop(); } catch (e) {}
+                },
+                disconnect: () => {
+                    try { source.disconnect(); } catch (e) {}
+                }
+            };
         } catch (e) {
             console.warn('Incoming audio preview error, fallback to HTMLAudio:', e);
             try {
