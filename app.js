@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.10.13.0025';
+const APP_VERSION = '2026.10.13.0040';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -4210,20 +4210,45 @@ class VoicePadApp {
             const remote = await res.json();
             if (remote && remote.version && remote.version !== APP_VERSION) {
                 console.log(`[VersionCheck] New version found: ${remote.version} (current: ${APP_VERSION})`);
+
+                // 🚨 無限再起動・リロードループの完全防止
+                // 直近ですでにリロードを試行したバージョンである場合は、再リロードを絶対に実行しない
+                const lastAttemptedVersion = sessionStorage.getItem('vpad_reload_version');
+                const lastAttemptTime = parseInt(sessionStorage.getItem('vpad_reload_time') || '0', 10);
+                const isRecentAttempt = (Date.now() - lastAttemptTime) < 60000; // 60秒以内
+
+                if (lastAttemptedVersion === remote.version && isRecentAttempt) {
+                    console.warn('[VersionCheck] Already attempted reload for version', remote.version, '- preventing infinite reload loop');
+                    return;
+                }
+
+                // リロード試行を記録
+                sessionStorage.setItem('vpad_reload_version', remote.version);
+                sessionStorage.setItem('vpad_reload_time', Date.now().toString());
+
                 if ('serviceWorker' in navigator) {
-                    const registrations = await navigator.serviceWorker.getRegistrations();
-                    for (const reg of registrations) {
-                        await reg.unregister();
-                    }
+                    try {
+                        const registrations = await navigator.serviceWorker.getRegistrations();
+                        for (const reg of registrations) {
+                            await reg.unregister();
+                        }
+                    } catch (swErr) {}
                 }
                 if ('caches' in window) {
-                    const cacheKeys = await caches.keys();
-                    await Promise.all(cacheKeys.map(k => caches.delete(k)));
+                    try {
+                        const cacheKeys = await caches.keys();
+                        await Promise.all(cacheKeys.map(k => caches.delete(k)));
+                    } catch (cErr) {}
                 }
+
                 this.showToast('✨ 最新バージョンへ自動更新中...');
                 setTimeout(() => {
                     window.location.reload(true);
-                }, 400);
+                }, 500);
+            } else if (remote && remote.version === APP_VERSION) {
+                // 正しく最新版に一致している場合は、ループ防止フラグをクリア
+                sessionStorage.removeItem('vpad_reload_version');
+                sessionStorage.removeItem('vpad_reload_time');
             }
         } catch (e) {
             console.warn('[VersionCheck] Check skipped:', e);
