@@ -4,7 +4,7 @@
  * 写真・ボイスチェンジャー・再生スピードの階層的個別設定＆完全エクスポート・インポート対応
  */
 
-const APP_VERSION = '2026.10.13.0335';
+const APP_VERSION = '2026.10.15.0730';
 window.APP_VERSION = APP_VERSION;
 
 // ==================== 0.0 🌐 Blob URL ライフサイクル管理クラス（メモリリーク完全防止） ====================
@@ -2247,9 +2247,10 @@ class TtsEngine {
     static safeResetSpeechSynthesis() {
         if ('speechSynthesis' in window) {
             try {
-                if (window.speechSynthesis.speaking || window.speechSynthesis.pending || window.speechSynthesis.paused) {
+                if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
                     window.speechSynthesis.cancel();
                 }
+                // 🛡️ Chrome/Safari/Edge のデッドロック解除：直ちにresume()を発行してキュー復旧
                 if (window.speechSynthesis.paused) {
                     window.speechSynthesis.resume();
                 }
@@ -2454,129 +2455,210 @@ class TtsEngine {
     /**
      * テキストから Web Audio API AudioBuffer を直接生成
      */
-    static synthesizeToBuffer(text, ctx, voiceType = 'girl', rate = 1.0, pitchMod = 1.0) {
+    static synthesizeToBuffer(text, ctx, voiceType = 'ayumi', rate = 1.0, pitchMod = 1.0) {
         const sampleRate = ctx ? ctx.sampleRate : 44100;
         const kana = this.textToKana(text);
         const morae = this.parseMorae(kana);
 
         if (morae.length === 0) {
-            return ctx.createBuffer(1, Math.floor(sampleRate * 0.1), sampleRate);
+            return ctx ? ctx.createBuffer(1, Math.floor(sampleRate * 0.1), sampleRate) : null;
         }
 
         // 基本声質キャラクター設定 (5話者スイッチ対応: あゆみ, はるか, いちろう, さやか, Google)
-        let basePitch = 220; // Hz
-        let formantScale = 1.05;
-        if (voiceType === 'ayumi' || voiceType === 'girl') { basePitch = 230; formantScale = 1.10; }
-        else if (voiceType === 'haruka') { basePitch = 240; formantScale = 1.15; }
-        else if (voiceType === 'ichiro' || voiceType === 'man' || voiceType === 'boy') { basePitch = 120; formantScale = 0.82; }
-        else if (voiceType === 'sayaka') { basePitch = 220; formantScale = 1.08; }
-        else if (voiceType === 'google' || voiceType === 'woman') { basePitch = 200; formantScale = 1.0; }
+        let basePitch = 230; // Hz
+        let formantScale = 1.08;
+        if (voiceType === 'ichiro' || voiceType === 'man' || voiceType === 'boy') {
+            basePitch = 125;
+            formantScale = 0.85;
+        } else if (voiceType === 'haruka') {
+            basePitch = 245;
+            formantScale = 1.15;
+        } else if (voiceType === 'sayaka') {
+            basePitch = 215;
+            formantScale = 1.06;
+        } else if (voiceType === 'google' || voiceType === 'woman') {
+            basePitch = 200;
+            formantScale = 1.00;
+        } else {
+            basePitch = 230;
+            formantScale = 1.08;
+        }
 
-        basePitch *= Math.max(0.2, Math.min(3.0, pitchMod));
+        basePitch *= Math.max(0.3, Math.min(2.5, pitchMod));
         const durScale = 1.0 / Math.max(0.5, Math.min(2.5, rate));
 
-        let totalDur = 0.06;
         morae.forEach(m => {
             m.scaledDur = (m.duration || 0.14) * durScale;
-            totalDur += m.scaledDur;
         });
-        totalDur += 0.08;
 
+        const totalDur = morae.reduce((acc, m) => acc + m.scaledDur, 0.05) + 0.12;
         const totalSamples = Math.floor(sampleRate * totalDur);
         const buffer = ctx.createBuffer(1, totalSamples, sampleRate);
         const out = buffer.getChannelData(0);
 
-        // フォルマント定義: [F1, F2, F3, F4]
-        const formants = {
-            'a': [800, 1250, 2600, 3500],
-            'i': [300, 2300, 3000, 3700],
-            'u': [360, 1250, 2400, 3500],
-            'e': [500, 1900, 2600, 3600],
-            'o': [500, 900,  2400, 3500],
-            'N': [250, 1000, 2200, 3200]
+        // 日本語5母音＋撥音(ん) 音響フォルマント定義: 周波数f (Hz), 帯域幅b (Hz), 相対強度a
+        const vowelParams = {
+            'a': { f: [800, 1250, 2600], b: [80, 100, 130], a: [1.0, 0.55, 0.22] },
+            'i': { f: [300, 2300, 3000], b: [60, 120, 150], a: [0.9, 0.85, 0.30] },
+            'u': { f: [380, 1250, 2400], b: [70, 100, 130], a: [0.9, 0.45, 0.20] },
+            'e': { f: [500, 1900, 2600], b: [70, 110, 140], a: [1.0, 0.70, 0.25] },
+            'o': { f: [500, 880,  2400], b: [70, 90,  130], a: [1.0, 0.60, 0.20] },
+            'N': { f: [250, 1000, 2200], b: [100, 150, 200], a: [0.75, 0.25, 0.12] }
         };
 
-        let currentSample = Math.floor(sampleRate * 0.05);
-        let phase = 0;
+        let currentSample = Math.floor(sampleRate * 0.04);
+        const voicedMorae = morae.filter(m => !m.isPause && !m.isSokuon);
+        const numVoiced = voicedMorae.length;
+        let voicedIdx = 0;
 
-        morae.forEach((mora, mIdx) => {
+        morae.forEach((mora) => {
             const moraSamples = Math.floor(mora.scaledDur * sampleRate);
             if (mora.isPause || mora.isSokuon) {
                 currentSample += moraSamples;
                 return;
             }
 
-            const vowelF = formants[mora.v] || formants['a'];
-            const f1 = vowelF[0] * formantScale;
-            const f2 = vowelF[1] * formantScale;
-            const f3 = vowelF[2] * formantScale;
-            const f4 = vowelF[3] * formantScale;
+            // 東京式アクセント・自然な句頭上昇と句末下降（F0輪郭）
+            let pRatio = 1.0;
+            if (numVoiced > 1) {
+                if (voicedIdx === 0) pRatio = 0.94;
+                else if (voicedIdx === 1) pRatio = 1.06;
+                else pRatio = 1.02 - (voicedIdx / numVoiced) * 0.14;
+            }
+            const moraF0 = basePitch * pRatio;
+            voicedIdx++;
 
-            const consDur = mora.c ? Math.min(moraSamples * 0.45, sampleRate * 0.055) : 0;
+            const c = mora.c || '';
+            const v = mora.v || 'a';
+            const vf = vowelParams[v] || vowelParams['a'];
+            const f1 = vf.f[0] * formantScale;
+            const f2 = vf.f[1] * formantScale;
+            const f3 = vf.f[2] * formantScale;
+            const b1 = vf.b[0];
+            const b2 = vf.b[1];
+            const b3 = vf.b[2];
+            const a1 = vf.a[0];
+            const a2 = vf.a[1];
+            const a3 = vf.a[2];
 
-            // イントネーション輪郭
-            let pitchFactor = 1.0;
-            if (mIdx === 0 && morae.length > 1) pitchFactor = 0.94;
-            else if (mIdx === 1) pitchFactor = 1.05;
-            else pitchFactor = 1.0 - (mIdx / morae.length) * 0.12;
+            // 子音音響長
+            let cDur = 0;
+            if (['k', 't', 'p', 'g', 'd', 'b'].includes(c) || c.startsWith('k') || c.startsWith('g') || c.startsWith('p') || c.startsWith('b')) {
+                cDur = Math.floor(0.045 * sampleRate * durScale);
+            } else if (['s', 'sh', 'ts', 'ch', 'j', 'z'].includes(c)) {
+                cDur = Math.floor(0.065 * sampleRate * durScale);
+            } else if (['n', 'm'].includes(c) || c.startsWith('n') || c.startsWith('m')) {
+                cDur = Math.floor(0.050 * sampleRate * durScale);
+            } else if (['h', 'f'].includes(c) || c.startsWith('h')) {
+                cDur = Math.floor(0.045 * sampleRate * durScale);
+            } else if (c === 'r' || c.startsWith('r')) {
+                cDur = Math.floor(0.030 * sampleRate * durScale);
+            } else if (['w', 'y'].includes(c)) {
+                cDur = Math.floor(0.050 * sampleRate * durScale);
+            }
 
-            const moraF0 = basePitch * pitchFactor;
+            const period = sampleRate / moraF0;
+            let periodPhase = 0.0;
+            let timeInPeriod = 0.0;
 
             for (let s = 0; s < moraSamples; s++) {
                 const targetIdx = currentSample + s;
                 if (targetIdx >= totalSamples) break;
 
                 const tMora = s / moraSamples;
-                phase += moraF0 / sampleRate;
-                if (phase >= 1.0) phase -= 1.0;
+                let env = 1.0;
+                if (tMora < 0.08) env = tMora / 0.08;
+                else if (tMora > 0.88) env = (1.0 - tMora) / 0.12;
 
-                // 声帯パルス波形（Rosenbergパルスモデル）
-                let glottal = 0;
-                if (phase < 0.4) {
-                    glottal = Math.sin(Math.PI * phase / 0.4);
-                } else if (phase < 0.6) {
-                    glottal = Math.cos(Math.PI * (phase - 0.4) / 0.4);
-                } else {
-                    glottal = 0;
-                }
+                let val = 0.0;
 
-                // 4次フォルマント共鳴合成
-                const tSec = targetIdx / sampleRate;
-                const vRes = Math.sin(2 * Math.PI * f1 * tSec) * 0.45
-                           + Math.sin(2 * Math.PI * f2 * tSec) * 0.28
-                           + Math.sin(2 * Math.PI * f3 * tSec) * 0.16
-                           + Math.sin(2 * Math.PI * f4 * tSec) * 0.08;
-
-                let val = glottal * vRes;
-
-                // 子音成分の重畳
-                if (mora.c && s < consDur) {
-                    const cEnv = Math.sin(Math.PI * s / consDur);
-                    const noise = (Math.random() * 2 - 1);
-                    if (mora.c === 's' || mora.c === 'sh' || mora.c === 'ts') {
-                        val = val * 0.3 + noise * cEnv * 0.45;
-                    } else if (mora.c === 'k' || mora.c === 't' || mora.c === 'p') {
-                        val = (s < consDur * 0.4 ? 0 : val * 0.5 + noise * cEnv * 0.55);
-                    } else if (mora.c === 'h' || mora.c === 'f') {
-                        val = val * 0.6 + noise * cEnv * 0.3;
-                    } else if (mora.c === 'm' || mora.c === 'n') {
-                        val = val * 0.7 + Math.sin(2 * Math.PI * 250 * tSec) * 0.35 * cEnv;
+                // 1. 子音音響成分の生成（破裂バースト・摩擦音・鼻音）
+                if (s < cDur) {
+                    const cRatio = s / cDur;
+                    if (['s', 'sh', 'ts', 'ch', 'j', 'z'].includes(c)) {
+                        const centerF = ['sh', 'ch', 'j'].includes(c) ? 3200 : 5200;
+                        const noise = (Math.sin(s * 733.1) + Math.sin(s * 1597.3) + Math.sin(s * 2879.7)) / 3.0;
+                        val += noise * Math.sin(2 * Math.PI * centerF * (s / sampleRate)) * 0.55 * (1.0 - cRatio * 0.2);
+                    } else if (['k', 't', 'p', 'g', 'd', 'b'].includes(c) || c.startsWith('k') || c.startsWith('g') || c.startsWith('p') || c.startsWith('b')) {
+                        if (cRatio > 0.65) {
+                            const isK = c.startsWith('k') || c.startsWith('g');
+                            const isT = c.startsWith('t') || c.startsWith('d');
+                            const burstF = isK ? 1800 : (isT ? 4200 : 950);
+                            const burstDecay = Math.exp(-(cRatio - 0.65) * 20.0);
+                            val += Math.sin(2 * Math.PI * burstF * (s / sampleRate)) * burstDecay * 0.75;
+                        } else if (['g', 'd', 'b'].includes(c) || c.startsWith('g') || c.startsWith('b')) {
+                            // 有声破裂音の喉の唸り（Voice bar）
+                            val += Math.sin(2 * Math.PI * 140 * (s / sampleRate)) * 0.25;
+                        }
+                    } else if (['h', 'f'].includes(c) || c.startsWith('h')) {
+                        const noise = (Math.sin(s * 911.3) + Math.sin(s * 1823.7)) * 0.5;
+                        val += noise * Math.sin(2 * Math.PI * f1 * (s / sampleRate)) * 0.40;
+                    } else if (['n', 'm'].includes(c) || c.startsWith('n') || c.startsWith('m')) {
+                        const tP = timeInPeriod / sampleRate;
+                        val += Math.exp(-Math.PI * 90 * tP) * Math.sin(2 * Math.PI * 250 * tP) * 0.60;
+                    } else if (c === 'r' || c.startsWith('r')) {
+                        env *= 0.28; // 日本語の弾き音 [ɾ] の振幅ディップ
                     }
                 }
 
-                // エンベロープ窓関数
-                let moraEnv = 1.0;
-                if (tMora < 0.1) moraEnv = tMora / 0.1;
-                else if (tMora > 0.85) moraEnv = (1.0 - tMora) / 0.15;
+                // 2. 母音成分の生成（Klatt型 ピッチ同期 減衰共鳴器）
+                const isVoicelessObs = ['k', 't', 'p', 's', 'sh', 'ts', 'ch'].includes(c) || c.startsWith('k') || c.startsWith('p');
+                const vStart = isVoicelessObs ? Math.floor(cDur * 0.55) : 0;
+                if (s >= vStart) {
+                    const tP = timeInPeriod / sampleRate;
 
-                out[targetIdx] = (out[targetIdx] || 0) + val * moraEnv * 0.65;
+                    let currF1 = f1;
+                    let currF2 = f2;
+                    let currF3 = f3;
+                    if ((c === 'w' || c.endsWith('w')) && s < cDur) {
+                        const r = s / cDur;
+                        currF1 = 350 * (1 - r) + f1 * r;
+                        currF2 = 800 * (1 - r) + f2 * r;
+                    } else if ((c === 'y' || c.endsWith('y')) && s < cDur) {
+                        const r = s / cDur;
+                        currF1 = 280 * (1 - r) + f1 * r;
+                        currF2 = 2300 * (1 - r) + f2 * r;
+                    }
+
+                    // ピッチパルスごとに初期化・指数減衰する音響フォルマント共鳴（金属音・リング変調の完全排除）
+                    const vSignal = (
+                        a1 * Math.exp(-Math.PI * b1 * tP) * Math.sin(2 * Math.PI * currF1 * tP) +
+                        a2 * Math.exp(-Math.PI * b2 * tP) * Math.sin(2 * Math.PI * currF2 * tP) +
+                        a3 * Math.exp(-Math.PI * b3 * tP) * Math.sin(2 * Math.PI * currF3 * tP)
+                    );
+
+                    const vWeight = s >= cDur ? 1.0 : (s - vStart) / Math.max(1, cDur - vStart);
+                    val += vSignal * vWeight * 0.85;
+                }
+
+                out[targetIdx] = (out[targetIdx] || 0) + val * env;
+
+                timeInPeriod += 1.0;
+                periodPhase += 1.0;
+                if (periodPhase >= period) {
+                    periodPhase -= period;
+                    timeInPeriod = periodPhase;
+                }
             }
+
             currentSample += moraSamples;
         });
 
-        // 🔊 生成された AudioBuffer を 0.98 ピークへ自動ノーマライズ（十分な音量を担保）
+        // 🔊 生成された AudioBuffer を 0.96 ピークへ自動ノーマライズ
         if (typeof AudioUtils !== 'undefined' && AudioUtils.normalizeAudioBuffer) {
             AudioUtils.normalizeAudioBuffer(buffer);
+        } else {
+            let maxP = 0;
+            for (let i = 0; i < out.length; i++) {
+                const a = Math.abs(out[i]);
+                if (a > maxP) maxP = a;
+            }
+            if (maxP > 0) {
+                const factor = 0.96 / maxP;
+                for (let i = 0; i < out.length; i++) {
+                    out[i] *= factor;
+                }
+            }
         }
 
         return buffer;
@@ -6683,6 +6765,9 @@ class VoicePadApp {
             return;
         }
 
+        // 🛑 特別支援教育＆AAC排他再生制御：他のボタンの残響・音声・TTS発話を即座に完全停止
+        this.stopAllAudioPlayback();
+
         // 実効ボイスパラメータ（声質＆環境＆EQ＆特殊FX）と再生スピードの取得
         const voiceParams = this.getEffectiveVoiceParams(slot);
         const envParams = this.getEffectiveEnvParams(slot);
@@ -6896,12 +6981,22 @@ class VoicePadApp {
 
         utter.onend = () => {
             cleanupUtterance();
-            this.stopSlot(slot.id);
+            this.activeSources.delete(slot.id);
+            const card = document.getElementById(`pad-${slot.id}`);
+            if (card) {
+                card.classList.remove('playing');
+                card.classList.remove('is-playing');
+            }
         };
         utter.onerror = (e) => {
             console.warn('SpeechSynthesis playback error:', e);
             cleanupUtterance();
-            this.stopSlot(slot.id);
+            this.activeSources.delete(slot.id);
+            const card = document.getElementById(`pad-${slot.id}`);
+            if (card) {
+                card.classList.remove('playing');
+                card.classList.remove('is-playing');
+            }
         };
 
         // 🛡️ iOS Safari/WebKit のユーザー操作ジェスチャー有効時間内に同期実行（setTimeout遅延による発話遮断を防止）
@@ -6945,6 +7040,13 @@ class VoicePadApp {
                     clearTimeout(watchdogTimer);
                     watchdogTimer = null;
                 }
+                audio.onended = null;
+                audio.onerror = null;
+                try {
+                    audio.pause();
+                    audio.src = '';
+                    audio.load();
+                } catch (e) {}
                 if (card) {
                     card.classList.remove('playing');
                     card.classList.remove('is-playing');
@@ -7055,6 +7157,13 @@ class VoicePadApp {
                     clearTimeout(watchdogTimer);
                     watchdogTimer = null;
                 }
+                audio.onended = null;
+                audio.onerror = null;
+                try {
+                    audio.pause();
+                    audio.src = '';
+                    audio.load();
+                } catch (e) {}
                 BlobUrlTracker.revoke(url);
             };
 
@@ -7125,7 +7234,6 @@ class VoicePadApp {
             } catch (e) {}
             this.activeSources.delete(slotId);
         }
-        TtsEngine.safeResetSpeechSynthesis();
         const card = document.getElementById(`pad-${slotId}`);
         if (card) {
             card.classList.remove('playing');
@@ -7472,10 +7580,10 @@ class VoicePadApp {
         let exportObj = null;
 
         if (mode === 'wav') {
-            if (modalTitle) modalTitle.innerText = '📡 ボタン音声（WAV）Wi-Fi 直接送信';
+            if (modalTitle) modalTitle.innerText = '📡 ボタン音声（16-bit PCM WAV）Wi-Fi 直接送信';
             if (nameEl) nameEl.innerText = `VoicePad_${safeLabel}.wav`;
             if (emojiEl) emojiEl.innerText = '🎵';
-            if (metaEl) metaEl.innerText = '動画編集用 16-bit PCM WAV (Premiere / DaVinci 即対応)';
+            if (metaEl) metaEl.innerText = '動画編集用 16-bit PCM WAV (Premiere / DaVinci 即対応・音響フォルマント音声)';
 
             modal.classList.add('open');
             if (loadingSpinner) loadingSpinner.style.display = 'flex';
@@ -7502,7 +7610,7 @@ class VoicePadApp {
                 dataBase64: dataBase64
             };
         } else {
-            if (modalTitle) modalTitle.innerText = '📡 ボタンデータ Wi-Fi 直接送信';
+            if (modalTitle) modalTitle.innerText = '📡 ボタンデータ Wi-Fi 直接送信（相手端末で高音質AI音声再生）';
             if (nameEl) nameEl.innerText = slot.label || 'ボタン';
             if (emojiEl) {
                 if (slot.imageUrl) {
@@ -7514,7 +7622,7 @@ class VoicePadApp {
             if (metaEl) {
                 const hasText = !!(slot.ttsText || (slot.label && !/^(ボタン|スイッチ)\s*\d*$/i.test(slot.label.trim())));
                 const hasAudio = !!(slot.audioBlob || slot.audioBase64 || hasText);
-                const dur = slot.duration ? `${slot.duration.toFixed(1)}秒` : (hasText ? 'AI音声' : '未録音');
+                const dur = slot.duration ? `${slot.duration.toFixed(1)}秒` : (hasText ? '✨ 相手端末の内蔵高音質AI音声で再生' : '未録音');
                 metaEl.innerText = `🎙️ 音声: ${hasAudio ? dur : 'なし'} | ⚡ ${slot.playbackSpeed && slot.playbackSpeed !== 'inherit' ? slot.playbackSpeed + '倍速' : '標準'}`;
             }
 
@@ -8469,6 +8577,14 @@ class VoicePadApp {
             if (e.target.id === 'modal-backdrop') this.closeEditModal();
         });
         document.getElementById('save-slot-btn')?.addEventListener('click', () => this.saveEditModal());
+        document.getElementById('edit-label')?.addEventListener('input', (e) => {
+            const lblSpan = document.getElementById('modal-slot-label');
+            if (lblSpan) {
+                const currentSlots = this.getCurrentSlots();
+                const displayIndex = currentSlots.findIndex(s => s.id === this.editingSlotId) + 1;
+                lblSpan.innerText = e.target.value.trim() || `スイッチ ${displayIndex > 0 ? displayIndex : ''}`;
+            }
+        });
         document.getElementById('export-single-slot-btn')?.addEventListener('click', () => {
             if (this.editingSlotId) this.exportSingleSlot(this.editingSlotId);
         });
@@ -8624,6 +8740,23 @@ class VoicePadApp {
                     } else {
                         editSlotVolumeVal.innerText = `${percent}%`;
                         editSlotVolumeVal.style.color = '#38bdf8';
+                    }
+                }
+
+                // モーダルタイトル付属のメタ情報（音量ブースト・スピード）を名前の後に動的反映
+                const metaSpan = document.querySelector('#modal-backdrop .modal-title-meta');
+                if (metaSpan && this.editingSlotId) {
+                    const slot = this.slots.find(s => s.id === this.editingSlotId);
+                    if (slot) {
+                        const currentSlots = this.getCurrentSlots();
+                        const displayIndex = currentSlots.findIndex(s => s.id === slot.id) + 1;
+                        const speed = this.getEffectivePlaybackSpeed(slot);
+                        let metaSuffix = '';
+                        if (val > 1.0) metaSuffix += ` [${percent}% ブースト]`;
+                        else if (val === 0) metaSuffix += ` [消音]`;
+                        else if (val !== 1.0) metaSuffix += ` [${percent}%]`;
+                        if (speed !== 1.0) metaSuffix += ` (${speed}x)`;
+                        metaSpan.innerHTML = `(#<span id="modal-slot-num">${displayIndex}</span>${metaSuffix})`;
                     }
                 }
             });
@@ -8900,6 +9033,25 @@ class VoicePadApp {
 
         const modalNumEl = document.getElementById('modal-slot-num');
         if (modalNumEl) modalNumEl.innerText = displayIndex > 0 ? displayIndex : '';
+
+        const modalTitle = document.querySelector('#modal-backdrop .modal-title');
+        if (modalTitle) {
+            const cleanLabel = (slot.label && slot.label.trim()) ? slot.label.trim() : `スイッチ ${displayIndex}`;
+            const slotVol = this.getEffectiveSlotVolume(slot);
+            const speed = this.getEffectivePlaybackSpeed(slot);
+            let metaSuffix = '';
+            if (slotVol > 1.0) {
+                metaSuffix += ` [${Math.round(slotVol * 100)}% ブースト]`;
+            } else if (slotVol === 0) {
+                metaSuffix += ` [消音]`;
+            } else if (slotVol !== 1.0) {
+                metaSuffix += ` [${Math.round(slotVol * 100)}%]`;
+            }
+            if (speed !== 1.0) {
+                metaSuffix += ` (${speed}x)`;
+            }
+            modalTitle.innerHTML = `スイッチ「<span id="modal-slot-label">${this.escapeHtml(cleanLabel)}</span>」の設定 <span class="modal-title-meta" style="font-size:12px; font-weight:600; opacity:0.85; color:var(--accent-blue);">(#<span id="modal-slot-num">${displayIndex}</span>${metaSuffix})</span>`;
+        }
 
         const labelInput = document.getElementById('edit-label');
         if (labelInput) labelInput.value = slot.label;
@@ -9488,6 +9640,24 @@ class VoicePadApp {
                 slider.value = parseFloat(e.target.value);
                 slider.dispatchEvent(new Event('input'));
             }
+            const metaSpan = document.querySelector('#modal-backdrop .modal-title-meta');
+            if (metaSpan && this.editingSlotId) {
+                const slot = this.slots.find(s => s.id === this.editingSlotId);
+                if (slot) {
+                    const currentSlots = this.getCurrentSlots();
+                    const displayIndex = currentSlots.findIndex(s => s.id === slot.id) + 1;
+                    const volSlider = document.getElementById('edit-slot-volume');
+                    const curVol = volSlider ? parseFloat(volSlider.value) : this.getEffectiveSlotVolume(slot);
+                    const speedVal = e.target.value === 'inherit' ? this.getScrollEffectiveSpeed(slot.scrollId) : parseFloat(e.target.value);
+                    const percent = Math.round(curVol * 100);
+                    let metaSuffix = '';
+                    if (curVol > 1.0) metaSuffix += ` [${percent}% ブースト]`;
+                    else if (curVol === 0) metaSuffix += ` [消音]`;
+                    else if (curVol !== 1.0) metaSuffix += ` [${percent}%]`;
+                    if (speedVal !== 1.0) metaSuffix += ` (${speedVal}x)`;
+                    metaSpan.innerHTML = `(#<span id="modal-slot-num">${displayIndex}</span>${metaSuffix})`;
+                }
+            }
         });
         document.getElementById('edit-scroll-speed')?.addEventListener('change', (e) => {
             const slider = document.getElementById('scroll-speed-slider');
@@ -10050,6 +10220,12 @@ class VoicePadApp {
         const modalNumEl = document.getElementById('voice-modal-slot-num');
         if (modalNumEl) modalNumEl.innerText = displayIndex > 0 ? displayIndex : '';
 
+        const voiceTitle = document.querySelector('#slot-voice-modal-backdrop .modal-title');
+        if (voiceTitle) {
+            const cleanLabel = (slot.label && slot.label.trim()) ? slot.label.trim() : `スイッチ ${displayIndex}`;
+            voiceTitle.innerHTML = `🗣️ ボタン「${this.escapeHtml(cleanLabel)}」の声質設定 <span style="font-size:12px; font-weight:600; opacity:0.85; color:var(--accent-blue);">(#<span id="voice-modal-slot-num">${displayIndex}</span>)</span>`;
+        }
+
         const modeSelect = document.getElementById('slot-quick-voice-mode');
         const isCustom = (slot.voiceEffectMode === 'custom' && (!!slot.voiceParams || !!slot.eqParams || !!slot.specialParams || (slot.playbackSpeed && slot.playbackSpeed !== 'inherit')));
         if (modeSelect) modeSelect.value = isCustom ? 'custom' : 'inherit';
@@ -10167,6 +10343,12 @@ class VoicePadApp {
         const displayIndex = currentSlots.findIndex(s => s.id === slotId) + 1;
         const modalNumEl = document.getElementById('env-modal-slot-num');
         if (modalNumEl) modalNumEl.innerText = displayIndex > 0 ? displayIndex : '';
+
+        const envTitle = document.querySelector('#slot-env-modal-backdrop .modal-title');
+        if (envTitle) {
+            const cleanLabel = (slot.label && slot.label.trim()) ? slot.label.trim() : `スイッチ ${displayIndex}`;
+            envTitle.innerHTML = `⛰️ ボタン「${this.escapeHtml(cleanLabel)}」の環境・空間設定 <span style="font-size:12px; font-weight:600; opacity:0.85; color:var(--accent-blue);">(#<span id="env-modal-slot-num">${displayIndex}</span>)</span>`;
+        }
 
         const modeSelect = document.getElementById('slot-quick-env-mode');
         const isCustom = (slot.voiceEffectMode === 'custom' && !!slot.envParams);
@@ -10544,6 +10726,12 @@ class VoicePadApp {
         const displayIndex = currentSlots.findIndex(s => s.id === slotId) + 1;
         const modalNumEl = document.getElementById('tts-modal-slot-num');
         if (modalNumEl) modalNumEl.innerText = displayIndex > 0 ? displayIndex : '';
+
+        const ttsTitle = document.querySelector('#slot-tts-modal-backdrop .modal-title');
+        if (ttsTitle) {
+            const cleanLabel = (slot.label && slot.label.trim()) ? slot.label.trim() : `スイッチ ${displayIndex}`;
+            ttsTitle.innerHTML = `🔤 ボタン「${this.escapeHtml(cleanLabel)}」の打ち込みAI音声設定 <span style="font-size:12px; font-weight:600; opacity:0.85; color:#c084fc;">(#<span id="tts-modal-slot-num">${displayIndex}</span>)</span>`;
+        }
 
         // 過去の後方互換マッピング（girl->ayumi, boy->ichiro, woman->ayumi, man->ichiro）
         let initialVoice = slot.ttsVoice || 'ayumi';

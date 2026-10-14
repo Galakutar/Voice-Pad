@@ -17,7 +17,7 @@
     <meta http-equiv="Expires" content="0">
     <link rel="manifest" href="manifest.json">
     
-    <link rel="stylesheet" href="style.css?v=20261013_0245">
+    <link rel="stylesheet" href="style.css?v=20261015_0730">
 </head>
 <body>
     <div id="app-container">
@@ -309,11 +309,11 @@
                 <!-- ① 🎴 このボタンの【ボタンデータ】を送信（QR送信 ＆ エアドロップ送信） -->
                 <div class="form-group btn-data-export-group" style="margin-top: 10px; padding: 12px; background: rgba(2, 132, 199, 0.09); border: 1.5px solid rgba(2, 132, 199, 0.4); border-radius: 12px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span class="opt-label" style="font-size: 13px; font-weight: 800; color: #38bdf8;">🎴 このボタンのボタンデータを送信</span>
-                        <span class="badge-tag" style="background: rgba(14, 165, 233, 0.25); color: #7dd3fc; border-color: #38bdf8;">ボタン丸ごと転送</span>
+                        <span class="opt-label" style="font-size: 13px; font-weight: 800; color: #38bdf8;">🎴 このボタンのボタンデータを送信（推奨: 相手端末で高音質AI音声）</span>
+                        <span class="badge-tag" style="background: rgba(14, 165, 233, 0.25); color: #7dd3fc; border-color: #38bdf8;">高音質AI音声保持</span>
                     </div>
                     <div style="font-size: 11px; color: #cbd5e1; margin-bottom: 9px; line-height: 1.45;">
-                        このボタンのラベル・写真・音声・設定データを他の端末にそのまま送信します：
+                        相手のiPad・iPhone・PCにボタンを送り、相手端末の自然な高音質AI音声（Apple Kyoko / Siri / Microsoft Ayumi等）で再生したい場合はこちらをお選びください：
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 7px;">
                         <!-- QR送信スイッチ -->
@@ -340,11 +340,11 @@
                 <!-- ② 🎵 このボタンの【音声データWAV】を送信（QR送信 ＆ エアドロップ送信） -->
                 <div class="form-group btn-wav-export-group" style="margin-top: 10px; padding: 12px; background: rgba(124, 58, 237, 0.09); border: 1.5px solid rgba(124, 58, 237, 0.4); border-radius: 12px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span class="opt-label" style="font-size: 13px; font-weight: 800; color: #c084fc;">🎵 このボタンの音声データ（WAV）を送信</span>
+                        <span class="opt-label" style="font-size: 13px; font-weight: 800; color: #c084fc;">🎵 このボタンの音声データ（WAV）を送信・保存</span>
                         <span class="badge-tag" style="background: rgba(168, 85, 247, 0.25); color: #d8b4fe; border-color: #c084fc;">PCM 16bit WAV</span>
                     </div>
                     <div style="font-size: 11px; color: #cbd5e1; margin-bottom: 9px; line-height: 1.45;">
-                        Premiere Pro / DaVinci Resolve などの動画編集ソフトでそのまま使える高品質PCM WAV音声を送信・保存します：
+                        Premiere Pro / DaVinci Resolve などの動画編集ソフトや外部プレイヤー用の音声WAVファイルを書き出します（※肉声録音ボタンは生音声、文字打ち込みボタンは音響フォルマント合成音声）：
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 7px;">
                         <!-- QR送信スイッチ -->
@@ -1350,7 +1350,7 @@
                 <div class="form-group version-card">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span class="form-label">🚀 アプリのバージョン</span>
-                        <span id="app-version-badge" class="version-badge">v2026.10.13.0335</span>
+                        <span id="app-version-badge" class="version-badge">v2026.10.13.0415</span>
                     </div>
                     <button id="check-update-btn" class="action-btn update-btn" style="margin-top: 6px;">
                         🔄 最新バージョンを確認・アップデート
@@ -1963,6 +1963,6 @@ Third-party font and UI standards comply with open Google Fonts (Plus Jakarta Sa
     <script src="peerjs.min.js"></script>
 
     <!-- アプリスクリプト -->
-    <script src="app.js?v=20261013_0245"></script>
+    <script src="app.js?v=20261015_0730"></script>
 </body>
 </html>
